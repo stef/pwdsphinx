@@ -1,5 +1,5 @@
-sphinx: a password *S*tore that *P*erfectly *H*ides from *I*tself
-(*N*o *X*aggeration)
+sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself
+(**N**o **X**aggeration)
 
 pitchforked sphinx is a cryptographic password storage as described in
 https://eprint.iacr.org/2015/1099
