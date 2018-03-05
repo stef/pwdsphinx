@@ -1,3 +1,0 @@
-[submodule "goldilocks"]
-	path = src/goldilocks
-	url = git://git.code.sf.net/p/ed448goldilocks/code
