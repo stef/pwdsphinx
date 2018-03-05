@@ -1,8 +1,8 @@
 sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself
 (**N**o **X**aggeration)
 
-pitchforked sphinx is a cryptographic password storage as described in
-https://eprint.iacr.org/2015/1099
+pwdsphinx is python wrapper around libsphinx - a cryptographic password storage
+as described in https://eprint.iacr.org/2015/1099
 
 ## Dependencies
 
@@ -14,7 +14,6 @@ manager or pip.
 ## Installation
 
 `pip install pwdsphinx` should get you started.
-
 
 ## API
 
@@ -32,7 +31,6 @@ returns bfac and chal
 def respond(chal, secret)
 ```
 return the response
-
 
 ```
 def finish(bfac, resp)
