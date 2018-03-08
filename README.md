@@ -48,18 +48,37 @@ comes with a server implemented in py3 which you can host off-site
 from your usual desktop/smartphone. Also a client is supplied which is
 able to communicate with the server and manage passwords.
 
+Both the client and the server can be configured by any of the
+following files:
+ - `/etc/sphinx/config`
+ - `~/.sphinxrc`
+ - `~/.config/sphinx/config`
+ - `./sphinx.cfg`
+
+Files are parsed in this order, this means global settings can be
+overridden by per-user and per-directory settings.
+
 ### oracle - the server
 
-The server can be "configured" by changing the variables on top of the file.
+The server can be "configured" by changing the variables in the
+`[server]` section of the config file.
 
-The address is the IP address on which the server is listening,
-default is `localhost` - you might want to change that. The port is
-by default 2355. And a data directory where all the device "secrets"
+The `address` is the IP address on which the server is listening,
+default is `localhost` - you might want to change that.
+
+The `port` where the server is listening is by default 2355.
+
+`datadir` specifies the data directory where all the device "secrets"
 are stored, this defaults to "data/" in the current directory. You
 might want to back up this directory from time to time to an encrypted
 medium.
 
-Change these three variables to fit your needs. Starting the server
+`verbose` enables logging to standard output.
+
+`keydir` is the directory where the server stores its secret key, that
+is used to sign messages to the clients.
+
+Change these settings to fit your needs. Starting the server
 can be done simply by:
 
 ```
@@ -73,8 +92,8 @@ using the sphinx protocol.
 
 #### Client Configuration
 
-Like the server, the client can also be "configured" by setting the
-variables at the top of the python script. The host and port should
+Like the server, the client can be configured changing the settings in
+the `[client]` section of the config file. The `host` and `port` should
 match what you set in the server.
 
 The datadir (default: `~/.sphinx`) variable holds the location for
