@@ -13,7 +13,7 @@ manager or pip.
 
 ## Installation
 
-`pip install pwdsphinx` should get you started.
+`pip3 install pwdsphinx` should get you started.
 
 ## API
 
