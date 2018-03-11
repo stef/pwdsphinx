@@ -22,16 +22,14 @@ import subprocess
 import os, sys, struct, json, platform
 try:
     from pwdsphinx.sphinx import datadir, SphinxHandler
+    from pwdsphinx.config import getcfg
 except ImportError:
     from sphinx import datadir, SphinxHandler
+    from config import getcfg
 
-if platform.system() == 'Windows':
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    pinentry=os.path.join(BASE_DIR,'pinentry-qt.exe')
-else:
-    pinentry='pinentry-gtk-2'
-
-log = False # '/tmp/websphinx.log'
+cfg = getcfg('sphinx')
+pinentry = cfg['websphinx']['pinentry']
+log = cfg['websphinx']['log']
 
 def getpwd(title):
     proc=subprocess.Popen([pinentry, '-g'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -39,12 +37,6 @@ def getpwd(title):
     if proc.returncode == 0:
         for line in out.split(b'\n'):
             if line.startswith(b"D "): return line[2:]
-        #    if line.startswith(b"ERR 83886179 Operation cancelled"): return None
-        #print("wtf")
-        #print('out',out)
-        #print('err',err)
-    #else:
-    #    print("returned non-zero", err)
 
 # Send message using Native messaging protocol
 def send_message(data):

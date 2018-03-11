@@ -11,6 +11,16 @@ You need [libsphinx](https://github.com/stef/libsphinx).
 You need also to install `pysodium` using either your OS package
 manager or pip.
 
+If you want to use also the websphinx browser extension you need to
+install also an X11 variant of pinentry from the gnupg project:
+
+ - either `apt-get install pinentry-qt`
+ - or `apt-get install pinentry-gtk2`
+ - or `apt-get install pinentry-gnome3`
+ - or `apt-get install pinentry-fltk`
+
+(or anything equivalent to `apt-get install` on your OS)
+
 ## Installation
 
 `pip3 install pwdsphinx` should get you started.
