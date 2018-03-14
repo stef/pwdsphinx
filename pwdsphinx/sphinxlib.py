@@ -40,7 +40,7 @@ def challenge(pwd):
         raise ValueError("invalid parameter")
     bfac = ctypes.create_string_buffer(DECAF_255_SCALAR_BYTES)
     chal = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    __check(sphinxlib.challenge(pwd, len(pwd), bfac, chal))
+    __check(sphinxlib.sphinx_challenge(pwd, len(pwd), bfac, chal))
     return (bfac.raw, chal.raw)
 
 # int respond(const uint8_t *chal, const uint8_t *secret, uint8_t *resp)
@@ -52,7 +52,7 @@ def respond(chal, secret):
 
     resp = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
 
-    __check(sphinxlib.respond(chal, secret, resp))
+    __check(sphinxlib.sphinx_respond(chal, secret, resp))
     return resp.raw
 
 # int finish(const uint8_t *bfac, const uint8_t *resp, uint8_t *rwd)
@@ -63,5 +63,5 @@ def finish(bfac, resp):
     if len(bfac) != DECAF_255_SCALAR_BYTES: raise ValueError("truncated secret")
 
     rwd = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    __check(sphinxlib.finish(bfac, resp, rwd))
+    __check(sphinxlib.sphinx_finish(bfac, resp, rwd))
     return rwd.raw
