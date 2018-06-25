@@ -183,7 +183,6 @@ After changing the password, you will get back the old password, until you commi
 
 ```
 echo 'my master password' | ./sphinx.py commit username https://example.com
-
 ```
 
 #### Deleting passwords
