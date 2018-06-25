@@ -179,6 +179,12 @@ operation as the first parameter to the client, your `username` as the
 2nd and the `site` as the 3rd parameter. Your new new password is
 returned on standard output.
 
+After changing the password, you will get back the old password, until you commit the changes with
+
+```
+echo 'my master password' | ./sphinx.py commit username https://example.com
+```
+
 #### Deleting passwords
 
 In case you want to delete a password, you can do using the following
