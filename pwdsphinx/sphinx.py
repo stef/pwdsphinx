@@ -40,26 +40,35 @@ class SphinxClientProtocol(asyncio.Protocol):
     if verbose: print('Data sent: {!r}'.format(self.message))
 
   def data_received(self, data):
-    if verbose: print('Data received: {!r}'.format(repr(data).encode()))
+    if verbose: print('Data received: ', data)
 
     try:
       data = pysodium.crypto_sign_open(data, self.handler.getserverkey())
     except ValueError:
       raise ValueError('invalid signature.\nabort')
 
-    if data == b'fail':
+    if data!=b'ok' and (data[:-42] == b'fail' or len(data)!=sphinxlib.DECAF_255_SER_BYTES+42):
         raise ValueError('fail')
 
     if not self.b:
       self.cb()
       return
 
-    rwd=sphinxlib.finish(self.b, data)
+    rwd=sphinxlib.finish(self.b, data[:sphinxlib.DECAF_255_SER_BYTES])
 
-    rule = self.handler.getrule()
-    if not rule:
-        raise ValueError("no password rule defined for this password.")
-    rule, size = rule
+    if self.handler.namesite is not None:
+      print(self.handler.namesite['name'], self.handler.list(self.handler.namesite['site']))
+      if self.handler.namesite['name'].encode() not in self.handler.list(self.handler.namesite['site']):
+        self.handler.cacheuser(self.handler.namesite)
+
+    rule = data[sphinxlib.DECAF_255_SER_BYTES:]
+    if len(rule)!=42:
+      raise ValueError('fail')
+    rk = pysodium.crypto_generichash(self.handler.getkey(),self.handler.getsalt())
+    rule = pysodium.crypto_secretbox_open(rule[24:], rule[:24],rk)
+    rule = struct.unpack(">H",rule)[0]
+    size = (rule & 0x7f)
+    rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
     self.cb(bin2pass.derive(rwd,rule,size).decode())
 
   def connection_lost(self, exc):
@@ -71,6 +80,7 @@ class SphinxClientProtocol(asyncio.Protocol):
 class SphinxHandler():
   def __init__(self, datadir):
     self.datadir=datadir
+    self.namesite = None
 
   def getkey(self):
     datadir = os.path.expanduser(self.datadir)
@@ -104,60 +114,44 @@ class SphinxHandler():
         fd.write(salt)
       return salt
 
-  def saverules(self, id, rules, size, user):
-    datadir = os.path.expanduser(self.datadir+'/rules/')
-    if not os.path.exists(datadir):
-        os.mkdir(datadir,0o700)
-    # convert rule to bitfields
-    rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in rules)
-    # pack rule
-    rule=(rules << 7) | (size & 0x7f)
-    fname = datadir+binascii.hexlify(id).decode()
-    if not os.path.exists(fname):
-      with open(fname, 'wb') as fd:
-          fd.write(struct.pack('>H', rule))
-          fd.write(user)
-    else:
-      with open(fname, 'ab') as fd:
-          fd.write(b"\n"+user)
-
   def getusers(self, id):
-    datadir = os.path.expanduser(self.datadir+'/rules/')
+    datadir = os.path.expanduser(self.datadir)
     try:
       with open(datadir+binascii.hexlify(id).decode(), 'rb') as fd:
-        # skip rules
-        fd.seek(2)
         return [x.strip() for x in fd.readlines()]
     except FileNotFoundError:
         return None
 
   def deluser(self, id, user):
-    datadir = os.path.expanduser(self.datadir+'/rules/')
+    userfile = os.path.expanduser(self.datadir+binascii.hexlify(id).decode())
     try:
-      with open(datadir+binascii.hexlify(id).decode(), 'rb') as fd:
-        # skip rules
-        rules = fd.read(2)
+      with open(userfile, 'rb') as fd:
         users=[x.strip() for x in fd.readlines() if x.strip() != user.encode()]
       if users != []:
-        with open(datadir+binascii.hexlify(id).decode(), 'wb') as fd:
+        with open(userfile, 'wb') as fd:
             # skip rules
             fd.write(rules)
             fd.write(b'\n'.join(users))
       else:
-        os.unlink(datadir+binascii.hexlify(id).decode())
+        os.unlink(userfile)
     except FileNotFoundError:
       return None
 
-  def getrule(self):
-    datadir = os.path.expanduser(self.datadir+'/rules/')
+  def cacheuser(self, namesite):
+    site=namesite['site']
+    user=namesite['name']
+    salt = self.getsalt()
+    hostid = pysodium.crypto_generichash(site, salt, 32)
+    userfile = os.path.expanduser(self.datadir+binascii.hexlify(hostid).decode())
     try:
-      with open(datadir+binascii.hexlify(self.hostid).decode(), 'rb') as fd:
-          rule = struct.unpack(">H",fd.read(2))[0]
-      size = (rule & 0x7f)
-      rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
-      return (rule, size)
-    except FileNotFoundError:
-        return None
+      if not os.path.exists(userfile):
+        with open(userfile, 'wb') as fd:
+            fd.write(user.encode())
+      else:
+        with open(userfile, 'ab') as fd:
+            fd.write(b"\n"+user.encode())
+    except:
+      pass
 
   def getserverkey(self):
     datadir = os.path.expanduser(self.datadir)
@@ -198,23 +192,28 @@ class SphinxHandler():
     try: size=int(size)
     except:
       raise ValueError("error: size has to be integer.")
-    if user.encode() in self.list(host):
-      raise ValueError("error: User already exists.")
+    self.namesite={'name': user, 'site': host}
 
-    salt = self.getsalt()
-    hostid = pysodium.crypto_generichash(host, salt, 32)
-    self.saverules(hostid, char_classes, size, user.encode())
+    rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
+    # pack rule
+    rule=struct.pack('>H', (rules << 7) | (size & 0x7f))
+    # encrypt rule
+    sk = self.getkey()
+    rk = pysodium.crypto_generichash(sk,self.getsalt())
+    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+    rule = nonce+pysodium.crypto_secretbox(rule,nonce,rk)
 
     b, c = sphinxlib.challenge(pwd)
-    sk = self.getkey()
     message = b''.join([CREATE,
                         self.getid(host, user),
                         c,
+                        rule,
                         pysodium.crypto_sign_sk_to_pk(sk)])
     self.doSphinx(message, host, b, cb)
 
   def get(self, cb, pwd, user, host):
     b, c = sphinxlib.challenge(pwd)
+    self.namesite={'name': user, 'site': host}
     message = b''.join([GET,
                         self.getid(host, user),
                         c])
@@ -222,6 +221,7 @@ class SphinxHandler():
 
   def change(self, cb, pwd, user, host):
     b, c = sphinxlib.challenge(pwd)
+    self.namesite={'name': user, 'site': host}
     message = b''.join([CHANGE,
                         self.getid(host, user),
                         c])
@@ -230,7 +230,7 @@ class SphinxHandler():
   def commit(self, cb, user, host):
     message = b''.join([COMMIT,self.getid(host, user)])
     salt = self.getsalt()
-    hostid = pysodium.crypto_generichash(host, salt, 32)
+    self.namesite={'name': user, 'site': host}
     def callback():
       return
     self.doSphinx(message, host, None, callback)

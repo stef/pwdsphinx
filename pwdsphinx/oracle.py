@@ -22,21 +22,31 @@ COMMIT=0x99
 CHANGE=0xaa
 DELETE=0xff
 
-def respond(chal, id):
-  keyf = os.path.expanduser(datadir+binascii.hexlify(id).decode()+'/key')
-  if not os.path.exists(keyf):
-    print(keyf,'not exist')
-    return b'fail' # key not found
+def readf(fname):
+  if not os.path.exists(fname):
+    print(fname,'not exist')
+    raise ValueError(b"fail")
+  with open(fname,'rb') as fd:
+    return fd.read()
 
-  with open(keyf,'rb') as fd:
-    secret = fd.read()
+def respond(chal, id):
+  path = os.path.expanduser(datadir+binascii.hexlify(id).decode())
+  try:
+    secret = readf(path+'/key')
+  except ValueError:
+    return b'fail' # key not found
 
   if len(secret)!= sphinxlib.DECAF_255_SCALAR_BYTES:
     if verbose: print("secret wrong size")
     return b'fail'
 
   try:
-    return sphinxlib.respond(chal, secret)
+    rule = readf(path+'/rule')
+  except ValueError:
+    return b'fail' # key not found
+
+  try:
+    return sphinxlib.respond(chal, secret)+rule
   except ValueError:
     if verbose: print("respond fail")
     return b'fail'
@@ -49,9 +59,9 @@ class SphinxOracleProtocol(asyncio.Protocol):
     self.transport = transport
 
   def create(self, data):
-    # needs pubkey, id, challenge, sig(id)
+    # needs pubkey, id, challenge, rule, sig(id)
     # returns output from ./response | fail
-    pk = data[129:161]
+    pk = data[171:203]
     try:
       data = pysodium.crypto_sign_open(data, pk)
     except ValueError:
@@ -59,6 +69,7 @@ class SphinxOracleProtocol(asyncio.Protocol):
       return b'fail'
     id = data[1:33]
     chal = data[33:65]
+    rule = data[65:107]
     tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
 
     if os.path.exists(tdir):
@@ -70,6 +81,10 @@ class SphinxOracleProtocol(asyncio.Protocol):
     with open(tdir+'/pub','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
       fd.write(pk)
+
+    with open(tdir+'/rule','wb') as fd:
+      os.fchmod(fd.fileno(),0o600)
+      fd.write(rule)
 
     k=pysodium.randombytes(32)
     with open(tdir+'/key','wb') as fd:
@@ -123,7 +138,12 @@ class SphinxOracleProtocol(asyncio.Protocol):
       fd.write(k)
 
     try:
-      return sphinxlib.respond(chal, k)
+      rule = readf(tdir+"/rule")
+    except:
+      return b'fail'
+
+    try:
+      return sphinxlib.respond(chal, k)+rule
     except ValueError:
       if verbose: print("respond fail")
       return b'fail'
