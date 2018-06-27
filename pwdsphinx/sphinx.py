@@ -10,6 +10,12 @@ except ImportError:
   import bin2pass, sphinxlib
   from config import getcfg
 
+haveqrcode=True
+try:
+  from qrencode import qrencode
+except ImportError:
+  haveqrcode=False
+
 win=False
 if platform.system() == 'Windows':
   win=True
@@ -248,11 +254,20 @@ class SphinxHandler():
     hostid = pysodium.crypto_generichash(host, salt, 32)
     return self.getusers(hostid) or []
 
+  def sync(self):
+    salt = self.getsalt()
+    sk = self.getkey()
+    encoder = qrencode.QREncoder()
+    encoder.encode(salt+sk)
+    encoder.asciipreview()
+
 def main():
   def usage():
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % sys.argv[0])
     print("usage: %s <get|change|commit|delete> <user> <site>" % sys.argv[0])
     print("usage: %s list <site>" % sys.argv[0])
+    if haveqrcode:
+      print("usage: %s sync" % sys.argv[0])
     sys.exit(1)
 
   if len(sys.argv) < 2: usage()
@@ -286,6 +301,9 @@ def main():
   elif sys.argv[1] == 'list':
     if len(sys.argv) != 3: usage()
     print(b'\n'.join(handler.list(sys.argv[2])).decode())
+  elif sys.argv[1] == 'sync':
+    if haveqrcode: handler.sync()
+    else: print("please `pip install qrencode` or equivalent to use this functions")
   else:
     usage()
 
