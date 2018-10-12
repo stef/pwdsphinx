@@ -28,8 +28,9 @@ CHANGE=b'\xaa'
 DELETE=b'\xff'
 
 class SphinxClientProtocol(asyncio.Protocol):
-  def __init__(self, message, loop,b,handler,cb):
+  def __init__(self, message, loop,b,pwd,handler,cb):
     self.b = b
+    self.pwd=pwd
     self.message = message
     self.loop = loop
     self.handler = handler
@@ -54,7 +55,7 @@ class SphinxClientProtocol(asyncio.Protocol):
       self.cb()
       return
 
-    rwd=sphinxlib.finish(self.b, data[:sphinxlib.DECAF_255_SER_BYTES])
+    rwd=sphinxlib.finish(self.pwd, self.b, data[:sphinxlib.DECAF_255_SER_BYTES])
 
     if self.handler.namesite is not None:
       print(self.handler.namesite['name'], self.handler.list(self.handler.namesite['site']))
@@ -175,11 +176,11 @@ class SphinxHandler():
     salt = self.getsalt()
     return pysodium.crypto_generichash(b''.join((user.encode(),host.encode())), salt, 32)
 
-  def doSphinx(self, message, host, b, cb):
+  def doSphinx(self, message, host, b, pwd, cb):
     self.hostid=pysodium.crypto_generichash(host, self.getsalt(), 32)
     signed=pysodium.crypto_sign(message,self.getkey())
     loop = asyncio.get_event_loop()
-    coro = loop.create_connection(lambda: SphinxClientProtocol(signed, loop, b, self, cb), address, port)
+    coro = loop.create_connection(lambda: SphinxClientProtocol(signed, loop, b, pwd, self, cb), address, port)
     try:
       loop.run_until_complete(coro)
       loop.run_forever()
@@ -209,7 +210,7 @@ class SphinxHandler():
                         c,
                         rule,
                         pysodium.crypto_sign_sk_to_pk(sk)])
-    self.doSphinx(message, host, b, cb)
+    self.doSphinx(message, host, b, pwd, cb)
 
   def get(self, cb, pwd, user, host):
     b, c = sphinxlib.challenge(pwd)
@@ -217,7 +218,7 @@ class SphinxHandler():
     message = b''.join([GET,
                         self.getid(host, user),
                         c])
-    self.doSphinx(message, host, b, cb)
+    self.doSphinx(message, host, b, pwd, cb)
 
   def change(self, cb, pwd, user, host):
     b, c = sphinxlib.challenge(pwd)
@@ -225,7 +226,7 @@ class SphinxHandler():
     message = b''.join([CHANGE,
                         self.getid(host, user),
                         c])
-    self.doSphinx(message, host, b, cb)
+    self.doSphinx(message, host, b, pwd, cb)
 
   def commit(self, cb, user, host):
     message = b''.join([COMMIT,self.getid(host, user)])
@@ -233,7 +234,7 @@ class SphinxHandler():
     self.namesite={'name': user, 'site': host}
     def callback():
       return
-    self.doSphinx(message, host, None, callback)
+    self.doSphinx(message, host, None, None, callback)
 
   def delete(self, user, host):
     message = b''.join([DELETE,self.getid(host, user)])
@@ -241,7 +242,7 @@ class SphinxHandler():
     hostid = pysodium.crypto_generichash(host, salt, 32)
     def callback():
       self.deluser(hostid,user)
-    self.doSphinx(message, host, None, callback)
+    self.doSphinx(message, host, None, None, callback)
 
   def list(self, host):
     salt = self.getsalt()
