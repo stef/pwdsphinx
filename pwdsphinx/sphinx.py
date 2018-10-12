@@ -58,7 +58,6 @@ class SphinxClientProtocol(asyncio.Protocol):
     rwd=sphinxlib.finish(self.pwd, self.b, data[:sphinxlib.DECAF_255_SER_BYTES])
 
     if self.handler.namesite is not None:
-      print(self.handler.namesite['name'], self.handler.list(self.handler.namesite['site']))
       if self.handler.namesite['name'].encode() not in self.handler.list(self.handler.namesite['site']):
         self.handler.cacheuser(self.handler.namesite)
 
