@@ -43,7 +43,7 @@ def respond(chal, secret)
 return the response
 
 ```
-def finish(bfac, resp)
+def finish(pwd, bfac, resp)
 ```
 
 returns the raw 32 byte password.
