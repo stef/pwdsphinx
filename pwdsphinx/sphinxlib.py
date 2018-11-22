@@ -40,7 +40,7 @@ def challenge(pwd):
         raise ValueError("invalid parameter")
     bfac = ctypes.create_string_buffer(DECAF_255_SCALAR_BYTES)
     chal = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    __check(sphinxlib.sphinx_challenge(pwd, len(pwd), bfac, chal))
+    sphinxlib.sphinx_challenge(pwd, len(pwd), bfac, chal)
     return (bfac.raw, chal.raw)
 
 # int respond(const uint8_t *chal, const uint8_t *secret, uint8_t *resp)
