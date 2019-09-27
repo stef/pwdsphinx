@@ -130,7 +130,6 @@ class SphinxHandler():
       if users != []:
         with open(userfile, 'wb') as fd:
             # skip rules
-            fd.write(rules)
             fd.write(b'\n'.join(users))
       else:
         os.unlink(userfile)
@@ -229,7 +228,6 @@ class SphinxHandler():
 
   def commit(self, cb, user, host):
     message = b''.join([COMMIT,self.getid(host, user)])
-    salt = self.getsalt()
     self.namesite={'name': user, 'site': host}
     def callback():
       return
