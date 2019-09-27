@@ -49,7 +49,7 @@ def usage():
     sys.exit(0)
 
 def main():
-  if len(sys.argv)>3 or sys.argv in ('-h', '--help'):
+  if len(sys.argv)>3 or 'h' in sys.argv or '--help' in sys.argv:
     usage()
 
   size = 0
