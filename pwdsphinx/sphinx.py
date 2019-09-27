@@ -175,7 +175,6 @@ class SphinxHandler():
     return pysodium.crypto_generichash(b''.join((user.encode(),host.encode())), salt, 32)
 
   def doSphinx(self, message, host, b, pwd, cb):
-    self.hostid=pysodium.crypto_generichash(host, self.getsalt(), 32)
     signed=pysodium.crypto_sign(message,self.getkey())
     loop = asyncio.get_event_loop()
     coro = loop.create_connection(lambda: SphinxClientProtocol(signed, loop, b, pwd, self, cb), address, port)
