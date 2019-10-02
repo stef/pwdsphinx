@@ -38,10 +38,10 @@ class SphinxClientProtocol(asyncio.Protocol):
 
   def connection_made(self, transport):
     transport.write(self.message)
-    if verbose: print('Data sent: {!r}'.format(self.message))
+    if verbose: print('Data sent: {!r}'.format(self.message), file=sys.stderr)
 
   def data_received(self, data):
-    if verbose: print('Data received: ', data)
+    if verbose: print('Data received: ', data, file=sys.stderr)
 
     try:
       data = pysodium.crypto_sign_open(data, self.handler.getserverkey())
@@ -73,8 +73,8 @@ class SphinxClientProtocol(asyncio.Protocol):
 
   def connection_lost(self, exc):
     if verbose:
-        print('The server closed the connection')
-        print('Stop the event loop')
+        print('The server closed the connection', file=sys.stderr)
+        print('Stop the event loop', file=sys.stderr)
     self.loop.stop()
 
 class SphinxHandler():
