@@ -48,8 +48,8 @@ class SphinxClientProtocol(asyncio.Protocol):
     except ValueError:
       raise ValueError('invalid signature.\nabort')
 
-    if data!=b'ok' and (data[:-42] == b'fail' or len(data)!=sphinxlib.DECAF_255_SER_BYTES+42):
-        raise ValueError('fail')
+    if data!=b'ok' and (data[:-42] == b'fail' or len(data)!=sphinxlib.DECAF_255_SER_BYTES+90):
+      raise ValueError('fail')
 
     if not self.b:
       self.cb()
@@ -62,6 +62,11 @@ class SphinxClientProtocol(asyncio.Protocol):
         self.handler.cacheuser(self.handler.namesite)
 
     rule = data[sphinxlib.DECAF_255_SER_BYTES:]
+    esk = self.handler.getkey()
+    sk = pysodium.crypto_sign_sk_to_box_sk(esk)
+    epk = pysodium.crypto_sign_sk_to_pk(esk)
+    pk = pysodium.crypto_sign_pk_to_box_pk(epk)
+    rule = pysodium.crypto_box_seal_open(rule,pk,sk)
     if len(rule)!=42:
       raise ValueError('fail')
     rk = pysodium.crypto_generichash(self.handler.getkey(),self.handler.getsalt())
@@ -176,8 +181,11 @@ class SphinxHandler():
 
   def doSphinx(self, message, b, pwd, cb):
     signed=pysodium.crypto_sign(message,self.getkey())
+    sepk = self.getserverkey()
+    sxpk = pysodium.crypto_sign_pk_to_box_pk(sepk)
+    sealed = pysodium.crypto_box_seal(signed,sxpk)
     loop = asyncio.get_event_loop()
-    coro = loop.create_connection(lambda: SphinxClientProtocol(signed, loop, b, pwd, self, cb), address, port)
+    coro = loop.create_connection(lambda: SphinxClientProtocol(sealed, loop, b, pwd, self, cb), address, port)
     try:
       loop.run_until_complete(coro)
       loop.run_forever()

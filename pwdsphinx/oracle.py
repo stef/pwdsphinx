@@ -29,12 +29,13 @@ def readf(fname):
   with open(fname,'rb') as fd:
     return fd.read()
 
-def respond(chal, id):
+def respond(chal, id, secret = None):
   path = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-  try:
-    secret = readf(path+'/key')
-  except ValueError:
-    return b'fail' # key not found
+  if not secret:
+    try:
+        secret = readf(path+'/key')
+    except ValueError:
+        return b'fail' # key not found
 
   if len(secret)!= sphinxlib.DECAF_255_SCALAR_BYTES:
     if verbose: print("secret wrong size")
@@ -44,6 +45,10 @@ def respond(chal, id):
     rule = readf(path+'/rule')
   except ValueError:
     return b'fail' # key not found
+
+  with open(path+'/xpub','rb') as fd:
+    xpk = fd.read()
+  rule = pysodium.crypto_box_seal(rule, xpk)
 
   try:
     return sphinxlib.respond(chal, secret)+rule
@@ -81,6 +86,11 @@ class SphinxOracleProtocol(asyncio.Protocol):
     with open(tdir+'/pub','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
       fd.write(pk)
+
+    xpk = pysodium.crypto_sign_pk_to_box_pk(pk)
+    with open(tdir+'/xpub','wb') as fd:
+      os.fchmod(fd.fileno(),0o600)
+      fd.write(xpk)
 
     with open(tdir+'/rule','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
@@ -143,7 +153,7 @@ class SphinxOracleProtocol(asyncio.Protocol):
       return b'fail'
 
     try:
-      return sphinxlib.respond(chal, k)+rule
+      return respond(chal, id, secret = k)
     except ValueError:
       if verbose: print("respond fail")
       return b'fail'
@@ -168,14 +178,14 @@ class SphinxOracleProtocol(asyncio.Protocol):
     except FileNotFoundError:
       return b'fail'
 
-    os.unlink(tdir+'/new')
-
     if(len(k)!=32):
       return b'fail'
 
     with open(tdir+'/key','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
       fd.write(k)
+
+    os.unlink(tdir+'/new')
 
     return b'ok'
 
@@ -203,6 +213,10 @@ class SphinxOracleProtocol(asyncio.Protocol):
     if verbose:
       print('Data received: {!r}'.format(data))
 
+    esk,xsk,xpk = getkey(keydir)
+    data = pysodium.crypto_box_seal_open(data,xpk,xsk)
+    clearmem(xsk)
+
     if data[64] == 0:
       res = self.create(data)
     elif data[64] == GET:
@@ -226,9 +240,8 @@ class SphinxOracleProtocol(asyncio.Protocol):
     if verbose:
       print('Send: {!r}'.format(res))
 
-    key = getkey(keydir)
-    res=pysodium.crypto_sign(res,key)
-    clearmem(key)
+    res=pysodium.crypto_sign(res,esk)
+    clearmem(esk)
     self.transport.write(res)
 
     if verbose:
@@ -239,20 +252,31 @@ def getkey(keydir):
   datadir = os.path.expanduser(keydir)
   try:
     with open(datadir+'server-key', 'rb') as fd:
-      key = fd.read()
-    return key
+      esk = fd.read(pysodium.crypto_sign_SECRETKEYBYTES)
+    with open(datadir+'server-xkey', 'rb') as fd:
+      xsk = fd.read(pysodium.crypto_box_SECRETKEYBYTES)
+    with open(datadir+'server-xkey.pub', 'rb') as fd:
+      xpk = fd.read(pysodium.crypto_box_PUBLICKEYBYTES)
+    return esk, xsk, xpk
   except FileNotFoundError:
     print("no server key found, generating...")
     if not os.path.exists(datadir):
       os.mkdir(datadir,0o700)
-    pk, sk = pysodium.crypto_sign_keypair()
+    epk, esk = pysodium.crypto_sign_keypair()
+    xsk = pysodium.crypto_sign_sk_to_box_sk(esk)
+    xpk = pysodium.crypto_sign_pk_to_box_pk(epk)
     with open(datadir+'server-key','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
-      fd.write(sk)
+      fd.write(esk)
     with open(datadir+'server-key.pub','wb') as fd:
-      fd.write(pk)
+      fd.write(epk)
+    with open(datadir+'server-xkey','wb') as fd:
+      os.fchmod(fd.fileno(),0o600)
+      fd.write(xsk)
+    with open(datadir+'server-xkey.pub','wb') as fd:
+      fd.write(xpk)
     print("please share `%s` with all clients"  % (datadir+'server-key.pub'))
-    return sk
+    return esk,xsk,xpk
 
 def main():
   loop = asyncio.get_event_loop()
@@ -260,11 +284,12 @@ def main():
   coro = loop.create_server(SphinxOracleProtocol, address, port)
   server = loop.run_until_complete(coro)
 
-  key = getkey(keydir)
-  if key == None:
-    print("no signing key available.\nabort")
+  esk,xsk,xpk = getkey(keydir)
+  if None in (esk,xsk,xpk):
+    print("no server keys available.\nabort")
     sys.exit(1)
-  del key
+  clearmem(xsk)
+  clearmem(esk)
 
   # Serve requests until Ctrl+C is pressed
   if verbose:
