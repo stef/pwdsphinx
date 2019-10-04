@@ -250,6 +250,7 @@ class SphinxOracleProtocol(asyncio.Protocol):
 
 def getkey(keydir):
   datadir = os.path.expanduser(keydir)
+  esk = None
   try:
     with open(datadir+'server-key', 'rb') as fd:
       esk = fd.read(pysodium.crypto_sign_SECRETKEYBYTES)
@@ -262,7 +263,10 @@ def getkey(keydir):
     print("no server key found, generating...")
     if not os.path.exists(datadir):
       os.mkdir(datadir,0o700)
-    epk, esk = pysodium.crypto_sign_keypair()
+    if esk is None:
+        epk, esk = pysodium.crypto_sign_keypair()
+    else:
+        epk = pysodium.crypto_sign_sk_to_pk(esk)
     xsk = pysodium.crypto_sign_sk_to_box_sk(esk)
     xpk = pysodium.crypto_sign_pk_to_box_pk(epk)
     with open(datadir+'server-key','wb') as fd:
