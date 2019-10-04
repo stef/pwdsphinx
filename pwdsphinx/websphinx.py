@@ -79,7 +79,11 @@ def create(data):
   try:
     handler = SphinxHandler(datadir)
     pwd=getpwd("")
-    handler.create(callback, pwd, data['name'], data['site'], data['rules'], data['size'])
+    pwd2=getpwd("again")
+    if pwd != pwd2: 
+        send_message({ 'results': 'fail' })
+    else:
+        handler.create(callback, pwd, data['name'], data['site'], data['rules'], data['size'])
   except:
     send_message({ 'results': 'fail' })
 
