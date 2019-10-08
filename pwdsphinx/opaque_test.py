@@ -8,11 +8,11 @@ print "trying server inspects password registration flow"
 extra = "some additional secret data stored in the blob"
 rec = o.opaque_store(pwd, extra)
 print "usrSession"
-pub, sec = o.opaque_usrSession(pwd)
+pub, sec = o.opaque_session_usr_start(pwd)
 print "srvSession"
-resp, sk_s = o.opaque_srvSession(pub, rec)
+resp, sk_s = o.opaque_session_srv(pub, rec)
 print "usrSessionEnd"
-sk_u, extra = o.opaque_usrSessionEnd(pwd, resp, sec)
+sk_u, extra = o.opaque_session_usr_finish(pwd, resp, sec)
 print "sk_s", b2a_hex(sk_s)
 print "sk_u", b2a_hex(sk_u)
 assert(sk_s == sk_u)
@@ -23,21 +23,21 @@ assert(o.opaque_f(sk_s, 0x30)==o.opaque_f(sk_u, 0x30))
 
 print "trying alternative/private registration flow"
 # alternative/private registration flow:
-print "opaque_newUser"
-r, alpha = o.opaque_newUser(pwd)
-print "opaque_initUser"
-sec_s, pub_s = o.opaque_initUser(alpha)
-print "opaque_registerUser"
-rec = o.opaque_registerUser(pwd, r, pub_s, extra)
-print "opaque_saveUser"
-rec = o.opaque_saveUser(sec_s, pub_s, rec)
+print "opaque_private_init_usr_start"
+r, alpha = o.opaque_private_init_usr_start(pwd)
+print "opaque_private_init_srv_respond"
+sec_s, pub_s = o.opaque_private_init_srv_respond(alpha)
+print "opaque_private_init_usr_respond"
+rec = o.opaque_private_init_usr_respond(pwd, r, pub_s, extra)
+print "opaque_private_init_srv_finish"
+rec = o.opaque_private_init_srv_finish(sec_s, pub_s, rec)
 
 print("usrSession")
-pub, sec = o.opaque_usrSession(pwd)
+pub, sec = o.opaque_session_usr_start(pwd)
 print("srvSession")
-resp, sk_s = o.opaque_srvSession(pub, rec)
+resp, sk_s = o.opaque_session_srv(pub, rec)
 print("usrSessionEnd")
-sk_u, extra = o.opaque_usrSessionEnd(pwd, resp, sec)
+sk_u, extra = o.opaque_session_usr_finish(pwd, resp, sec)
 print "sk_s", b2a_hex(sk_s)
 print "sk_u", b2a_hex(sk_u)
 assert(sk_s == sk_u)
