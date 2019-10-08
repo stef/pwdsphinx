@@ -73,10 +73,10 @@ DECAF_X25519_PRIVATE_BYTES = 32
 DECAF_X25519_PUBLIC_BYTES = 32
 
 OPAQUE_BLOB_LEN = (crypto_secretbox_NONCEBYTES+DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+crypto_secretbox_MACBYTES)
-OPAQUE_USER_RECORD_LEN = (DECAF_255_SCALAR_BYTES+DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+OPAQUE_BLOB_LEN)
+OPAQUE_USER_RECORD_LEN = (DECAF_255_SCALAR_BYTES+DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+8+OPAQUE_BLOB_LEN)
 OPAQUE_USER_SESSION_PUBLIC_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES)
 OPAQUE_USER_SESSION_SECRET_LEN = (DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PRIVATE_BYTES)
-OPAQUE_SERVER_SESSION_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+OPAQUE_BLOB_LEN)
+OPAQUE_SERVER_SESSION_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+8+OPAQUE_BLOB_LEN)
 OPAQUE_REGISTER_PUBLIC_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES)
 OPAQUE_REGISTER_SECRET_LEN = (DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PRIVATE_BYTES)
 
@@ -86,13 +86,14 @@ OPAQUE_REGISTER_SECRET_LEN = (DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PRIVATE_BY
 # input password pw. The server needs to implement the storage of
 # this record and any binding to user names or as the paper suggests
 # sid.
-# int opaque_storePwdFile(const uint8_t *pw, const ssize_t pwlen, unsigned char rec[OPAQUE_USER_RECORD_LEN]);
-def opaque_store(pwd):
+# int opaque_storePwdFile(const uint8_t *pw, const ssize_t pwlen, const unsigned char *extra, const uint64_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN]);
+def opaque_store(pwd, extra = None):
     if not pwd:
         raise ValueError("invalid parameter")
 
-    rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN)
-    __check(sphinxlib.opaque_storePwdFile(pwd, len(pwd), rec))
+    rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN+(len(extra) if extra is not None else 0))
+    extra_len = ctypes.c_ulonglong(len(extra)) if extra is not None else ctypes.c_ulonglong(0)
+    __check(sphinxlib.opaque_storePwdFile(pwd, len(pwd), extra, extra_len, rec))
     return rec.raw
 
 # This function initiates a new OPAQUE session, is the same as the
@@ -122,9 +123,9 @@ def opaque_srvSession(pub, rec):
     if None in (pub, rec):
         raise ValueError("invalid parameter")
     if len(pub) != OPAQUE_USER_SESSION_PUBLIC_LEN: raise ValueError("invalid pub param")
-    if len(rec) != OPAQUE_USER_RECORD_LEN: raise ValueError("invalid rec param")
+    if len(rec) < OPAQUE_USER_RECORD_LEN: raise ValueError("invalid rec param")
 
-    resp = ctypes.create_string_buffer(OPAQUE_SERVER_SESSION_LEN)
+    resp = ctypes.create_string_buffer(OPAQUE_SERVER_SESSION_LEN + (len(rec) - OPAQUE_USER_RECORD_LEN))
     sk = ctypes.create_string_buffer(32)
     __check(sphinxlib.opaque_srvSession(pub, rec, resp, sk))
     return resp.raw, sk.raw
@@ -137,16 +138,17 @@ def opaque_srvSession(pub, rec):
 # step. All these input parameters are transformed into a shared/secret
 # session key pk, which should be the same as the one calculated by the
 # srvSession() function.
-# int opaque_usrSessionEnd(const uint8_t *pw, const ssize_t pwlen, const unsigned char resp[OPAQUE_SERVER_SESSION_LEN], const unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t *sk);
+# int opaque_usrSessionEnd(const uint8_t *pw, const ssize_t pwlen, const unsigned char resp[OPAQUE_SERVER_SESSION_LEN], const unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t *sk, uint8_t *extra)
 def opaque_usrSessionEnd(pwd, resp, sec):
     if None in (pwd, resp, sec):
         raise ValueError("invalid parameter")
-    if len(resp) != OPAQUE_SERVER_SESSION_LEN: raise ValueError("invalid resp param")
+    if len(resp) < OPAQUE_SERVER_SESSION_LEN: raise ValueError("invalid resp param")
     if len(sec) != OPAQUE_USER_SESSION_SECRET_LEN: raise ValueError("invalid sec param")
 
     sk = ctypes.create_string_buffer(32)
-    __check(sphinxlib.opaque_usrSessionEnd(pwd, len(pwd), resp, sec, sk))
-    return sk.raw
+    extra = ctypes.create_string_buffer(len(resp) - OPAQUE_SERVER_SESSION_LEN)
+    __check(sphinxlib.opaque_usrSessionEnd(pwd, len(pwd), resp, sec, sk, extra))
+    return sk.raw, extra.raw
 
 # This is a simple utility function that can be used to calculate
 # f_k(c), where c is a constant, this is useful if the peers want to
@@ -157,7 +159,8 @@ def opaque_f(k, val):
         raise ValueError("invalid parameter")
 
     res = ctypes.create_string_buffer(32)
-    sphinxlib.opaque_f(k, len(k), val, res)
+    v = ctypes.c_uint8(val)
+    sphinxlib.opaque_f(k, len(k), v, res)
     return res.raw
 
 # Alternative user initialization
@@ -204,15 +207,16 @@ def opaque_initUser(alpha):
 # running newUser(), and the output pub from the servers run of
 # initUser(). The result of this is the value rec which should be
 # passed for the last step to the server.
-# int opaque_registerUser(const uint8_t *pw, const ssize_t pwlen, const uint8_t *r, const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], unsigned char rec[OPAQUE_USER_RECORD_LEN]);
-def opaque_registerUser(pw, r, pub):
+# int opaque_registerUser(const uint8_t *pw, const ssize_t pwlen, const uint8_t *r, const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], const unsigned char *extra, const ssize_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN]);
+def opaque_registerUser(pw, r, pub, extra = None):
     if None in (pw, r, pub):
         raise ValueError("invalid parameter")
     if len(r) != 32: raise ValueError("invalid r param")
     if len(pub) != OPAQUE_REGISTER_PUBLIC_LEN: raise ValueError("invalid pub param")
 
-    rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN)
-    __check(sphinxlib.opaque_registerUser(pw, len(pw), r, pub, rec))
+    rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN+(len(extra) if extra is not None else 0))
+    extralen = ctypes.c_ulonglong(len(extra)) if extra is not None else ctypes.c_ulonglong(0)
+    __check(sphinxlib.opaque_registerUser(pw, len(pw), r, pub, extra, extralen, rec))
     return rec.raw
 
 # The server combines the sec value from its run of its initUser()
@@ -227,7 +231,7 @@ def opaque_saveUser(sec, pub, rec):
         raise ValueError("invalid parameter")
     if len(sec) != OPAQUE_REGISTER_SECRET_LEN: raise ValueError("invalid sec param")
     if len(pub) != OPAQUE_REGISTER_PUBLIC_LEN: raise ValueError("invalid pub param")
-    if len(rec) != OPAQUE_USER_RECORD_LEN: raise ValueError("invalid rec param")
+    if len(rec) < OPAQUE_USER_RECORD_LEN: raise ValueError("invalid rec param")
 
     sphinxlib.opaque_saveUser(sec, pub, rec)
     return rec
