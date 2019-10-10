@@ -77,7 +77,20 @@ def unpack_rule(rules):
     rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
     return rule, size
 
+def _get(s, pwd, user, host, cmd, rwd):
+    pub, sec = sphinxlib.opaque_session_usr_start(pwd)
+    msg = b''.join([cmd, getid(host, user), pub])
+    pk = getserverkey()
+    sealed = pysodium.crypto_box_seal(msg,pk)
+    s.send(sealed)
+    resp = s.recv(4096)
+    if resp == b'fail' or len(resp) < sphinxlib.OPAQUE_SERVER_SESSION_LEN:
+        return
+    return sphinxlib.opaque_session_usr_finish(pwd, resp, sec, rwd)
+
 def _create(s, pwd, user, host, extra):
+  rwd = None
+  try:
     r, alpha = sphinxlib.opaque_private_init_usr_start(pwd)
 
     msg = b''.join([CREATE, getid(host, user), alpha])
@@ -88,37 +101,13 @@ def _create(s, pwd, user, host, extra):
     rec, rwd = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, extra, rwd=True)
     s.send(rec)
     resp = s.recv(4096)
-    return resp, rwd
+    if(resp==b'ok'):
+      return rwd
+  except:
+    if rwd: clearmem(rwd)
 
-# this essentially creates an opaque record with a '' user, but the extra data contains the list of users that have an account on this host
-# what it does, it tries to call a change() on the (pwd,'',host) triple, if if this fails it tries a create(), otherwise it also implements a commit()
-# todo somehow refactor this so that we do not duplicate large parts of create/change/commit
-def upsert_user(s, pwd, user, host):
-    # change
-    res = _get(s, pwd, '', host, CHANGE)
-    if not res:
-        # create
-        extra = user.encode()
-        s.close()
-        s=connect()
-        try:
-            resp, rwd = _create(s, pwd, '', host, extra)
-        except:
-            print('fail')
-            return
-        finally:
-            clearmem(rwd)
-
-        if(resp!=b'ok'): # instead of plaintext fail/ok maye just run a GET to check if the rwd returned == the rwd we have established here?
-            print("fail")
-        return
-
-    sk, extra, rwd = res
-    clearmem(rwd)
-    users = set(extra.decode().split('\n'))
-    users.add(user)
-    extra = '\n'.join(sorted(users)).encode()
-
+def _change(s, pwd, sk, extra, rwd=False):
+  try:
     r, alpha = sphinxlib.opaque_private_init_usr_start(pwd)
 
     # implicit authentication by using an encrypted channel
@@ -127,64 +116,102 @@ def upsert_user(s, pwd, user, host):
     s.send(nonce+msg)
 
     msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        clearmem(sk)
-        print("fail")
-        return
+    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
 
-    rec = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, extra)
+    rec = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, extra, rwd)
+    if rwd:
+        rec, rwd = rec
     nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
     msg = pysodium.crypto_secretbox(rec,nonce,sk)
     s.send(nonce+msg)
 
     msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        print("fail")
-        return
-    finally:
-        clearmem(sk)
+    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
 
-    if(resp!=b'ok'):
-        print("fail")
-        return
+    if resp==b"ok":
+      return rwd or True
+    return
+  except:
+    return
+  finally:
+    clearmem(sk)
 
-    # commit
-    s.close()
-    s=connect()
-    res = _get(s, pwd, '', host, COMMIT)
-    if not res:
-        print("fail")
-        return
-    sk, extra, rwd = res
-    clearmem(rwd)
+def _commit(s, res):
+  try:
+    sk, extra = res
     auth = sphinxlib.opaque_f(sk, 2)
     s.send(auth)
 
     msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        print("fail")
-        return
-    finally:
-        clearmem(sk)
-
-    if(resp!=b'ok'):
-        print('fail')
-
-
-def users(s, pwd, host):
-    res = _get(s, pwd, '' , host, GET)
-    if not res: return
-    sk, extra, rwd = res
+    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    return resp
+  except:
+    return
+  finally:
     clearmem(sk)
-    clearmem(rwd)
-    print(repr(extra))
-    print(extra.decode().split('\n'))
+
+# changes and commits - used by <upsert|del>_user
+def _change_commit(s,pwd,sk,host,extra):
+  resp = _change(s, pwd, sk, extra)
+  if not resp:
+    print("fail")
+    return
+
+  # commit
+  s.close()
+  s=connect()
+  res = _get(s, pwd, '', host, COMMIT, False)
+  if not res:
+    print("fail")
+    return
+  resp = _commit(s, res)
+  if(resp!=b'ok'):
+    print('fail')
+
+# this essentially creates an opaque record with a '' user, but the extra data contains the list of users that have an account on this host
+# what it does, it tries to call a change() on the (pwd,'',host) triple, if if this fails it tries a create(), otherwise it also implements a commit()
+def upsert_user(s, pwd, user, host):
+    s.close()
+    s=connect()
+    # change
+    res = _get(s, pwd, '', host, CHANGE, False)
+    if not res:
+        # create
+        extra = user.encode()
+        s.close()
+        s=connect()
+        rwd = _create(s, pwd, '', host, extra)
+        if rwd:
+          clearmem(rwd)
+        else:
+          print("fail")
+        return
+
+    sk, extra = res
+    users = set(extra.decode().split('\n'))
+    users.add(user)
+    extra = '\n'.join(sorted(users)).encode()
+    _change_commit(s,pwd,sk,host,extra)
+
+def del_user(s, pwd, user, host):
+    s.close()
+    s=connect()
+    # change
+    res = _get(s, pwd, '', host, CHANGE, False)
+    if not res:
+      print("fail")
+      return
+
+    sk, extra = res
+    users = set(extra.decode().split('\n'))
+    if not user in users:
+      print("fail")
+      clearmem(sk)
+      return
+    users.remove(user)
+    extra = '\n'.join(sorted(users)).encode()
+
+    _change_commit(s,pwd,sk,host,extra)
 
 def create(s, pwd, user, host, char_classes, size=0):
     if set(char_classes) - {'u','l','s','d'}:
@@ -197,34 +224,16 @@ def create(s, pwd, user, host, char_classes, size=0):
     # pack rule
     rule=struct.pack('>H', (rules << 7) | (size & 0x7f))
 
-    try:
-        resp, rwd = _create(s, pwd, user, host, rule)
-    except:
-        print('fail')
-        return
-
-    if(resp==b'ok'): # instead of plaintext fail/ok maybe just run a GET to check if the rwd returned == the rwd we have established here?
-        print(bin2pass.derive(rwd,char_classes,size).decode())
-        s.close()
-        s=connect()
-        upsert_user(s, pwd, user, host)
-    else:
-        print("fail")
-
-def _get(s, pwd, user, host, cmd):
-    pub, sec = sphinxlib.opaque_session_usr_start(pwd)
-    msg = b''.join([cmd, getid(host, user), pub])
-    pk = getserverkey()
-    sealed = pysodium.crypto_box_seal(msg,pk)
-    s.send(sealed)
-    resp = s.recv(4096)
-    if resp == b'fail' or len(resp) < sphinxlib.OPAQUE_SERVER_SESSION_LEN:
-        return
-    sk, extra, rwd = sphinxlib.opaque_session_usr_finish(pwd, resp, sec, True)
-    return sk, extra, rwd
+    rwd = _create(s, pwd, user, host, rule)
+    if(not rwd): # instead of plaintext fail/ok maybe just run a GET to check if the rwd returned == the rwd we have established here?
+      print("fail")
+      return
+    print(bin2pass.derive(rwd,char_classes,size).decode())
+    clearmem(rwd)
+    upsert_user(s, pwd, user, host)
 
 def get(s, pwd, user, host):
-    ret = _get(s, pwd, user, host, GET)
+    ret = _get(s, pwd, user, host, GET, True)
     if not ret:
         print("fail")
         return
@@ -235,10 +244,9 @@ def get(s, pwd, user, host):
     clearmem(rwd)
 
 def delete(s, pwd, user, host):
-    res = _get(s, pwd, user, host, DELETE)
+    res = _get(s, pwd, user, host, DELETE, False)
     if not res: return
-    sk, extra, rwd = res
-    clearmem(rwd)
+    sk, extra = res
     auth = sphinxlib.opaque_f(sk, 2)
     s.send(auth)
 
@@ -251,77 +259,42 @@ def delete(s, pwd, user, host):
     finally:
         clearmem(sk)
 
-    if(resp==b'ok'):
-        print("deleted")
-        # todo implement delete user from user list
-    else:
+    if(resp!=b'ok'):
         print("fail")
+        return
+    print("deleted")
+    del_user(s, pwd, user, host)
 
 def change(s, pwd, user, host):
-    res = _get(s, pwd, user, host, CHANGE)
+    res = _get(s, pwd, user, host, CHANGE, False)
     if not res: return
-    sk, rule, rwd = res
-    clearmem(rwd)
+    sk, rule = res
 
-    r, alpha = sphinxlib.opaque_private_init_usr_start(pwd)
-
-    # implicit authentication by using an encrypted channel
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(alpha,nonce,sk)
-    s.send(nonce+msg)
-
-    msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        clearmem(sk)
-        print("fail")
-        return
-
-    rec, rwd = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, rule, rwd=True)
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(rec,nonce,sk)
-    s.send(nonce+msg)
-
-    msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        print("fail")
-        return
-    finally:
-        clearmem(sk)
-
-    if(resp==b'ok'):
-        classes, size = unpack_rule(rule)
-        print(bin2pass.derive(rwd,classes,size).decode())
-    else:
-        print("fail")
-    clearmem(rwd)
+    rwd = _change(s, pwd, sk, rule, rwd = True)
+    if not rwd:
+      print('fail')
+      return
+    classes, size = unpack_rule(rule)
+    print(bin2pass.derive(rwd,classes,size).decode())
 
 def commit(s, pwd, user, host):
-    res = _get(s, pwd, user, host, COMMIT)
+    res = _get(s, pwd, user, host, COMMIT, False)
     if not res: return
-    sk, extra, rwd = res
-    clearmem(rwd)
-    auth = sphinxlib.opaque_f(sk, 2)
-    s.send(auth)
+    resp = _commit(s, res)
 
-    msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
+    if(resp!=b'ok'):
         print("fail")
         return
-    finally:
-        clearmem(sk)
+    s.close()
+    s=connect()
+    get(s,pwd,user,host)
 
-    if(resp==b'ok'):
-        s.close()
-        s=connect()
-        get(s,pwd,user,host)
-    else:
-        print("fail")
+def users(s, pwd, host):
+    res = _get(s, pwd, '' , host, GET, False)
+    if not res: return
+    sk, extra = res
+    clearmem(sk)
+    print('\n'.join(extra.decode().split('\n')))
 
 def main():
   def usage():
@@ -366,6 +339,7 @@ def main():
     s = connect()
     pwd = sys.stdin.buffer.read()
     cmd(s, pwd, *args)
+    clearmem(pwd)
     s.close()
   else:
     usage()
