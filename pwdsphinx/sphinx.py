@@ -77,6 +77,18 @@ def unpack_rule(rules):
     rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
     return rule, size
 
+def boxed_recv(s, sk):
+    try:
+      msg = s.recv(4096)
+      return pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    except:
+      return
+
+def boxed_send(s, sk, msg):
+  nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+  msg = pysodium.crypto_secretbox(msg,nonce,sk)
+  s.send(nonce+msg)
+
 def _get(s, pwd, user, host, cmd, rwd):
     pub, sec = sphinxlib.opaque_session_usr_start(pwd)
     msg = b''.join([cmd, getid(host, user), pub])
@@ -111,22 +123,16 @@ def _change(s, pwd, sk, extra, rwd=False):
     r, alpha = sphinxlib.opaque_private_init_usr_start(pwd)
 
     # implicit authentication by using an encrypted channel
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(alpha,nonce,sk)
-    s.send(nonce+msg)
+    boxed_send(s, sk, alpha)
 
-    msg = s.recv(4096)
-    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    resp = boxed_recv(s, sk)
 
     rec = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, extra, rwd)
     if rwd:
         rec, rwd = rec
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(rec,nonce,sk)
-    s.send(nonce+msg)
+    boxed_send(s, sk, rec)
 
-    msg = s.recv(4096)
-    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    resp = boxed_recv(s, sk)
 
     if resp==b"ok":
       return rwd or True
@@ -141,10 +147,7 @@ def _commit(s, res):
     sk, extra = res
     auth = sphinxlib.opaque_f(sk, 2)
     s.send(auth)
-
-    msg = s.recv(4096)
-    resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    return resp
+    return boxed_recv(s, sk)
   except:
     return
   finally:
@@ -154,7 +157,6 @@ def _commit(s, res):
 def _change_commit(s,pwd,sk,host,extra):
   resp = _change(s, pwd, sk, extra)
   if not resp:
-    print("fail")
     return
 
   # commit
@@ -162,11 +164,11 @@ def _change_commit(s,pwd,sk,host,extra):
   s=connect()
   res = _get(s, pwd, '', host, COMMIT, False)
   if not res:
-    print("fail")
     return
   resp = _commit(s, res)
   if(resp!=b'ok'):
-    print('fail')
+    return
+  return True
 
 # this essentially creates an opaque record with a '' user, but the extra data contains the list of users that have an account on this host
 # what it does, it tries to call a change() on the (pwd,'',host) triple, if if this fails it tries a create(), otherwise it also implements a commit()
@@ -184,14 +186,14 @@ def upsert_user(s, pwd, user, host):
         if rwd:
           clearmem(rwd)
         else:
-          print("fail")
-        return
+          return
+        return True
 
     sk, extra = res
     users = set(extra.decode().split('\n'))
     users.add(user)
     extra = '\n'.join(sorted(users)).encode()
-    _change_commit(s,pwd,sk,host,extra)
+    return _change_commit(s,pwd,sk,host,extra)
 
 def del_user(s, pwd, user, host):
     s.close()
@@ -199,19 +201,17 @@ def del_user(s, pwd, user, host):
     # change
     res = _get(s, pwd, '', host, CHANGE, False)
     if not res:
-      print("fail")
       return
 
     sk, extra = res
     users = set(extra.decode().split('\n'))
     if not user in users:
-      print("fail")
       clearmem(sk)
       return
     users.remove(user)
     extra = '\n'.join(sorted(users)).encode()
 
-    _change_commit(s,pwd,sk,host,extra)
+    return _change_commit(s,pwd,sk,host,extra)
 
 def create(s, pwd, user, host, char_classes, size=0):
     if set(char_classes) - {'u','l','s','d'}:
@@ -226,22 +226,21 @@ def create(s, pwd, user, host, char_classes, size=0):
 
     rwd = _create(s, pwd, user, host, rule)
     if(not rwd): # instead of plaintext fail/ok maybe just run a GET to check if the rwd returned == the rwd we have established here?
-      print("fail")
       return
     print(bin2pass.derive(rwd,char_classes,size).decode())
     clearmem(rwd)
-    upsert_user(s, pwd, user, host)
+    return upsert_user(s, pwd, user, host)
 
 def get(s, pwd, user, host):
     ret = _get(s, pwd, user, host, GET, True)
     if not ret:
-        print("fail")
         return
     sk, extra, rwd = ret
     clearmem(sk)
     classes, size = unpack_rule(extra)
     print(bin2pass.derive(rwd,classes,size).decode())
     clearmem(rwd)
+    return True
 
 def delete(s, pwd, user, host):
     res = _get(s, pwd, user, host, DELETE, False)
@@ -250,20 +249,13 @@ def delete(s, pwd, user, host):
     auth = sphinxlib.opaque_f(sk, 2)
     s.send(auth)
 
-    msg = s.recv(4096)
-    try:
-        resp = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        print("fail")
-        return
-    finally:
-        clearmem(sk)
+    resp = boxed_recv(s, sk)
+    clearmem(sk)
 
     if(resp!=b'ok'):
-        print("fail")
         return
     print("deleted")
-    del_user(s, pwd, user, host)
+    return del_user(s, pwd, user, host)
 
 def change(s, pwd, user, host):
     res = _get(s, pwd, user, host, CHANGE, False)
@@ -272,10 +264,10 @@ def change(s, pwd, user, host):
 
     rwd = _change(s, pwd, sk, rule, rwd = True)
     if not rwd:
-      print('fail')
       return
     classes, size = unpack_rule(rule)
     print(bin2pass.derive(rwd,classes,size).decode())
+    return True
 
 def commit(s, pwd, user, host):
     res = _get(s, pwd, user, host, COMMIT, False)
@@ -283,11 +275,10 @@ def commit(s, pwd, user, host):
     resp = _commit(s, res)
 
     if(resp!=b'ok'):
-        print("fail")
         return
     s.close()
     s=connect()
-    get(s,pwd,user,host)
+    return get(s,pwd,user,host)
 
 def users(s, pwd, host):
     res = _get(s, pwd, '' , host, GET, False)
@@ -295,6 +286,7 @@ def users(s, pwd, host):
     sk, extra = res
     clearmem(sk)
     print('\n'.join(extra.decode().split('\n')))
+    return True
 
 def main():
   def usage():
@@ -338,9 +330,12 @@ def main():
   if cmd is not None:
     s = connect()
     pwd = sys.stdin.buffer.read()
-    cmd(s, pwd, *args)
+    ret = cmd(s, pwd, *args)
     clearmem(pwd)
     s.close()
+    if not ret:
+      print("fail")
+      sys.exit(1)
   else:
     usage()
 
