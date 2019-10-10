@@ -66,7 +66,7 @@ def finish(pwd, bfac, resp):
     __check(sphinxlib.sphinx_finish(pwd, len(pwd), bfac, resp, rwd))
     return rwd.raw
 
-from pysodium import crypto_secretbox_MACBYTES, crypto_secretbox_NONCEBYTES
+from pysodium import crypto_secretbox_MACBYTES, crypto_secretbox_NONCEBYTES, crypto_secretbox_KEYBYTES
 
 DECAF_255_SCALAR_BYTES = 32
 DECAF_X25519_PRIVATE_BYTES = 32
@@ -76,7 +76,7 @@ OPAQUE_BLOB_LEN = (crypto_secretbox_NONCEBYTES+DECAF_X25519_PRIVATE_BYTES+DECAF_
 OPAQUE_USER_RECORD_LEN = (DECAF_255_SCALAR_BYTES+DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+8+OPAQUE_BLOB_LEN)
 OPAQUE_USER_SESSION_PUBLIC_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES)
 OPAQUE_USER_SESSION_SECRET_LEN = (DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PRIVATE_BYTES)
-OPAQUE_SERVER_SESSION_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+8+OPAQUE_BLOB_LEN)
+OPAQUE_SERVER_SESSION_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES+32+8+OPAQUE_BLOB_LEN)
 OPAQUE_REGISTER_PUBLIC_LEN = (DECAF_X25519_PUBLIC_BYTES+DECAF_X25519_PUBLIC_BYTES)
 OPAQUE_REGISTER_SECRET_LEN = (DECAF_X25519_PRIVATE_BYTES+DECAF_X25519_PRIVATE_BYTES)
 
@@ -138,8 +138,8 @@ def opaque_session_srv(pub, rec):
 # step. All these input parameters are transformed into a shared/secret
 # session key pk, which should be the same as the one calculated by the
 # srvSession() function.
-# int opaque_session_usr_finish(const uint8_t *pw, const ssize_t pwlen, const unsigned char resp[OPAQUE_SERVER_SESSION_LEN], const unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t *sk, uint8_t *extra)
-def opaque_session_usr_finish(pwd, resp, sec):
+# int opaque_session_usr_finish(const uint8_t *pw, const ssize_t pwlen, const unsigned char resp[OPAQUE_SERVER_SESSION_LEN], const unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t *sk, uint8_t *extra, rwd[crypto_secretbox_KEYBYTES] )
+def opaque_session_usr_finish(pwd, resp, sec, rwd = False):
     if None in (pwd, resp, sec):
         raise ValueError("invalid parameter")
     if len(resp) < OPAQUE_SERVER_SESSION_LEN: raise ValueError("invalid resp param")
@@ -147,7 +147,10 @@ def opaque_session_usr_finish(pwd, resp, sec):
 
     sk = ctypes.create_string_buffer(32)
     extra = ctypes.create_string_buffer(len(resp) - OPAQUE_SERVER_SESSION_LEN)
-    __check(sphinxlib.opaque_session_usr_finish(pwd, len(pwd), resp, sec, sk, extra))
+    rw = ctypes.create_string_buffer(crypto_secretbox_KEYBYTES) if rwd else None
+    __check(sphinxlib.opaque_session_usr_finish(pwd, len(pwd), resp, sec, sk, extra, rw))
+    if rwd:
+        return sk.raw, extra.raw, rw.raw
     return sk.raw, extra.raw
 
 # This is a simple utility function that can be used to calculate
@@ -207,8 +210,8 @@ def opaque_private_init_srv_respond(alpha):
 # running newUser(), and the output pub from the servers run of
 # initUser(). The result of this is the value rec which should be
 # passed for the last step to the server.
-# int opaque_private_init_usr_respond(const uint8_t *pw, const ssize_t pwlen, const uint8_t *r, const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], const unsigned char *extra, const ssize_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN]);
-def opaque_private_init_usr_respond(pw, r, pub, extra = None):
+# int opaque_private_init_usr_respond(const uint8_t *pw, const ssize_t pwlen, const uint8_t *r, const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], const unsigned char *extra, const ssize_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN], rwd[crypto_secretbox_KEYBYTES]);
+def opaque_private_init_usr_respond(pw, r, pub, extra = None, rwd = False):
     if None in (pw, r, pub):
         raise ValueError("invalid parameter")
     if len(r) != 32: raise ValueError("invalid r param")
@@ -216,7 +219,10 @@ def opaque_private_init_usr_respond(pw, r, pub, extra = None):
 
     rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN+(len(extra) if extra is not None else 0))
     extralen = ctypes.c_ulonglong(len(extra)) if extra is not None else ctypes.c_ulonglong(0)
-    __check(sphinxlib.opaque_private_init_usr_respond(pw, len(pw), r, pub, extra, extralen, rec))
+    rw = ctypes.create_string_buffer(crypto_secretbox_KEYBYTES) if rwd else None
+    __check(sphinxlib.opaque_private_init_usr_respond(pw, len(pw), r, pub, extra, extralen, rec, rw))
+    if rwd:
+        return rec.raw, rw.raw
     return rec.raw
 
 # The server combines the sec value from its run of its initUser()
