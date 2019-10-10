@@ -222,6 +222,9 @@ def getkey(keydir):
     return sk,pk
 
 def main():
+    sk,pk=getkey(keydir)
+    clearmem(sk)
+
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
