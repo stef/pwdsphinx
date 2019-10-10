@@ -1,0 +1,30 @@
+WIP/TODO
+
+create:
+U: (r, alpha=hash(pwd)^r) = opaque_newuser(pwd)              (r: blinding factor, alpha: blinded password)
+S: (Ps, ps, k, beta=alpha^k) = opaque_initUser(alpha)        (Ps, ps: pub/sec long-term server keypair, k: server seed to sphinx protocol, beta: k contributed to the blinded password alpha)
+U: (K = hash(pwd||beta^-r), blob = authENC(K, (Pu,pu,Ps, extra))) = opaque_registerUser(pwd, r, beta, Ps)
+S: store(ps,Ps,Pu,k,blob)
+
+get:
+U: (r, alpha=hash(pwd)^r, Xu, xu) = opaque_usrSession(pwd)              (r: blinding factor, alpha: blinded password, Xu,xu: pub/sec user ephemeral key (only used for delete/change/undo))
+S: (beta=alpha^k, blob, Xs, xs, Ks = 3dh(Xu,Pu,xs,ps)) = opaque_srvSession(k, alpha, Xu, Pu, ps, xs)   (Xs,xs: pub/sec ephemeral serverkey)
+U: (K = hash(pwd||beta^-r), (Pu,pu,Ps,extra) = authDec(K, blob))=opaque_userSessionEnd(pwd, r, beta, blob, Xs)
+
+delete:
+like get, then:
+U: Ks = 3dh(Xs,Ps,xu,pu), cmd = authenc(Ks, "delete")
+S: if authdec(Ks,cmd) == delete: deletes record, response = authenc(Ks,"ok" | "fail")
+U: authdec(Ks,response)
+
+change:
+like get, then:
+U: Ks = 3dh(Xs,Ps,xu,pu), r, alpha = hash(pwd)^r, cmd = authenc(Ks, "change")
+S: (k, beta=alpha^k) = change(alpha, cmd)                                             (?also change Ps,ps?, then we can use opaque_initUser())
+U: (K = hash(pwd||beta^-r), blob = authENC(K, (Pu,pu,Ps, extra))) = opaque_registerUser(pwd, r, beta, Ps)
+S: store(ps,Ps,Pu,k,blob), store previous(ps,Ps,Pu,k,blob) for undo
+
+undo:
+like get, then:
+U: Ks = 3dh(Xs,Ps,xu,pu), r, alpha = hash(pwd)^r, cmd = authenc(Ks, "undo")
+S: replaces latest (ps,Ps,Pu,k,blob) with previous, deletes previous
