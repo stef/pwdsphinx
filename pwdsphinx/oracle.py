@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 
-import asyncio, datetime, os, binascii, shutil, sys
+import socket, sys, os, datetime, binascii, pysodium, shutil
 from SecureString import clearmem
-import pysodium
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
 cfg = getcfg('sphinx')
 
 verbose = cfg['server'].getboolean('verbose')
 address = cfg['server']['address']
-port = cfg['server']['port']
+port = int(cfg['server']['port'])
 datadir = cfg['server']['datadir']
 keydir = cfg['server']['keydir']
 
@@ -22,291 +21,239 @@ COMMIT=0x99
 CHANGE=0xaa
 DELETE=0xff
 
-def readf(fname):
-  if not os.path.exists(fname):
-    print(fname,'not exist')
-    raise ValueError(b"fail")
-  with open(fname,'rb') as fd:
-    return fd.read()
+def fail(s):
+    if verbose: print('fail')
+    s.send(b'fail') # plaintext :/
+    s.close()
 
-def respond(chal, id, secret = None):
-  path = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-  if not secret:
-    try:
-        secret = readf(path+'/key')
-    except ValueError:
-        return b'fail' # key not found
+def create(conn, msg):
+    id = msg[1:33]
+    alpha = msg[33:65]
 
-  if len(secret)!= sphinxlib.DECAF_255_SCALAR_BYTES:
-    if verbose: print("secret wrong size")
-    return b'fail'
+    sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
+    conn.send(pub)
+    rec = conn.recv(4096)
+    rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
 
-  try:
-    rule = readf(path+'/rule')
-  except ValueError:
-    return b'fail' # key not found
-
-  with open(path+'/xpub','rb') as fd:
-    xpk = fd.read()
-  rule = pysodium.crypto_box_seal(rule, xpk)
-
-  try:
-    return sphinxlib.respond(chal, secret)+rule
-  except ValueError:
-    if verbose: print("respond fail")
-    return b'fail'
-
-class SphinxOracleProtocol(asyncio.Protocol):
-  def connection_made(self, transport):
-    if verbose:
-      peername = transport.get_extra_info('peername')
-      print('{} Connection from {}'.format(datetime.datetime.now(), peername))
-    self.transport = transport
-
-  def create(self, data):
-    # needs pubkey, id, challenge, rule, sig(id)
-    # returns output from ./response | fail
-    pk = data[171:203]
-    try:
-      data = pysodium.crypto_sign_open(data, pk)
-    except ValueError:
-      print('invalid signature')
-      return b'fail'
-    id = data[1:33]
-    chal = data[33:65]
-    rule = data[65:107]
+    # store record
     tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
 
     if os.path.exists(tdir):
-      print(tdir, 'exists')
-      return b'fail' # key already exists
+      if verbose: print("%s exists" % tdir)
+      fail(conn)
+      return
+
+    if not os.path.exists(os.path.expanduser(datadir)):
+        os.mkdir(os.path.expanduser(datadir),0o700)
 
     os.mkdir(tdir,0o700)
 
-    with open(tdir+'/pub','wb') as fd:
+    with open(tdir+'/rec','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
-      fd.write(pk)
+      fd.write(rec)
 
-    xpk = pysodium.crypto_sign_pk_to_box_pk(pk)
-    with open(tdir+'/xpub','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(xpk)
+    conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
+    conn.close()
 
-    with open(tdir+'/rule','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(rule)
+def get(conn, msg, session=False):
+    id = msg[1:33]
 
-    k=pysodium.randombytes(32)
-    with open(tdir+'/key','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(k)
+    recfile = "%s/rec" % os.path.expanduser(datadir+binascii.hexlify(id).decode())
 
-    return respond(chal, id)
+    if not os.path.exists(recfile):
+        if verbose: print('%s does not exist' % recfile)
+        fail(conn)
+        return
+    with open(recfile,'rb') as fd:
+        rec = fd.read()
 
-  def getpk(self,data):
-    id = data[65:97]
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-    with open(tdir+'/pub','rb') as fd:
-      return fd.read()
+    if len(rec) <= sphinxlib.OPAQUE_USER_RECORD_LEN:
+        if verbose: print("rec wrong size")
+        fail(conn)
+        return
 
-  def get(self, data):
-    # needs id, challenge, sig(id)
-    # returns output from ./response | fail
-    try:
-      pk = self.getpk(data)
-    except:
-      return b'fail'
-    try:
-      data = pysodium.crypto_sign_open(data, pk)
-    except ValueError:
-      print('invalid signature')
-      return b'fail'
-    id = data[1:33]
-    chal = data[33:65]
+    pub = msg[33:]
+    resp, sk = sphinxlib.opaque_session_srv(pub, rec)
+    conn.send(resp)
 
-    return respond(chal, id)
+    if not session:
+        clearmem(sk)
+        conn.close()
+    else:
+        return sk
 
-  def change(self, data):
-    # needs id, challenge, sig(id)
-    # returns output from ./response | fail
-    try:
-      pk = self.getpk(data)
-    except:
-      return b'fail'
-    try:
-      data = pysodium.crypto_sign_open(data, pk)
-    except ValueError:
-      print('invalid signature')
-      return b'fail'
-    id = data[1:33]
-    chal = data[33:65]
-
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-    k=pysodium.randombytes(32)
-    with open(tdir+'/new','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(k)
-
-    try:
-      rule = readf(tdir+"/rule")
-    except:
-      return b'fail'
-
-    try:
-      return respond(chal, id, secret = k)
-    except ValueError:
-      if verbose: print("respond fail")
-      return b'fail'
-
-  def commit(self, data):
-    # needs id, sig(id)
-    try:
-      pk = self.getpk(data)
-    except:
-      return b'fail'
-    try:
-      data = pysodium.crypto_sign_open(data, pk)
-    except ValueError:
-      print('invalid signature')
-      return b'fail'
-    id = data[1:33]
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-
-    try:
-      with open(tdir+'/new','rb') as fd:
-        k = fd.read()
-    except FileNotFoundError:
-      return b'fail'
-
-    if(len(k)!=32):
-      return b'fail'
-
-    with open(tdir+'/key','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(k)
-
-    os.unlink(tdir+'/new')
-
-    return b'ok'
-
-  def delete(self, data):
-    # needs id, sig(id)
-    # returns ok | fail
-    try:
-      pk = self.getpk(data)
-    except:
-      return b'fail'
-    try:
-      data = pysodium.crypto_sign_open(data, pk)
-    except ValueError:
-      print('invalid signature')
-      return b'fail'
-    id = data[1:33]
+def delete(conn, msg):
+    id = msg[1:33]
+    sk = get(conn, msg, True)
+    if not sk:
+        return
+    usr_auth = conn.recv(4096)
+    auth = sphinxlib.opaque_f(sk, 2)
+    if auth != usr_auth:
+        fail(conn)
+        return
 
     tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
     shutil.rmtree(tdir)
-    return b'ok'
+    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
+    conn.send(nonce+msg)
+    conn.close()
 
-  def data_received(self, data):
-    res = b''
+def change(conn, msg):
+    id = msg[1:33]
+    sk = get(conn, msg, True)
+    if not sk:
+        return
 
-    if verbose:
-      print('Data received: {!r}'.format(data))
+    msg = conn.recv(4096)
+    alpha = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
+    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+    msg = pysodium.crypto_secretbox(pub,nonce,sk)
+    conn.send(nonce+msg)
 
-    esk,xsk,xpk = getkey(keydir)
-    data = pysodium.crypto_box_seal_open(data,xpk,xsk)
-    clearmem(xsk)
+    msg = conn.recv(4096)
+    try:
+        rec = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
+    except:
+        fail(conn)
+        return
+    rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
 
-    if data[64] == 0:
-      res = self.create(data)
-    elif data[64] == GET:
-      # needs id, challenge, sig(id)
-      # returns output from ./response | fail
-      res = self.get(data)
-    elif data[64] == CHANGE:
-      # needs id, challenge, sig(id)
-      # changes stored secret
-      # returns output from ./response | fail
-      res = self.change(data)
-    elif data[64] == DELETE:
-      # needs id, sig(id)
-      # returns ok|fail
-      res = self.delete(data)
-    elif data[64] == COMMIT:
-      # needs id, sig(id)
-      # returns ok|fail
-      res = self.commit(data)
+    # store record
+    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
 
-    if verbose:
-      print('Send: {!r}'.format(res))
+    if not os.path.exists(tdir):
+      if verbose: print("%s does not exist" % tdir)
+      fail(conn)
+      return
 
-    res=pysodium.crypto_sign(res,esk)
-    clearmem(esk)
-    self.transport.write(res)
+    with open(tdir+'/new','wb') as fd:
+      os.fchmod(fd.fileno(),0o600)
+      fd.write(rec)
 
-    if verbose:
-      print('Close the client socket')
-    self.transport.close()
+    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
+    conn.send(nonce+msg)
+    conn.close()
+
+def commit(conn, msg):
+    id = msg[1:33]
+    sk = get(conn, msg, True)
+    if not sk:
+        return
+    usr_auth = conn.recv(4096)
+    auth = sphinxlib.opaque_f(sk, 2)
+    if auth != usr_auth:
+        print("auth :/")
+        fail(conn)
+        return
+
+    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
+    try:
+      with open(tdir+'/new','rb') as fd:
+        rec = fd.read()
+    except FileNotFoundError:
+      if verbose: print("not found %s/new" % tdir)
+      fail(conn)
+      return
+
+    if(len(rec)<sphinxlib.OPAQUE_USER_RECORD_LEN):
+      if verbose: print("invalid %s/new" % tdir)
+      fail(conn)
+      return
+
+    with open(tdir+'/rec','wb') as fd:
+      os.fchmod(fd.fileno(),0o600)
+      fd.write(rec)
+
+    os.unlink(tdir+'/new')
+
+    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
+    conn.send(nonce+msg)
+    conn.close()
+
+def handler(conn):
+   data = conn.recv(4096)
+   sk,pk=getkey(keydir)
+   try:
+     data = pysodium.crypto_box_seal_open(data,pk,sk)
+   except:
+     fail(conn)
+     os._exit(0)
+   clearmem(sk)
+
+   if verbose:
+     print('Data received: {!r}'.format(data))
+
+   if data[0] == CREATE:
+     create(conn, data)
+   elif data[0] == GET:
+     get(conn, data)
+   elif data[0] == CHANGE:
+     change(conn, data)
+   elif data[0] == DELETE:
+     delete(conn, data)
+   elif data[0] == COMMIT:
+     commit(conn, data)
+   os._exit(0)
 
 def getkey(keydir):
-  datadir = os.path.expanduser(keydir)
-  esk = None
+  path = os.path.expanduser(keydir)
   try:
-    with open(datadir+'server-key', 'rb') as fd:
-      esk = fd.read(pysodium.crypto_sign_SECRETKEYBYTES)
-    with open(datadir+'server-xkey', 'rb') as fd:
-      xsk = fd.read(pysodium.crypto_box_SECRETKEYBYTES)
-    with open(datadir+'server-xkey.pub', 'rb') as fd:
-      xpk = fd.read(pysodium.crypto_box_PUBLICKEYBYTES)
-    return esk, xsk, xpk
+    with open(path+'server-key', 'rb') as fd:
+      sk = fd.read(pysodium.crypto_box_SECRETKEYBYTES)
+    with open(path+'server-key.pub', 'rb') as fd:
+      pk = fd.read(pysodium.crypto_box_PUBLICKEYBYTES)
+    return sk,pk
   except FileNotFoundError:
     print("no server key found, generating...")
-    if not os.path.exists(datadir):
-      os.mkdir(datadir,0o700)
-    if esk is None:
-        epk, esk = pysodium.crypto_sign_keypair()
-    else:
-        epk = pysodium.crypto_sign_sk_to_pk(esk)
-    xsk = pysodium.crypto_sign_sk_to_box_sk(esk)
-    xpk = pysodium.crypto_sign_pk_to_box_pk(epk)
-    with open(datadir+'server-key','wb') as fd:
+    if not os.path.exists(path):
+      os.mkdir(path,0o700)
+    pk, sk = pysodium.crypto_box_keypair()
+    with open(path+'server-key','wb') as fd:
       os.fchmod(fd.fileno(),0o600)
-      fd.write(esk)
-    with open(datadir+'server-key.pub','wb') as fd:
-      fd.write(epk)
-    with open(datadir+'server-xkey','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(xsk)
-    with open(datadir+'server-xkey.pub','wb') as fd:
-      fd.write(xpk)
-    print("please share `%s` with all clients"  % (datadir+'server-key.pub'))
-    return esk,xsk,xpk
+      fd.write(sk)
+    with open(path+'server-key.pub','wb') as fd:
+      fd.write(pk)
+    print("please share `%s` with all clients"  % (path+'server-key.pub'))
+    return sk,pk
 
 def main():
-  loop = asyncio.get_event_loop()
-  # Each client connection will create a new protocol instance
-  coro = loop.create_server(SphinxOracleProtocol, address, port)
-  server = loop.run_until_complete(coro)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind((address, port))
+    except socket.error as msg:
+        print('Bind failed. Error Code : %s Message: ' % (str(msg[0]), msg[1]))
+        sys.exit()
+    #Start listening on socket
+    s.listen()
+    kids = []
+    try:
+        # main loop
+        while 1:
+            #wait to accept a connection - blocking call
+            conn, addr = s.accept()
+            if verbose:
+                print('{} Connection from {}:{}'.format(datetime.datetime.now(), addr[0], addr[1]))
+            while(len(kids)>5):
+                pid, status = os.waitpid(0,0)
+                kids.remove(pid)
+            pid=os.fork()
+            if pid==0:
+                handler(conn)
+            else:
+                kids.append(pid)
+            pid, status = os.waitpid(0,os.WNOHANG)
+            if(pid,status)!=(0,0):
+                kids.remove(pid)
 
-  esk,xsk,xpk = getkey(keydir)
-  if None in (esk,xsk,xpk):
-    print("no server keys available.\nabort")
-    sys.exit(1)
-  clearmem(xsk)
-  clearmem(esk)
-
-  # Serve requests until Ctrl+C is pressed
-  if verbose:
-    print('Serving on {}'.format(server.sockets[0].getsockname()))
-  try:
-    loop.run_forever()
-  except KeyboardInterrupt:
-    pass
-
-  # Close the server
-  server.close()
-  loop.run_until_complete(server.wait_closed())
-  loop.close()
+    except KeyboardInterrupt:
+        pass
+    s.close()
 
 if __name__ == '__main__':
   main()
