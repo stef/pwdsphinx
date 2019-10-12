@@ -1,4 +1,4 @@
-* OPAQUEification of SPHINX
+* OPAQUification of SPHINX
 
 SPHINX is a beautiful protocol for password storage querying and
 inserting of one password.
