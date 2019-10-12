@@ -35,8 +35,9 @@ An account is a combination of a username and a password.
 An account password is the password that authenticates the user with a
 service.
 *** rwd (Random word)
-High-entropy password, derived from the SPHINX key in a way that makes
-the output compatible with the password rules mandated by the service.
+High-entropy account password, derived from the SPHINX key in a way
+that makes the output compatible with the password rules mandated by
+the service.
 *** SPHINX key
 High entropy 32 bytes derived from the SPHINX protocol by calculating:
 hash(pwd||hash(pwd)^k), where k is a seed contributed the the password
@@ -46,7 +47,7 @@ The master password is the password which is used in SPHINX to query
 and derive the account password for a service. Unlike other password
 managers it is possible with sphinx to have multiple master passwords,
 since they are not used to open an encrypted database but only
-contribute to the derivation of the account password.
+contribute to the derivation of the account rwd.
 *** Core functions
 The two core functions that are defined by SPHINX are initialize SPHINX
 record and query SPHINX.
@@ -67,8 +68,10 @@ blob.
 ** Querying the SPHINX
 Let's recap how SPHINX works and how this is used in OPAQUE:
   1. the user hashes his password and then blinds it:
-     blindedpwhash = (hash(pwd)^blindingfacator)
+     blindedpwhash = (hash(pwd)^blindingfactor)
      (we refer to the blinded hash later in this document as alpha)
+     Throughout this document the ^ operation denotes scalar
+     multiplication over an elliptic curve like curve 25519.
   2. the server has a seed which it contributes into the blinded hash
      of the users password: blindedpwhash^seed
      (later in this document we refer to this value as beta)
@@ -78,13 +81,13 @@ Let's recap how SPHINX works and how this is used in OPAQUE:
 
 ** Setting up an OPAQUE session
 
-OPAQUE extends this slightly:
+OPAQUE extends SPHINX in the following way:
   1. in step 1 the user also generates a one-time key-pair [Xu, xu],
-     The user sends the public part Xu along with the blinded
+     The user sends the public key Xu along with the blinded
      password (alpha).
   2. in step 2 the server also generates a one-time key-pair [Xs,
      xs]. The server now can generate the shared secret using its own
-     [xs, ps] and the users Long-term and One-time keys [Pu,
+     [ps, xs] and the users Long-term and One-time keys [Pu,
      Xu]. Using this shared secret it can calculate an authentication
      token. The server also has the encrypted blob of the user, which
      together with its public one-time key Xs, the authentication
@@ -96,7 +99,7 @@ OPAQUE extends this slightly:
      long-term keys, combining these with the one-time keys and the
      long-term and one-time public keys from the server it can also
      calculate the same shared secret that the server also calculated
-     in 2. using this shared secret the user can calculate the same
+     in step 2. using this shared secret the user can calculate the same
      authentication token and verify if the server is correct. If
      needed the user can also calculate its own authentication token
      which can be sent to the server which can then authenticate the
@@ -113,7 +116,7 @@ otherwise the site where we use the password would be able to decrypt
 the blob themselves if that somehow leaks. Furthermore the encrypted
 blob can also contain information about password rules, like maximum
 length, or forbidden character classes, which otherwise need to be
-stored somewhere and might need to be synchronized otherwise between
+stored somewhere and might need to be synchronized somehow between
 different devices of the user.
 
 A bit more formally the setup of a session flow looks like this:
@@ -141,14 +144,14 @@ User:   K = hash(pwd||beta^-r),          # the SPHINX key
 ** Storage of "records"
 
 The user does not have to store anything in this setup, all the user
-needs is its password. However the server needs to store it's own
-long-term keys and the encrypted blob somewhere, as long as there is
-only one such there's not much to talk about. But as soon as there is
-more such "records" we need to refer to them, a user needs to specify
-somehow which long-term key material and blob it wants to access. To
-avoid storing (and syncing) these ids, it makes sense to have them
-generated. In this Opaqueified SPHINX we use a keyed hash to create
-ids that are non-reversible:
+needs is its master password. However the server needs to store it's
+own long-term keys and the encrypted blob somewhere, as long as there
+is only one password stored at the server there's not much to talk
+about. But as soon as there is more such "records" we need to refer to
+them, a user needs to specify somehow which long-term key material and
+blob it wants to access. To avoid storing (and syncing) these ids, it
+makes sense to have them generated. In this Opaqueified SPHINX we use
+a keyed hash to create ids that are non-reversible:
 
 #+BEGIN_EXAMPLE
        id = hash(user||host, salt)
@@ -366,3 +369,4 @@ authentication to a service.
 6. Initial messages encrypted with Gs are not forward-secure.
 7. Leakage of the users salt allows pre-computation of record ids.
 8. Per-user record long-term secret keys.
+9. Server can collect usage statistics on records.
