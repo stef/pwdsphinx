@@ -1,12 +1,16 @@
 #!/usr/bin/env python
 
-import sphinxlib as o
+try:
+      from pwdsphinx import sphinxlib as o
+except ImportError:
+      import sphinxlib as o
+
 from binascii import b2a_hex
 
 pwd = "simple guessable dictionary password"
 print("trying server inspects password registration flow")
 extra = "some additional secret data stored in the blob"
-rec = o.opaque_store(pwd, extra)
+rec = o.opaque_init_srv(pwd, extra)
 print("usrSession")
 pub, sec = o.opaque_session_usr_start(pwd)
 print("srvSession")
