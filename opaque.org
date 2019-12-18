@@ -40,7 +40,7 @@ that makes the output compatible with the password rules mandated by
 the service.
 *** SPHINX key
 High entropy 32 bytes derived from the SPHINX protocol by calculating:
-hash(pwd||hash(pwd)^k), where k is a seed contributed the the password
+hash(pwd||hash(pwd)^k), where k is a seed contributed by the password
 manager.
 *** Master Password
 The master password is the password which is used in SPHINX to query
@@ -370,3 +370,4 @@ authentication to a service.
 7. Leakage of the users salt allows pre-computation of record ids.
 8. Per-user record long-term secret keys.
 9. Server can collect usage statistics on records.
+10. password should be hashed to point using a salt (generative hash(user||host), or the user salt)
