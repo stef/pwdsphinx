@@ -26,6 +26,7 @@ def fail(s):
     s.send(b'fail') # plaintext :/
     s.close()
 
+# msg format: 0x00|id[32]|alpha[32]
 def create(conn, msg):
     id = msg[1:33]
     alpha = msg[33:65]
@@ -55,6 +56,7 @@ def create(conn, msg):
     conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
     conn.close()
 
+# msg format: 0x66|id[32]
 def get(conn, msg, session=False):
     id = msg[1:33]
 
@@ -82,6 +84,7 @@ def get(conn, msg, session=False):
     else:
         return sk
 
+# msg format: 0xff|id[32]
 def delete(conn, msg):
     id = msg[1:33]
     sk = get(conn, msg, True)
@@ -100,6 +103,7 @@ def delete(conn, msg):
     conn.send(nonce+msg)
     conn.close()
 
+# msg format: 0x99|id[32]
 def change(conn, msg):
     id = msg[1:33]
     sk = get(conn, msg, True)
@@ -138,6 +142,7 @@ def change(conn, msg):
     conn.send(nonce+msg)
     conn.close()
 
+# msg format: 0xff|id[32]
 def commit(conn, msg):
     id = msg[1:33]
     sk = get(conn, msg, True)
