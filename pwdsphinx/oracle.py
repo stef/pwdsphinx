@@ -56,7 +56,7 @@ def create(conn, msg):
     conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
     conn.close()
 
-# msg format: 0x66|id[32]
+# msg format: 0x66|id[32]|pub[xx] # fixme how big is pub?
 def get(conn, msg, session=False):
     id = msg[1:33]
 
@@ -97,7 +97,7 @@ def delete(conn, msg):
         return
 
     tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-    shutil.rmtree(tdir)
+    shutil.rmtree(tdir) # todo fixme use "secure delete"
     nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
     msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
     conn.send(nonce+msg)
