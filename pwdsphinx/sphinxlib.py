@@ -27,20 +27,21 @@ sphinxlib = ctypes.cdll.LoadLibrary(ctypes.util.find_library('sphinx') or ctypes
 if not sphinxlib._name:
     raise ValueError('Unable to find libsphinx')
 
-DECAF_255_SCALAR_BYTES = 32
-DECAF_255_SER_BYTES    = 32
+DECAF_255_SCALAR_BYTES  = 32
+DECAF_255_SER_BYTES     = 32
+crypto_pwhash_SALTBYTES = 16
 
 def __check(code):
     if code != 0:
         raise ValueError
 
-# void challenge(const uint8_t *pwd, const size_t p_len, uint8_t *bfac, uint8_t *chal)
-def challenge(pwd):
+# void challenge(const uint8_t *pwd, const size_t p_len, const uint8_t *salt, const size_t salt_len, uint8_t *bfac, uint8_t *chal)
+def challenge(pwd,salt=''):
     if pwd == None:
         raise ValueError("invalid parameter")
     bfac = ctypes.create_string_buffer(DECAF_255_SCALAR_BYTES)
     chal = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    sphinxlib.sphinx_challenge(pwd, len(pwd), bfac, chal)
+    sphinxlib.sphinx_challenge(pwd, len(pwd), salt, len(salt), bfac, chal)
     return (bfac.raw, chal.raw)
 
 # int respond(const uint8_t *chal, const uint8_t *secret, uint8_t *resp)
@@ -56,14 +57,15 @@ def respond(chal, secret):
     return resp.raw
 
 # int finish(const uint8_t *pwd, const size_t p_len, const uint8_t *bfac, const uint8_t *resp, uint8_t *rwd)
-def finish(pwd, bfac, resp):
-    if None in (pwd, bfac, resp):
+def finish(pwd, bfac, resp, salt):
+    if None in (pwd, bfac, resp, salt):
         raise ValueError("invalid parameter")
     if len(resp) != DECAF_255_SER_BYTES: raise ValueError("truncated point")
     if len(bfac) != DECAF_255_SCALAR_BYTES: raise ValueError("truncated secret")
+    if len(salt) < crypto_pwhash_SALTBYTES: raise ValueError("truncated salt")
 
     rwd = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    __check(sphinxlib.sphinx_finish(pwd, len(pwd), bfac, resp, rwd))
+    __check(sphinxlib.sphinx_finish(pwd, len(pwd), bfac, resp, salt, rwd))
     return rwd.raw
 
 from pysodium import crypto_secretbox_MACBYTES, crypto_secretbox_NONCEBYTES
