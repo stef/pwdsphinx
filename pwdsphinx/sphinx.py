@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: 2018, Marsiske Stefan 
 # SPDX-License-Identifier: GPL-3.0-or-later 
 
-import sys, os, asyncio, io, struct, binascii, platform
+import sys, os, socket, ssl, io, struct, binascii, platform
+from SecureString import clearmem
 import pysodium
-
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
@@ -21,279 +21,350 @@ cfg = getcfg('sphinx')
 
 verbose = cfg['client'].getboolean('verbose')
 address = cfg['client']['address']
-port = cfg['client']['port']
-datadir = cfg['client']['datadir']
+port = int(cfg['client']['port'])
+datadir = os.path.expanduser(cfg['client']['datadir'])
+ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system should use proper certs!
 
-CREATE=b'\x00'
-GET=b'\x66'
-COMMIT=b'\x99'
-CHANGE=b'\xaa'
-DELETE=b'\xff'
+CREATE   =b'\x00' # sphinx
+READ     =b'\x0f' # blob
+BACKUP   =b'\x33' # sphinx+blobs
+UNDO     =b'\x55' # change sphinx
+GET      =b'\x66' # sphinx
+COMMIT   =b'\x99' # change sphinx
+CHANGE   =b'\xaa' # sphinx
+WRITE    =b'\xcc' # blob
+DELETE   =b'\xff' # sphinx+blobs
 
-class SphinxClientProtocol(asyncio.Protocol):
-  def __init__(self, message, loop,b,pwd,handler,cb):
-    self.b = b
-    self.pwd=pwd
-    self.message = message
-    self.loop = loop
-    self.handler = handler
-    self.cb = cb
+ENC_CTX = "sphinx encryption key"
+SIGN_CTX = "sphinx signing key"
+SALT_CTX = "sphinx host salt"
+ROOT_CTX = "sphinx root idx"
 
-  def connection_made(self, transport):
-    transport.write(self.message)
-    if verbose: print('Data sent: {!r}'.format(self.message), file=sys.stderr)
+def init_key():
+  kfile = os.path.join(datadir,'masterkey')
+  if os.path.exists(kfile):
+    print("Already initialized.")
+    return 1
+  if not os.path.exists(datadir):
+    os.mkdir(datadir,0o700)
+  mk = pysodium.randombytes(32)
+  try:
+    with open(kfile,'wb') as fd:
+      if not win: os.fchmod(fd.fileno(),0o600)
+      fd.write(mk)
+  finally:
+    clearmem(mk)
+  return 0
 
-  def data_received(self, data):
-    if verbose: print('Data received: ', data, file=sys.stderr)
+def get_masterkey():
+  try:
+    with open(os.path.join(datadir,'masterkey'), 'rb') as fd:
+        mk = fd.read()
+    return mk
+  except FileNotFoundError:
+    print("Error: Could not find masterkey!\nIf sphinx was working previously it is now broken.\nIf this is a fresh install all is good, you just need to run `%s init`." % sys.argv[0])
+    sys.exit(1)
 
-    try:
-      data = pysodium.crypto_sign_open(data, self.handler.getserverkey())
-    except ValueError:
-      raise ValueError('invalid signature.\nabort')
+def split_by_n(obj, n):
+  # src https://stackoverflow.com/questions/9475241/split-string-every-nth-character
+  return [obj[i:i+n] for i in range(0, len(obj), n)]
 
-    if data!=b'ok' and (data[:-42] == b'fail' or len(data)!=sphinxlib.DECAF_255_SER_BYTES+90):
-      raise ValueError('fail')
+def connect():
+  ctx = ssl.create_default_context()
+  ctx.load_verify_locations(ssl_cert) # TODO only for dev, production system should use proper certs!
+  ctx.check_hostname=False            # TODO only for dev, production system should use proper certs!
+  ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
 
-    if not self.b:
-      self.cb()
-      return
+  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  s = ctx.wrap_socket(s)
+  s.connect((address, port))
+  return s
 
-    rwd=sphinxlib.finish(self.pwd, self.b, data[:sphinxlib.DECAF_255_SER_BYTES])
+def get_signkey():
+  mk = get_masterkey()
+  seed = pysodium.crypto_generichash(mk,SIGN_CTX)
+  clearmem(mk)
+  pk, sk = pysodium.crypto_sign_seed_keypair(seed)
+  clearmem(seed)
+  return sk, pk
 
-    if self.handler.namesite is not None:
-      if self.handler.namesite['name'].encode() not in self.handler.list(self.handler.namesite['site']):
-        self.handler.cacheuser(self.handler.namesite)
+def get_sealkey():
+  mk = get_masterkey()
+  sk = pysodium.crypto_generichash(mk,ENC_CTX)
+  clearmem(mk)
+  pk = pysodium.crypto_scalarmult_curve25519_base(sk)
+  return sk, pk
 
-    rule = data[sphinxlib.DECAF_255_SER_BYTES:]
-    esk = self.handler.getkey()
-    sk = pysodium.crypto_sign_sk_to_box_sk(esk)
-    epk = pysodium.crypto_sign_sk_to_pk(esk)
-    pk = pysodium.crypto_sign_pk_to_box_pk(epk)
-    rule = pysodium.crypto_box_seal_open(rule,pk,sk)
-    if len(rule)!=42:
-      raise ValueError('fail')
-    rk = pysodium.crypto_generichash(self.handler.getkey(),self.handler.getsalt())
-    rule = pysodium.crypto_secretbox_open(rule[24:], rule[:24],rk)
-    rule = struct.unpack(">H",rule)[0]
-    size = (rule & 0x7f)
-    rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
-    self.cb(bin2pass.derive(rwd,rule,size).decode())
+def encrypt_blob(blob):
+  # todo implement padding
+  sk, pk = get_sealkey()
+  clearmem(sk)
+  return pysodium.crypto_box_seal(blob,pk)
 
-  def connection_lost(self, exc):
-    if verbose:
-        print('The server closed the connection', file=sys.stderr)
-        print('Stop the event loop', file=sys.stderr)
-    self.loop.stop()
+def decrypt_blob(blob):
+  # todo implement padding
+  sk, pk = get_sealkey()
+  res = pysodium.crypto_box_seal_open(blob,pk,sk)
+  clearmem(sk)
+  return res
 
-class SphinxHandler():
-  def __init__(self, datadir):
-    self.datadir=datadir
-    self.namesite = None
+def sign_blob(blob):
+  sk, pk = get_signkey()
+  res = pysodium.crypto_sign_detached(blob,sk)
+  clearmem(sk)
+  return b''.join((blob,res))
 
-  def getkey(self):
-    datadir = os.path.expanduser(self.datadir)
-    try:
-      fd = open(datadir+'key', 'rb')
-      key = fd.read()
-      fd.close()
-      return key
-    except FileNotFoundError:
-      if not os.path.exists(datadir):
-        os.mkdir(datadir,0o700)
-      pk, sk = pysodium.crypto_sign_keypair()
-      with open(datadir+'key','wb') as fd:
-        if not win: os.fchmod(fd.fileno(),0o600)
-        fd.write(sk)
-      return sk
+def getid(host, user):
+  mk = get_masterkey()
+  salt = pysodium.crypto_generichash(mk,SALT_CTX)
+  clearmem(mk)
+  return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
-  def getsalt(self):
-    datadir = os.path.expanduser(self.datadir)
-    try:
-      fd = open(datadir+'salt', 'rb')
-      salt = fd.read()
-      fd.close()
-      return salt
-    except FileNotFoundError:
-      if not os.path.exists(datadir):
-        os.mkdir(datadir,0o700)
-      salt = pysodium.randombytes(32)
-      with open(datadir+'salt','wb') as fd:
-        if not win: os.fchmod(fd.fileno(),0o600)
-        fd.write(salt)
-      return salt
+def getrootid():
+  mk = get_masterkey()
+  root = pysodium.crypto_generichash(mk,ROOT_CTX)
+  clearmem(mk)
+  return root
 
-  def getusers(self, id):
-    datadir = os.path.expanduser(self.datadir)
-    try:
-      with open(datadir+binascii.hexlify(id).decode(), 'rb') as fd:
-        return [x.strip() for x in fd.readlines()]
-    except FileNotFoundError:
-        return None
+def unpack_rule(rules):
+  rules = decrypt_blob(rules)
+  rule = struct.unpack(">H",rules)[0]
+  size = (rule & 0x7f)
+  rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
+  return rule, size
 
-  def deluser(self, id, user):
-    userfile = os.path.expanduser(self.datadir+binascii.hexlify(id).decode())
-    try:
-      with open(userfile, 'rb') as fd:
-        users=[x.strip() for x in fd.readlines() if x.strip() != user.encode()]
-      if users != []:
-        with open(userfile, 'wb') as fd:
-            # skip rules
-            fd.write(b'\n'.join(users))
-      else:
-        os.unlink(userfile)
-    except FileNotFoundError:
-      return None
+def create(s, pwd, user, host, char_classes, size=0):
+  if set(char_classes) - {'u','l','s','d'}:
+    raise ValueError("error: rules can only contain ulsd.")
+  try: size=int(size)
+  except:
+    raise ValueError("error: size has to be integer.")
 
-  def cacheuser(self, namesite):
-    site=namesite['site']
-    user=namesite['name']
-    salt = self.getsalt()
-    hostid = pysodium.crypto_generichash(site, salt, 32)
-    userfile = os.path.expanduser(self.datadir+binascii.hexlify(hostid).decode())
-    try:
-      if not os.path.exists(userfile):
-        with open(userfile, 'wb') as fd:
-            fd.write(user.encode())
-      else:
-        with open(userfile, 'ab') as fd:
-            fd.write(b"\n"+user.encode())
-    except:
-      pass
+  rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
+  # pack rule
+  rule=struct.pack('>H', (rules << 7) | (size & 0x7f))
+  rule = encrypt_blob(rule)
 
-  def getserverkey(self):
-    datadir = os.path.expanduser(self.datadir)
-    try:
-      with open(datadir+'server-key.pub', 'rb') as fd:
-        key = fd.read()
-      return key
-    except FileNotFoundError:
-      pass
-    # try in installation dir
-    BASEDIR = os.path.dirname(os.path.abspath(__file__))
-    try:
-      with open(BASEDIR+'/server-key.pub', 'rb') as fd:
-        key = fd.read()
-      return key
-    except FileNotFoundError:
-      print("no server key found, please install it")
-      sys.exit(1)
+  sk, pk = get_signkey()
+  clearmem(sk)
 
-  def getid(self, host, user):
-    salt = self.getsalt()
-    return pysodium.crypto_generichash(b''.join((user.encode(),host.encode())), salt, 32)
+  r, alpha = sphinxlib.challenge(pwd)
+  id = getid(host, user)
+  msg = b''.join([CREATE, pk, id, alpha, rule])
+  msg = sign_blob(msg)
 
-  def doSphinx(self, message, b, pwd, cb):
-    signed=pysodium.crypto_sign(message,self.getkey())
-    sepk = self.getserverkey()
-    sxpk = pysodium.crypto_sign_pk_to_box_pk(sepk)
-    sealed = pysodium.crypto_box_seal(signed,sxpk)
-    loop = asyncio.get_event_loop()
-    coro = loop.create_connection(lambda: SphinxClientProtocol(sealed, loop, b, pwd, self, cb), address, port)
-    try:
-      loop.run_until_complete(coro)
-      loop.run_forever()
-    except:
-      raise
+  s.send(msg)
+  beta = s.recv(32)
+  if beta == b'fail':
+    raise ValueError("error: sphinx protocol failure.")
+  rwd = sphinxlib.finish(pwd, r, beta, id)
 
-  def create(self, cb, pwd, user, host, char_classes, size=0):
-    if set(char_classes) - {'u','l','s','d'}:
-      raise ValueError("error: rules can only contain ulsd.")
-    try: size=int(size)
-    except:
-      raise ValueError("error: size has to be integer.")
-    self.namesite={'name': user, 'site': host}
+  print(bin2pass.derive(rwd,char_classes,size).decode())
+  clearmem(rwd)
+  # todo return upsert_user(s, pwd, user, host)
+  return add_user(s,user,host) and add_host(s,host)
 
-    rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
-    # pack rule
-    rule=struct.pack('>H', (rules << 7) | (size & 0x7f))
-    # encrypt rule
-    sk = self.getkey()
-    rk = pysodium.crypto_generichash(sk,self.getsalt())
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    rule = nonce+pysodium.crypto_secretbox(rule,nonce,rk)
+def doSphinx(s, op, pwd, user, host):
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(pwd)
+#  print("alpha=",alpha.hex())
+#  print("r=",r.hex())
+  msg = b''.join([op, id, alpha])
+  s.send(msg)
+  resp = s.recv(32+50) # beta + sealed rules
+  if resp == b'fail':
+    raise ValueError("error: sphinx protocol failure.")
+  beta = resp[:32]
+  rules = resp[32:]
+#  print("beta=",beta.hex())
+#  print("id=",id.hex())
+#  print("pwd=",pwd.hex())
+  rwd = sphinxlib.finish(pwd, r, beta, id)
+#  print("rwd=",rwd.hex())
 
-    b, c = sphinxlib.challenge(pwd)
-    message = b''.join([CREATE,
-                        self.getid(host, user),
-                        c,
-                        rule,
-                        pysodium.crypto_sign_sk_to_pk(sk)])
-    self.doSphinx(message, b, pwd, cb)
+  classes, size = unpack_rule(rules)
+  rpwd = bin2pass.derive(rwd,classes,size).decode()
+  clearmem(rwd)
+  print(rpwd)
+  clearmem(rpwd)
 
-  def get(self, cb, pwd, user, host):
-    b, c = sphinxlib.challenge(pwd)
-    self.namesite={'name': user, 'site': host}
-    message = b''.join([GET,
-                        self.getid(host, user),
-                        c])
-    self.doSphinx(message, b, pwd, cb)
+  return True
 
-  def change(self, cb, pwd, user, host):
-    b, c = sphinxlib.challenge(pwd)
-    self.namesite={'name': user, 'site': host}
-    message = b''.join([CHANGE,
-                        self.getid(host, user),
-                        c])
-    self.doSphinx(message, b, pwd, cb)
+def get(s, pwd, user, host):
+  return doSphinx(s, GET, pwd, user, host)
 
-  def commit(self, cb, user, host):
-    message = b''.join([COMMIT,self.getid(host, user)])
-    self.namesite={'name': user, 'site': host}
-    def callback():
-      return
-    self.doSphinx(message, None, None, callback)
+def read_blob(s, host=None, id=None):
+  if id is None:
+    if host is not None:
+        id = getid(host, '')
+    else:
+      fail(s)
+      raise ValueError("must have either host or id provided in params")
+  msg = b''.join([READ, id])
+  msg = sign_blob(msg)
+  s.send(msg)
+  blob = s.recv(4096)
+  if blob == b'fail':
+    return b''
+  return decrypt_blob(blob)
 
-  def delete(self, user, host):
-    message = b''.join([DELETE,self.getid(host, user)])
-    salt = self.getsalt()
-    hostid = pysodium.crypto_generichash(host, salt, 32)
-    def callback():
-      self.deluser(hostid,user)
-    self.doSphinx(message, None, None, callback)
+def write_blob(s, blob, host=None, id=None):
+  if id is None:
+    if host is not None:
+        id = getid(host, '')
+    else:
+      fail(s)
+      raise ValueError("must have either host or id provided in params")
+  blob = encrypt_blob(blob)
+  sk, pk = get_signkey()
+  clearmem(sk)
+  msg = b''.join([WRITE, pk, id, blob])
+  msg = sign_blob(msg)
+  s.send(msg)
+  blob = s.recv(4096)
+  return blob == b'ok'
 
-  def list(self, host):
-    salt = self.getsalt()
-    hostid = pysodium.crypto_generichash(host, salt, 32)
-    return self.getusers(hostid) or []
+def add_user(s, user, host):
+  users = set()
+  # reconnect
+  s.close()
+  # add random delay?
+  s = connect()
+  ret = read_blob(s, host)
+  if ret != b'':
+    users = set(ret.decode().split('\x00'))
+    s.close()
+  s = connect()
+  users.add(user)
+  users = sorted(users)
+  return write_blob(s, ('\x00'.join(sorted(users))).encode(), host)
+
+def add_host(s,host):
+  hosts = set()
+  id = getrootid()
+  # reconnect
+  s.close()
+  # add random delay?
+  s = connect()
+  ret = read_blob(s, id = id)
+  if hosts != b'':
+    hosts = set(ret.decode().split('\x00'))
+    s.close()
+  s = connect()
+  hosts.add(host)
+  return write_blob(s, ('\x00'.join(sorted(hosts))).encode(), id = id)
+
+def users(s, host):
+  users = set(read_blob(s, host).decode().split('\x00'))
+  print('\n'.join(sorted(users)))
+  return True
+
+def change(s, pwd, user, host):
+  return doSphinx(s, CHANGE, pwd, user, host)
+
+def commit(s, pwd, user, host):
+  return doSphinx(s, COMMIT, pwd, user, host)
+
+def undo(s, pwd, user, host):
+  return doSphinx(s, UNDO, pwd, user, host)
+
+def delete(s, user, host):
+  id = getid(host, user)
+  msg = b''.join([DELETE, id])
+  msg = sign_blob(msg)
+  s.send(msg)
+  blob = s.recv(4096)
+  return blob == b'ok'
+
+def backup(s):
+  id = getrootid()
+  ret = read_blob(s, id = id)
+  if ret==b'':
+    return
+  hosts = set(ret.decode().split('\x00'))
+  for host in hosts:
+    print("host:", host)
+    s.close()
+    s = connect()
+    ret = read_blob(s, id = getid(host,''))
+    if ret == b'': continue
+    users = set(ret.decode().split('\x00'))
+    for u in users:
+      print("\t", u)
+  return True
 
 def main():
   def usage():
+    print("usage: %s init" % sys.argv[0])
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % sys.argv[0])
-    print("usage: %s <get|change|commit|delete> <user> <site>" % sys.argv[0])
+    print("usage: %s <get|change|commit|undo|delete> <user> <site>" % sys.argv[0])
     print("usage: %s list <site>" % sys.argv[0])
+    print("usage: %s backup" % sys.argv[0])
     sys.exit(1)
 
   if len(sys.argv) < 2: usage()
 
-  handler = SphinxHandler(datadir)
-
+  cmd = None
+  args = []
   if sys.argv[1] == 'create':
     if len(sys.argv) not in (5,6): usage()
-    pwd = sys.stdin.buffer.read()
     if len(sys.argv) == 6:
       size=sys.argv[5]
     else:
       size = 0
-    handler.create(print, pwd, sys.argv[2], sys.argv[3], sys.argv[4], size)
+    cmd = create
+    args = (sys.argv[2], sys.argv[3], sys.argv[4], size)
+  elif sys.argv[1] == 'init':
+    if len(sys.argv) != 2: usage()
+    sys.exit(init_key())
   elif sys.argv[1] == 'get':
     if len(sys.argv) != 4: usage()
-    # needs id, challenge, sig(id)
-    pwd = sys.stdin.buffer.read()
-    handler.get(print, pwd, sys.argv[2], sys.argv[3])
+    cmd = get
+    args = (sys.argv[2], sys.argv[3])
   elif sys.argv[1] == 'change':
     if len(sys.argv) != 4: usage()
-    # needs id, challenge, sig(id)
-    pwd = sys.stdin.buffer.read()
-    handler.change(print, pwd, sys.argv[2], sys.argv[3])
+    cmd = change
+    args = (sys.argv[2], sys.argv[3])
   elif sys.argv[1] == 'commit':
     if len(sys.argv) != 4: usage()
-    handler.commit(print, sys.argv[2], sys.argv[3])
+    cmd = commit
+    args = (sys.argv[2], sys.argv[3])
   elif sys.argv[1] == 'delete':
     if len(sys.argv) != 4: usage()
-    handler.delete(sys.argv[2], sys.argv[3])
+    cmd = delete
+    args = (sys.argv[2], sys.argv[3])
   elif sys.argv[1] == 'list':
     if len(sys.argv) != 3: usage()
-    print(b'\n'.join(handler.list(sys.argv[2])).decode())
+    cmd = users
+    args = (sys.argv[2],)
+  elif sys.argv[1] == 'undo':
+    if len(sys.argv) != 4: usage()
+    cmd = undo
+    args = (sys.argv[2],sys.argv[3])
+  elif sys.argv[1] == 'backup':
+    if len(sys.argv) != 2: usage()
+    cmd = backup
+    args = tuple()
+  if cmd is not None:
+    s = connect()
+    if cmd not in (users,backup):
+      pwd = sys.stdin.buffer.read()
+      try:
+        ret = cmd(s, pwd, *args)
+      except:
+        ret = False
+        raise # todo remove only for dbg
+      clearmem(pwd)
+    else:
+      try:
+        ret = cmd(s,  *args)
+      except:
+        ret = False
+        raise # todo remove only for dbg
+    s.close()
+    if not ret:
+      print("fail")
+      sys.exit(1)
   else:
     usage()
 
