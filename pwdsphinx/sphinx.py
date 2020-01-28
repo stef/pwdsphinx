@@ -145,15 +145,8 @@ def doSphinx(s, op, pwd, user, host):
   s.send(msg)
   crwd = None
   if op != GET: # == CHANGE, UNDO, COMMIT
-    # do sphinx with current seed, use it to sign the nonce
-    msg = s.recv(64)
-    beta = msg[:32]
-    nonce = msg[32:]
-    crwd = sphinxlib.finish(pwd, r, beta, id)
-    sk, pk = get_signkey(id, crwd)
-    sig = pysodium.crypto_sign_detached(nonce,sk)
-    clearmem(sk)
-    s.send(sig)
+    # auth: do sphinx with current seed, use it to sign the nonce
+    crwd = auth(s,pwd,r,id)
 
   resp = s.recv(32+50) # beta + sealed rules
   if resp == b'fail' or len(resp)!=32+50:
@@ -186,6 +179,43 @@ def doSphinx(s, op, pwd, user, host):
   clearmem(rpwd)
 
   return True
+
+def update_rec(s, id, item):
+    s.send(id)
+    # wait for user blob
+    blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
+    if blob == b'none':
+      # it is a new blob, we need to attach an auth signing pubkey
+      sk, pk = get_signkey(id, b'')
+      clearmem(sk)
+      blob = encrypt_blob(item.encode(), b'')
+      # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
+      blob = b''.join([pk, blob])
+      blob = sign_blob(blob, id, b'')
+    else:
+      blob = decrypt_blob(blob, b'')
+      items = set(blob.decode().split('\x00'))
+      # todo/fix? we do not recognize if the user is already included in this list
+      # this should not happen, but maybe it's a sign of corruption?
+      items.add(item)
+      blob = ('\x00'.join(sorted(items))).encode()
+      # notice we do not add rwd to encryption of user blobs
+      blob = encrypt_blob(blob, b'')
+      blob = sign_blob(blob, id, b'')
+    s.send(blob)
+
+def auth(s,pwd,r,id):
+  msg = s.recv(64)
+  if len(msg)!=64:
+    return False
+  beta = msg[:32]
+  nonce = msg[32:]
+  rwd = sphinxlib.finish(pwd, r, beta, id)
+  sk, pk = get_signkey(id, rwd)
+  sig = pysodium.crypto_sign_detached(nonce,sk)
+  clearmem(sk)
+  s.send(sig)
+  return rwd
 
 #### OPs ####
 
@@ -235,54 +265,8 @@ def create(s, pwd, user, host, char_classes, size=0):
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
-  id = getid(host, '')
-  s.send(id)
-  # wait for user blob
-  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
-  if blob == b'none':
-    # it is a new blob, we need to attach an auth signing pubkey
-    sk, pk = get_signkey(id, b'')
-    clearmem(sk)
-    blob = encrypt_blob(user.encode(), b'')
-    # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
-    blob = b''.join([pk, blob])
-    blob = sign_blob(blob, id, b'')
-  else:
-    blob = decrypt_blob(blob, b'')
-    users = set(blob.decode().split('\x00'))
-    # todo/fix? we do not recognize if the user is already included in this list
-    # this should not happen, but maybe it's a sign of corruption?
-    users.add(user)
-    blob = ('\x00'.join(sorted(users))).encode()
-    # notice we do not add rwd to encryption of user blobs
-    blob = encrypt_blob(blob, b'')
-    blob = sign_blob(blob, id, b'')
-  s.send(blob)
-
-  # add host to list of hosts for this
-  id = getrootid()
-  s.send(id)
-
-  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
-  if blob == b'none':
-    # it is a new blob, we need to attach an auth signing pubkey
-    sk, pk = get_signkey(id, b'')
-    clearmem(sk)
-    blob = encrypt_blob(host.encode(), b'')
-    msg = b''.join([pk, blob])
-    # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
-    msg = sign_blob(msg, id, b'')
-  else:
-    blob = decrypt_blob(blob, b'')
-    hosts = set(blob.decode().split('\x00'))
-    # todo/fix? we do not recognize if the host is already included in this list
-    # this should not happen, but maybe it's a sign of corruption?
-    hosts.add(host)
-    blob = ('\x00'.join(sorted(hosts))).encode()
-    # notice we do not add rwd to encryption of user blobs
-    blob = encrypt_blob(blob, b'')
-    msg = sign_blob(blob, id, b'')
-  s.send(msg)
+  update_rec(s, getid(host, ''), user)
+  update_rec(s, getrootid(), host)
 
   print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode())
   clearmem(rwd)
@@ -301,7 +285,6 @@ def read_blob(s, host=None, id=None, rwd = None):
   if rwd is None:
     rwd = b''
   msg = b''.join([READ, id])
-  msg = sign_blob(msg, id, rwd)
   s.send(msg)
   blob = s.recv(4096)
   if blob == b'fail':
@@ -322,48 +305,186 @@ def commit(s, pwd, user, host):
 def undo(s, pwd, user, host):
   return doSphinx(s, UNDO, pwd, user, host)
 
-### here be dragons ####
-
-def write_blob(s, blob, host=None, id=None):
-  if id is None:
-    if host is not None:
-        id = getid(host, '')
-    else:
-      fail(s)
-      raise ValueError("must have either host or id provided in params")
-  blob = encrypt_blob(blob)
-  sk, pk = get_signkey()
-  clearmem(sk)
-  msg = b''.join([WRITE, pk, id, blob])
-  msg = sign_blob(msg)
-  s.send(msg)
-  blob = s.recv(4096)
-  return blob == b'ok'
-
-def delete(s, user, host):
+def delete(s, pwd, user, host):
+  # run sphinx to recover rwd for authentication
   id = getid(host, user)
-  msg = b''.join([DELETE, id])
-  msg = sign_blob(msg)
-  s.send(msg)
-  blob = s.recv(4096)
-  # todo implement remove user and remove host
-  return blob == b'ok'
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([DELETE, id, alpha])
+  s.send(msg) # alpha
+  rwd = auth(s,pwd,r,id)
 
-def backup(s): # todo implement
+  # add user to user list for this host
+  # a malicous server could correlate all accounts on this services to this users here
+  # first query user record for this host
+  id = getid(host, '')
+  s.send(id)
+  # wait for user blob
+  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
+  if blob == b'none':
+    # this should not happen, it means something is corrupt
+    print("error: server has no associated user record for this host")
+    return False
+  else:
+    blob = decrypt_blob(blob, b'')
+    users = set(blob.decode().split('\x00'))
+    # todo/fix? we do not recognize if the user is already included in this list
+    # this should not happen, but maybe it's a sign of corruption?
+    users.remove(user)
+    blob = ('\x00'.join(sorted(users))).encode()
+    # notice we do not add rwd to encryption of user blobs
+    blob = encrypt_blob(blob, b'')
+    blob = sign_blob(blob, id, b'')
+  s.send(blob)
+
+  # add host to list of hosts for this
   id = getrootid()
-  ret = read_blob(s, id = id)
-  if ret==b'':
+  s.send(id)
+
+  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
+  if blob == b'none':
+    # this should not happen, it means something is corrupt
+    print("error: server has no associated root record for you")
+    return False
+  else:
+    blob = decrypt_blob(blob, b'')
+    hosts = set(blob.decode().split('\x00'))
+    # todo/fix? we do not recognize if the host is already included in this list
+    # this should not happen, but maybe it's a sign of corruption?
+    hosts.remove(host)
+    blob = ('\x00'.join(sorted(hosts))).encode()
+    # notice we do not add rwd to encryption of user blobs
+    blob = encrypt_blob(blob, b'')
+    msg = sign_blob(blob, id, b'')
+  s.send(msg)
+  if b'ok' != s.recv(2):
+    return False
+
+  clearmem(rwd)
+  return True
+
+def write(s, blob, user, host):
+  id = getid(host, user)
+  pwd, blob = blob.decode().split('\n',1)
+  # goddamn fucking py3 with it's braindead string/bytes smegma shit
+  pwd = pwd + '\n'
+  pwd = pwd.encode()
+  blob = blob.encode()
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([WRITE, id, alpha])
+  s.send(msg)
+  if s.recv(3) == b'new':
+    # wait for response from sphinx server
+    beta = s.recv(32)
+    if beta == b'fail' or len(beta)<32:
+      raise ValueError("error: sphinx protocol failure.")
+    rwd = sphinxlib.finish(pwd, r, beta, id)
+    # second phase, derive new auth signing pubkey
+    sk, pk = get_signkey(id, rwd)
+    clearmem(sk)
+    # encrypt blob
+    blob = encrypt_blob(blob, rwd)
+    # send over new signed(pubkey, rule)
+    msg = b''.join([pk, blob])
+    msg = sign_blob(msg, id, rwd)
+    clearmem(rwd)
+    s.send(msg)
+
+    # add user to user list for this host
+    update_rec(s, getid(host, ''), user)
+    update_rec(s, getrootid(), host)
+  else:
+    rwd = auth(s,pwd,r,id)
+    blob = encrypt_blob(blob, rwd)
+    clearmem(rwd)
+    s.send(blob)
+  return True
+
+def read(s,pwd,user,host):
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([READ, id, alpha])
+  s.send(msg)
+  # first auth
+  rwd = auth(s,pwd,r,id)
+  blob = s.recv(8192+48)
+  if len(blob)==0:
+    print('no blob found')
+    return True
+  blob = decrypt_blob(blob, rwd)
+  clearmem(rwd)
+  print(blob)
+  return True
+
+def get_rec(s, id):
+  msg = b''.join([BACKUP, id])
+  msg = sign_blob(msg, id, b'')
+  s.send(msg)
+
+  blob = s.recv(4096)
+  if blob == b'fail':
+    return b''
+  return decrypt_blob(blob, b'')
+
+def backup(s, pwd): # todo implement
+  pwds = [x.encode() for x in pwd.decode().split('\n')]
+  id = getrootid()
+  rec = get_rec(s,id)
+  s.close()
+  if rec==b'':
     return
-  hosts = set(ret.decode().split('\x00'))
+  hosts = set(rec.decode().split('\x00'))
+  entries = []
   for host in hosts:
-    print("host:", host)
-    s.close()
+    print(host)
     s = connect()
-    ret = read_blob(s, id = getid(host,''))
-    if ret == b'': continue
-    users = set(ret.decode().split('\x00'))
-    for u in users:
-      print("\t", u)
+    rec = get_rec(s,getid(host,''))
+    s.close()
+    if rec == b'': continue
+    users = set(rec.decode().split('\x00'))
+    for user in users:
+      print("\t", user, end=': ')
+      for pwd in pwds:
+        pwd = pwd+b'\n' # todo remove, only for debug
+        s = connect()
+        id = getid(host, user)
+        r, alpha = sphinxlib.challenge(pwd)
+        msg = b''.join([BACKUP, id, alpha])
+        s.send(msg)
+        rwd = auth(s,pwd,r,id)
+        if not rwd:
+          s.close()
+          continue
+        blob = s.recv(3)
+        types = blob[0]
+        bsize = struct.unpack('>H',blob[1:3])[0]
+        if types & 4:
+          key = s.recv(32)
+          if len(key)!=32:
+            s.close()
+            continue
+        if types & 2:
+          rules = s.recv(50)
+          if len(rules)!=50:
+            s.close()
+            continue
+          rules = decrypt_blob(rules,rwd)
+        else: rules = b''
+        if types & 1:
+          blob = s.recv(bsize)
+          if len(blob)!=bsize:
+            s.close()
+            continue
+          blob = decrypt_blob(blob,rwd)
+        else: blob = b''
+
+        entries.append((host, user, key, rules, blob))
+        s.close()
+        print("ok")
+        break
+      else:
+        print("fail")
+  # todo figure out a way to protect/encrypt this and then dump it.
+  print(entries)
   return True
 
 #### main ####
@@ -373,6 +494,7 @@ def main():
     print("usage: %s init" % sys.argv[0])
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % sys.argv[0])
     print("usage: %s <get|change|commit|undo|delete> <user> <site>" % sys.argv[0])
+    print("usage: %s <write|read> [user] <site>" % sys.argv[0])
     print("usage: %s list <site>" % sys.argv[0])
     print("usage: %s backup" % sys.argv[0])
     sys.exit(1)
@@ -416,13 +538,33 @@ def main():
     if len(sys.argv) != 4: usage()
     cmd = undo
     args = (sys.argv[2],sys.argv[3])
+  elif sys.argv[1] == 'write':
+    if len(sys.argv) not in (3,4): usage()
+    if len(sys.argv) == 4:
+      user=sys.argv[2]
+      host=sys.argv[3]
+    else:
+      user = ''
+      host=sys.argv[2]
+    cmd = write
+    args = (user, host)
+  elif sys.argv[1] == 'read':
+    if len(sys.argv) not in (3,4): usage()
+    if len(sys.argv) == 4:
+      user=sys.argv[2]
+      host=sys.argv[3]
+    else:
+      user = ''
+      host=sys.argv[2]
+    cmd = read
+    args = (user, host)
   elif sys.argv[1] == 'backup':
     if len(sys.argv) != 2: usage()
     cmd = backup
     args = tuple()
   if cmd is not None:
     s = connect()
-    if cmd not in (users,backup):
+    if cmd != users:
       pwd = sys.stdin.buffer.read()
       try:
         ret = cmd(s, pwd, *args)
