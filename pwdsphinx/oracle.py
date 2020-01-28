@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import socket, sys, ssl, os, datetime, binascii, pysodium, shutil, os.path
+import socket, sys, ssl, os, datetime, binascii, pysodium, shutil, os.path, struct
 from SecureString import clearmem
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
@@ -30,6 +30,7 @@ DELETE=0xff
 def fail(s):
     if verbose: print('fail')
     s.send(b'fail') # plaintext :/
+    s.shutdown(socket.SHUT_RDWR)
     s.close()
     os._exit(0)
 
@@ -93,18 +94,20 @@ def create(s, msg):
     id,   msg = pop(msg,32)
     alpha,msg = pop(msg,32)
 
-    # 1st step OPRF with a new seed
-    k=pysodium.randombytes(32)
-    try:
-        beta = sphinxlib.respond(alpha, k)
-    except:
-      fail(s)
-
     # check if id is unique
     id = binascii.hexlify(id).decode()
     tdir = os.path.join(datadir,id)
-    if os.path.exists(tdir):
-      if verbose: print("%s exists" % tdir)
+    if(os.path.exists(os.path.join(tdir,'rules'))):
+      fail(s)
+
+    # 1st step OPRF with a new seed
+    if(os.path.exists(os.path.join(tdir,'key'))):
+      k = load_blob(id,'key',32)
+    else:
+      k=pysodium.randombytes(32)
+    try:
+        beta = sphinxlib.respond(alpha, k)
+    except:
       fail(s)
 
     s.send(beta)
@@ -124,7 +127,8 @@ def create(s, msg):
 
     if not os.path.exists(datadir):
         os.mkdir(datadir,0o700)
-    os.mkdir(tdir,0o700)
+    if not os.path.exists(tdir):
+        os.mkdir(tdir,0o700)
 
     save_blob(id,'key',k)
     save_blob(id,'pub',pk)
@@ -175,6 +179,8 @@ def get(conn, msg):
 
 def auth(s,id,alpha):
   k = load_blob(id,'key')
+  if k is None:
+    return True
   pk = load_blob(id,'pub',32)
   if pk is None:
     print('no pubkey found in %s' % id)
@@ -182,7 +188,7 @@ def auth(s,id,alpha):
   try:
       beta = sphinxlib.respond(alpha, k)
   except:
-    fail(conn)
+    fail(s)
   nonce=pysodium.randombytes(32)
   s.send(b''.join([beta,nonce]))
   sig = s.recv(64)
@@ -225,7 +231,6 @@ def change(conn, msg):
   conn.send(beta+rules)
 
 def commit(conn, msg):
-  # todo auth?
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
@@ -280,7 +285,6 @@ def commit(conn, msg):
   conn.send(b'ok')
 
 def undo(conn, msg):
-  # todo auth?
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
@@ -334,45 +338,10 @@ def undo(conn, msg):
   os.unlink(os.path.join(tdir,'old'))
   conn.send(b'ok')
 
-#### here be dragons ####
-
-def read(conn, msg):
-  # todo auth?
-  _, msg = pop(msg,1)
-  id, msg = pop(msg,32)
-  id = binascii.hexlify(id).decode()
-
-  blob = load_blob(id,'blob')
-  if blob is None:
-    blob = b''
-
-  conn.send(blob)
-
-def write(conn, msg):
-  # todo auth?
-  op,msg = pop(msg,1)
-  pk1,msg = pop(msg,32)
-  id,blob = pop(msg,32)
-  id = binascii.hexlify(id).decode()
-
-  pk0 = load_blob(id,'pub')
-  if pk0 and pk0 != pk1:
-    fail(conn)
-
-  if not os.path.exists(datadir):
-    os.mkdir(datadir,0o700)
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    os.mkdir(tdir,0o700)
-  save_blob(id,'blob',blob)
-  if pk0 is None:
-    save_blob(id,'pub',pk1)
-  conn.send(b'ok')
-
 def delete(conn, msg):
-  # todo auth?
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
   if msg!=b'':
     if verbose: print('invalid get msg, trailing content %r' % msg)
     fail(conn)
@@ -382,9 +351,116 @@ def delete(conn, msg):
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
+
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  update_blob(conn)
+  update_blob(conn)
+
   shutil.rmtree(tdir)
   conn.send(b'ok')
-  # todo implement updating user and root record
+
+def write(conn, msg):
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  id = binascii.hexlify(id).decode()
+  # 1st find out if seed for this blob already exists (might be a normal sphinx pwd) 
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    conn.send(b"new")
+    # no seed available, need to set up that first.
+    k=pysodium.randombytes(32)
+    try:
+        beta = sphinxlib.respond(alpha, k)
+    except:
+      fail(conn)
+    conn.send(beta)
+
+    # wait for auth signing pubkey and rules
+    msg = conn.recv(8192+32+64+48) # pubkey, signature, max 8192B sealed(+48B) blob
+    if len(msg)<=32+64+48:
+      fail(conn)
+    # verify auth sig on packet
+    pk = msg[0:32]
+    try:
+      msg = verify_blob(msg,pk)
+    except ValueError:
+      fail(conn)
+
+    blob = msg[32:]
+
+    if not os.path.exists(datadir):
+        os.mkdir(datadir,0o700)
+    if not os.path.exists(tdir):
+        os.mkdir(tdir,0o700)
+
+    save_blob(id,'key',k)
+    save_blob(id,'pub',pk)
+
+    # 3rd phase
+    update_blob(conn) # add user to host record
+    update_blob(conn) # also update root record with host hash
+  else:
+    conn.send(b"old")
+    if not auth(conn, id, alpha):
+      fail(conn)
+    blob = conn.recv(8192+48) # max 8192B sealed(+48B) blob
+    if len(blob)<=48:
+      fail(conn)
+
+  if not os.path.exists(datadir):
+    os.mkdir(datadir,0o700)
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    os.mkdir(tdir,0o700)
+
+  save_blob(id,'blob',blob)
+  conn.send(b'ok')
+
+def read(conn, msg):
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  id = binascii.hexlify(id).decode()
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  blob = load_blob(id,'blob')
+  if blob is None:
+    blob = b''
+
+  conn.send(blob)
+
+def backup(conn,msg):
+  id = msg[1:33]
+  id = binascii.hexlify(id).decode()
+  if not os.path.exists(os.path.join(datadir,id,'key')):
+    # this is a root or host record
+    sig = msg[33:97]
+    pk = load_blob(id,'pub',32)
+    try:
+        pysodium.crypto_sign_verify_detached(sig, msg[:33], pk)
+    except:
+        fail(conn)
+    conn.send(load_blob(id,'blob'))
+  else:
+    alpha = msg[33:65]
+    if not auth(conn, id, alpha):
+      fail(conn)
+    k = load_blob(id,'key')
+    rules = load_blob(id,'rules')
+    blob = load_blob(id,'blob')
+    types = bytes([((k is not None) << 2 |
+                    (rules is not None) << 1 |
+                    (blob is not None))]) 
+    if blob is not None:
+      bsize = struct.pack('>H',len(blob))
+    else:
+      bsize = bytes(2)
+    msg = b''.join([types,bsize,k,rules or b'',blob or b''])
+    conn.send(msg)
 
 def handler(conn):
    data = conn.recv(4096)
