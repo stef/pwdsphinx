@@ -31,6 +31,7 @@ def fail(s):
     if verbose: print('fail')
     s.send(b'fail') # plaintext :/
     s.close()
+    os._exit(0)
 
 def pop(obj, cnt):
   return obj[:cnt], obj[cnt:]
@@ -47,32 +48,79 @@ def save_blob(path,fname,blob):
     os.fchmod(fd.fileno(),0o600)
     fd.write(blob)
 
-# msg format: 0x00|pk[32]|id[32]|alpha[32]|rule[50]|sig[64]
-def create(conn, msg):
+def update_blob(s):
+    id = s.recv(32)
+    if len(id)!=32:
+      fail(s)
+    id = binascii.hexlify(id).decode()
+    blob = load_blob(id,'blob')
+    new = False
+    if blob is None:
+      new = True
+      blob = b'none'
+    s.send(blob)
+    blob = s.recv(8192) # todo/fixme arbitrary limit
+    if new:
+      pk = blob[:32]
+      try:
+        blob = verify_blob(blob,pk)
+      except ValueError:
+        print('invalid signature on msg')
+        fail(s)
+      blob = blob[32:]
+      # create directories
+      if not os.path.exists(datadir):
+        os.mkdir(datadir,0o700)
+      tdir = os.path.join(datadir,id)
+      if not os.path.exists(tdir):
+        os.mkdir(tdir,0o700)
+      # save pubkey
+      save_blob(id,'pub',pk)
+    else:
+      pk = load_blob(id,'pub')
+      try:
+        blob = verify_blob(blob,pk)
+      except ValueError:
+        print('invalid signature on msg')
+        fail(s)
+    save_blob(id,'blob',blob)
+
+# msg format: 0x00|id[32]|alpha[32]
+def create(s, msg):
+    if len(msg)!=65:
+      fail(s)
     op,   msg = pop(msg,1)
-    pk,   msg = pop(msg,32)
     id,   msg = pop(msg,32)
     alpha,msg = pop(msg,32)
-    rules,msg = pop(msg,50)
-    if msg!=b'':
-      if verbose: print('invalid get msg, trailing content %r' % msg)
-      fail(conn)
-      return
 
+    # 1st step OPRF with a new seed
+    k=pysodium.randombytes(32)
+    try:
+        beta = sphinxlib.respond(alpha, k)
+    except:
+      fail(s)
+
+    # check if id is unique
     id = binascii.hexlify(id).decode()
     tdir = os.path.join(datadir,id)
     if os.path.exists(tdir):
       if verbose: print("%s exists" % tdir)
-      fail(conn)
-      return
+      fail(s)
 
-    k=pysodium.randombytes(32)
+    s.send(beta)
 
+    # wait for auth signing pubkey and rules
+    msg = s.recv(32+50+64) # pubkey, rule, signature
+    if len(msg)!=32+50+64:
+      fail(s)
+    # verify auth sig on packet
+    pk = msg[0:32]
     try:
-        beta = sphinxlib.respond(alpha, k)
-    except:
-      fail(conn)
-      return
+      msg = verify_blob(msg,pk)
+    except ValueError:
+      fail(s)
+
+    rules = msg[32:]
 
     if not os.path.exists(datadir):
         os.mkdir(datadir,0o700)
@@ -82,7 +130,10 @@ def create(conn, msg):
     save_blob(id,'pub',pk)
     save_blob(id,'rules',rules)
 
-    conn.send(beta)
+    # 3rd phase
+    update_blob(s) # add user to host record
+    update_blob(s) # also update root record with host hash
+    s.send(b'ok')
 
 def load_blob(path,fname,size=None):
     f = os.path.join(datadir,path,fname)
@@ -93,7 +144,7 @@ def load_blob(path,fname,size=None):
         v = fd.read()
     if size and len(v) != size:
         if verbose: print("wrong size for %s" % f)
-        return
+        raise ValueError('corrupted blob: %s is not %s bytes' % (f, size))
     return v
 
 # msg format: 0x66|id[32]|alpha[32]
@@ -104,42 +155,189 @@ def get(conn, msg):
     if msg!=b'':
       if verbose: print('invalid get msg, trailing content %r' % msg)
       fail(conn)
-      return
 
     id = binascii.hexlify(id).decode()
     k = load_blob(id,'key',32)
     if k is None:
       # maybe execute protocol with static but random value to not leak which host ids exist?
       fail(conn)
-      return
 
     rules = load_blob(id,'rules', 50)
     if rules is None:
         fail(conn)
-        return
 
     try:
         beta = sphinxlib.respond(alpha, k)
     except:
       fail(conn)
-      return
 
     conn.send(beta+rules)
 
-def auth(msg):
-    id = binascii.hexlify(msg[1:33]).decode()
-    pk = load_blob(id,'pub',32)
-    if pk is None:
-      print('no pubkey found in %s' % id)
-      return
-    try:
-      msg = verify_blob(msg,pk)
-    except ValueError:
-      print('invalid signature on msg')
-      return
-    return msg
+def auth(s,id,alpha):
+  k = load_blob(id,'key')
+  pk = load_blob(id,'pub',32)
+  if pk is None:
+    print('no pubkey found in %s' % id)
+    return False
+  try:
+      beta = sphinxlib.respond(alpha, k)
+  except:
+    fail(conn)
+  nonce=pysodium.randombytes(32)
+  s.send(b''.join([beta,nonce]))
+  sig = s.recv(64)
+  try:
+    pysodium.crypto_sign_verify_detached(sig, nonce, pk)
+  except:
+    return False
+  return True
+
+def change(conn, msg):
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  if msg!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % msg)
+    fail(conn)
+
+  id = binascii.hexlify(id).decode()
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    if verbose: print("%s doesn't exist" % tdir)
+    fail(conn)
+
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  k=pysodium.randombytes(32)
+
+  try:
+      beta = sphinxlib.respond(alpha, k)
+  except:
+    fail(conn)
+
+  #print("beta=",beta.hex())
+  rules = load_blob(id,'rules', 50)
+  if rules is None:
+      fail(conn)
+
+  save_blob(id,'new',k)
+  conn.send(beta+rules)
+
+def commit(conn, msg):
+  # todo auth?
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  if msg!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % msg)
+    fail(conn)
+
+  id = binascii.hexlify(id).decode()
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    if verbose: print("%s doesn't exist" % tdir)
+    fail(conn)
+
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  k = load_blob(id,'new', 32)
+  if k is None:
+      fail(conn)
+
+  old = load_blob(id,'key', 32)
+  if old is None:
+      fail(conn)
+
+  try:
+      beta = sphinxlib.respond(alpha, k)
+  except:
+    fail(conn)
+
+  rules = load_blob(id,'rules', 50)
+  if rules is None:
+      fail(conn)
+
+  conn.send(beta+rules)
+
+  blob = conn.recv(32+50+64)
+  if len(blob)!=32+50+64:
+    fail(conn)
+
+  pk = blob[0:32]
+  try:
+    blob = verify_blob(blob,pk)
+  except ValueError:
+    fail(s)
+  rules = blob[32:]
+
+  save_blob(id,'old',old)
+  save_blob(id,'key',k)
+  save_blob(id,'pub',pk)
+  save_blob(id,'rules',rules)
+  os.unlink(os.path.join(tdir,'new'))
+  conn.send(b'ok')
+
+def undo(conn, msg):
+  # todo auth?
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  if msg!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % msg)
+    fail(conn)
+
+  id = binascii.hexlify(id).decode()
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    if verbose: print("%s doesn't exist" % tdir)
+    fail(conn)
+
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  k = load_blob(id,'old', 32)
+  if k is None:
+      fail(conn)
+
+  new = load_blob(id,'key', 32)
+  if new is None:
+      fail(conn)
+
+  try:
+      beta = sphinxlib.respond(alpha, k)
+  except:
+    fail(conn)
+
+  rules = load_blob(id,'rules', 50)
+  if rules is None:
+      fail(conn)
+
+  conn.send(beta+rules)
+
+  blob = conn.recv(32+50+64)
+  if len(blob)!=32+50+64:
+    fail(conn)
+
+  pk = blob[0:32]
+  try:
+    blob = verify_blob(blob,pk)
+  except ValueError:
+    fail(s)
+  rules = blob[32:]
+
+  save_blob(id,'new',new)
+  save_blob(id,'key',k)
+  save_blob(id,'pub',pk)
+  save_blob(id,'rules',rules)
+  os.unlink(os.path.join(tdir,'old'))
+  conn.send(b'ok')
+
+#### here be dragons ####
 
 def read(conn, msg):
+  # todo auth?
   _, msg = pop(msg,1)
   id, msg = pop(msg,32)
   id = binascii.hexlify(id).decode()
@@ -151,6 +349,7 @@ def read(conn, msg):
   conn.send(blob)
 
 def write(conn, msg):
+  # todo auth?
   op,msg = pop(msg,1)
   pk1,msg = pop(msg,32)
   id,blob = pop(msg,32)
@@ -159,7 +358,6 @@ def write(conn, msg):
   pk0 = load_blob(id,'pub')
   if pk0 and pk0 != pk1:
     fail(conn)
-    return
 
   if not os.path.exists(datadir):
     os.mkdir(datadir,0o700)
@@ -171,168 +369,27 @@ def write(conn, msg):
     save_blob(id,'pub',pk1)
   conn.send(b'ok')
 
-def change(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  #print("alpha=",alpha.hex())
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
-    fail(conn)
-    return
-
-  id = binascii.hexlify(id).decode()
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    if verbose: print("%s doesn't exist" % tdir)
-    fail(conn)
-    return
-
-  k=pysodium.randombytes(32)
-  #print("k=",k.hex())
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
-    fail(conn)
-    return
-
-  #print("beta=",beta.hex())
-  rules = load_blob(id,'rules', 50)
-  if rules is None:
-      fail(conn)
-      return
-
-  save_blob(id,'new',k)
-  conn.send(beta+rules)
-
-def commit(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  #print("alpha=",alpha.hex())
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
-    fail(conn)
-    return
-
-  id = binascii.hexlify(id).decode()
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    if verbose: print("%s doesn't exist" % tdir)
-    fail(conn)
-    return
-
-  k = load_blob(id,'new', 32)
-  if k is None:
-      fail(conn)
-      return
-
-  old = load_blob(id,'key', 32)
-  if old is None:
-      fail(conn)
-      return
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
-    fail(conn)
-    return
-
-  #print("beta=",beta.hex())
-  rules = load_blob(id,'rules', 50)
-  if rules is None:
-      fail(conn)
-      return
-
-  save_blob(id,'old',old)
-  save_blob(id,'key',k)
-  os.unlink(os.path.join(tdir,'new'))
-
-  conn.send(beta+rules)
-
-def undo(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  #print("alpha=",alpha.hex())
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
-    fail(conn)
-    return
-
-  id = binascii.hexlify(id).decode()
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    if verbose: print("%s doesn't exist" % tdir)
-    fail(conn)
-    return
-
-  k = load_blob(id,'old', 32)
-  if k is None:
-      fail(conn)
-      return
-
-  new = load_blob(id,'key', 32)
-  if new is None:
-      fail(conn)
-      return
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
-    fail(conn)
-    return
-
-  #print("beta=",beta.hex())
-  rules = load_blob(id,'rules', 50)
-  if rules is None:
-      fail(conn)
-      return
-
-  save_blob(id,'new',new)
-  save_blob(id,'key',k)
-  os.unlink(os.path.join(tdir,'old'))
-
-  conn.send(beta+rules)
-
 def delete(conn, msg):
+  # todo auth?
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
   if msg!=b'':
     if verbose: print('invalid get msg, trailing content %r' % msg)
     fail(conn)
-    return
 
   id = binascii.hexlify(id).decode()
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
-    return
   shutil.rmtree(tdir)
   conn.send(b'ok')
+  # todo implement updating user and root record
 
 def handler(conn):
    data = conn.recv(4096)
    if verbose:
      print('Data received: {!r}'.format(data))
-
-   # check auth
-   if data[0] in (READ,CHANGE,COMMIT,UNDO,DELETE,BACKUP):
-     data = auth(data)
-     if data is None:
-        fail(conn)
-        conn.close()
-        os._exit(0)
-   elif data[0] in (CREATE,WRITE):
-     pk = data[1:33]
-     try:
-       data = verify_blob(data,pk)
-     except ValueError:
-       fail(conn)
-       conn.close()
-       os._exit(0)
 
    if data[0] == CREATE:
      create(conn, data)

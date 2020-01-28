@@ -14,6 +14,8 @@ win=False
 if platform.system() == 'Windows':
   win=True
 
+#### config ####
+
 cfg = getcfg('sphinx')
 
 verbose = cfg['client'].getboolean('verbose')
@@ -21,6 +23,8 @@ address = cfg['client']['address']
 port = int(cfg['client']['port'])
 datadir = os.path.expanduser(cfg['client']['datadir'])
 ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system should use proper certs!
+
+#### consts ####
 
 CREATE   =b'\x00' # sphinx
 READ     =b'\x0f' # blob
@@ -36,22 +40,9 @@ ENC_CTX = "sphinx encryption key"
 SIGN_CTX = "sphinx signing key"
 SALT_CTX = "sphinx host salt"
 ROOT_CTX = "sphinx root idx"
+PASS_CTX = "sphinx password context"
 
-def init_key():
-  kfile = os.path.join(datadir,'masterkey')
-  if os.path.exists(kfile):
-    print("Already initialized.")
-    return 1
-  if not os.path.exists(datadir):
-    os.mkdir(datadir,0o700)
-  mk = pysodium.randombytes(32)
-  try:
-    with open(kfile,'wb') as fd:
-      if not win: os.fchmod(fd.fileno(),0o600)
-      fd.write(mk)
-  finally:
-    clearmem(mk)
-  return 0
+#### Helper fns ####
 
 def get_masterkey():
   try:
@@ -77,133 +68,258 @@ def connect():
   s.connect((address, port))
   return s
 
-def get_signkey():
+def get_signkey(id, rwd):
   mk = get_masterkey()
-  seed = pysodium.crypto_generichash(mk,SIGN_CTX)
+  seed = pysodium.crypto_generichash(SIGN_CTX, mk)
   clearmem(mk)
+  # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
+  seed = pysodium.crypto_generichash(seed, id)
+  seed = pysodium.crypto_generichash(seed, rwd)
   pk, sk = pysodium.crypto_sign_seed_keypair(seed)
   clearmem(seed)
   return sk, pk
 
-def get_sealkey():
+def get_sealkey(rwd):
   mk = get_masterkey()
-  sk = pysodium.crypto_generichash(mk,ENC_CTX)
+  sk = pysodium.crypto_generichash(ENC_CTX, mk)
   clearmem(mk)
+  # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
+  sk = pysodium.crypto_generichash(sk, rwd)
   pk = pysodium.crypto_scalarmult_curve25519_base(sk)
   return sk, pk
 
-def encrypt_blob(blob):
+def encrypt_blob(blob, rwd):
   # todo implement padding
-  sk, pk = get_sealkey()
+  sk, pk = get_sealkey(rwd)
   clearmem(sk)
   return pysodium.crypto_box_seal(blob,pk)
 
-def decrypt_blob(blob):
+def decrypt_blob(blob, rwd):
   # todo implement padding
-  sk, pk = get_sealkey()
+  sk, pk = get_sealkey(rwd)
   res = pysodium.crypto_box_seal_open(blob,pk,sk)
   clearmem(sk)
   return res
 
-def sign_blob(blob):
-  sk, pk = get_signkey()
+def sign_blob(blob, id, rwd):
+  sk, pk = get_signkey(id, rwd)
   res = pysodium.crypto_sign_detached(blob,sk)
   clearmem(sk)
   return b''.join((blob,res))
 
 def getid(host, user):
   mk = get_masterkey()
-  salt = pysodium.crypto_generichash(mk,SALT_CTX)
+  salt = pysodium.crypto_generichash(SALT_CTX, mk)
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
 def getrootid():
   mk = get_masterkey()
-  root = pysodium.crypto_generichash(mk,ROOT_CTX)
+  root = pysodium.crypto_generichash(ROOT_CTX, mk)
   clearmem(mk)
   return root
 
-def unpack_rule(rules):
-  rules = decrypt_blob(rules)
+def unpack_rule(rules, rwd):
+  rules = decrypt_blob(rules, rwd)
   rule = struct.unpack(">H",rules)[0]
   size = (rule & 0x7f)
   rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
   return rule, size
 
-def create(s, pwd, user, host, char_classes, size=0):
+def pack_rule(char_classes, size):
+  # pack rules into 2 bytes, and encrypt them
   if set(char_classes) - {'u','l','s','d'}:
-    raise ValueError("error: rules can only contain ulsd.")
-  try: size=int(size)
-  except:
-    raise ValueError("error: size has to be integer.")
+    raise ValueError("error: rules can only contain any of 'ulsd'.")
 
   rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
   # pack rule
-  rule=struct.pack('>H', (rules << 7) | (size & 0x7f))
-  rule = encrypt_blob(rule)
-
-  sk, pk = get_signkey()
-  clearmem(sk)
-
-  r, alpha = sphinxlib.challenge(pwd)
-  id = getid(host, user)
-  msg = b''.join([CREATE, pk, id, alpha, rule])
-  msg = sign_blob(msg)
-
-  s.send(msg)
-  beta = s.recv(32)
-  if beta == b'fail':
-    raise ValueError("error: sphinx protocol failure.")
-  rwd = sphinxlib.finish(pwd, r, beta, id)
-
-  print(bin2pass.derive(rwd,char_classes,size).decode())
-  clearmem(rwd)
-  # todo return upsert_user(s, pwd, user, host)
-  return add_user(s,user,host) and add_host(s,host)
+  return struct.pack('>H', (rules << 7) | (size & 0x7f))
 
 def doSphinx(s, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
-#  print("alpha=",alpha.hex())
-#  print("r=",r.hex())
   msg = b''.join([op, id, alpha])
   s.send(msg)
+  crwd = None
+  if op != GET: # == CHANGE, UNDO, COMMIT
+    # do sphinx with current seed, use it to sign the nonce
+    msg = s.recv(64)
+    beta = msg[:32]
+    nonce = msg[32:]
+    crwd = sphinxlib.finish(pwd, r, beta, id)
+    sk, pk = get_signkey(id, crwd)
+    sig = pysodium.crypto_sign_detached(nonce,sk)
+    clearmem(sk)
+    s.send(sig)
+
   resp = s.recv(32+50) # beta + sealed rules
-  if resp == b'fail':
+  if resp == b'fail' or len(resp)!=32+50:
     raise ValueError("error: sphinx protocol failure.")
   beta = resp[:32]
   rules = resp[32:]
-#  print("beta=",beta.hex())
-#  print("id=",id.hex())
-#  print("pwd=",pwd.hex())
   rwd = sphinxlib.finish(pwd, r, beta, id)
-#  print("rwd=",rwd.hex())
 
-  classes, size = unpack_rule(rules)
-  rpwd = bin2pass.derive(rwd,classes,size).decode()
+  # in case of change/undo/commit we need to use the crwd to decrypt the rules
+  classes, size = unpack_rule(rules, crwd or rwd)
+  if crwd:
+    clearmem(crwd)
+    # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
+    if op in {UNDO,COMMIT}:
+      sk, pk = get_signkey(id, rwd)
+      clearmem(sk)
+      rule = encrypt_blob(pack_rule(classes, size), rwd)
+
+      # send over new signed(pubkey, rule)
+      msg = b''.join([pk, rule])
+      msg = sign_blob(msg, id, rwd)
+      s.send(msg)
+      if s.recv(2)!=b'ok':
+        print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
+        return False
+
+  rpwd = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
   clearmem(rwd)
   print(rpwd)
   clearmem(rpwd)
 
   return True
 
+#### OPs ####
+
+def init_key():
+  kfile = os.path.join(datadir,'masterkey')
+  if os.path.exists(kfile):
+    print("Already initialized.")
+    return 1
+  if not os.path.exists(datadir):
+    os.mkdir(datadir,0o700)
+  mk = pysodium.randombytes(32)
+  try:
+    with open(kfile,'wb') as fd:
+      if not win: os.fchmod(fd.fileno(),0o600)
+      fd.write(mk)
+  finally:
+    clearmem(mk)
+  return 0
+
+def create(s, pwd, user, host, char_classes, size=0):
+  # 1st step OPRF on the new seed
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([CREATE, id, alpha])
+  s.send(msg)
+
+  # wait for response from sphinx server
+  beta = s.recv(32)
+  if beta == b'fail':
+    raise ValueError("error: sphinx protocol failure.")
+  rwd = sphinxlib.finish(pwd, r, beta, id)
+
+  # second phase, derive new auth signing pubkey
+  sk, pk = get_signkey(id, rwd)
+  clearmem(sk)
+
+  try: size=int(size)
+  except:
+    raise ValueError("error: size has to be integer.")
+  rule = encrypt_blob(pack_rule(char_classes, size), rwd)
+
+  # send over new signed(pubkey, rule)
+  msg = b''.join([pk, rule])
+  msg = sign_blob(msg, id, rwd)
+  s.send(msg)
+
+  # add user to user list for this host
+  # a malicous server could correlate all accounts on this services to this users here
+  # first query user record for this host
+  id = getid(host, '')
+  s.send(id)
+  # wait for user blob
+  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
+  if blob == b'none':
+    # it is a new blob, we need to attach an auth signing pubkey
+    sk, pk = get_signkey(id, b'')
+    clearmem(sk)
+    blob = encrypt_blob(user.encode(), b'')
+    # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
+    blob = b''.join([pk, blob])
+    blob = sign_blob(blob, id, b'')
+  else:
+    blob = decrypt_blob(blob, b'')
+    users = set(blob.decode().split('\x00'))
+    # todo/fix? we do not recognize if the user is already included in this list
+    # this should not happen, but maybe it's a sign of corruption?
+    users.add(user)
+    blob = ('\x00'.join(sorted(users))).encode()
+    # notice we do not add rwd to encryption of user blobs
+    blob = encrypt_blob(blob, b'')
+    blob = sign_blob(blob, id, b'')
+  s.send(blob)
+
+  # add host to list of hosts for this
+  id = getrootid()
+  s.send(id)
+
+  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
+  if blob == b'none':
+    # it is a new blob, we need to attach an auth signing pubkey
+    sk, pk = get_signkey(id, b'')
+    clearmem(sk)
+    blob = encrypt_blob(host.encode(), b'')
+    msg = b''.join([pk, blob])
+    # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
+    msg = sign_blob(msg, id, b'')
+  else:
+    blob = decrypt_blob(blob, b'')
+    hosts = set(blob.decode().split('\x00'))
+    # todo/fix? we do not recognize if the host is already included in this list
+    # this should not happen, but maybe it's a sign of corruption?
+    hosts.add(host)
+    blob = ('\x00'.join(sorted(hosts))).encode()
+    # notice we do not add rwd to encryption of user blobs
+    blob = encrypt_blob(blob, b'')
+    msg = sign_blob(blob, id, b'')
+  s.send(msg)
+
+  print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode())
+  clearmem(rwd)
+  return True
+
 def get(s, pwd, user, host):
   return doSphinx(s, GET, pwd, user, host)
 
-def read_blob(s, host=None, id=None):
+def read_blob(s, host=None, id=None, rwd = None):
   if id is None:
     if host is not None:
         id = getid(host, '')
     else:
       fail(s)
       raise ValueError("must have either host or id provided in params")
+  if rwd is None:
+    rwd = b''
   msg = b''.join([READ, id])
-  msg = sign_blob(msg)
+  msg = sign_blob(msg, id, rwd)
   s.send(msg)
   blob = s.recv(4096)
   if blob == b'fail':
     return b''
-  return decrypt_blob(blob)
+  return decrypt_blob(blob, rwd)
+
+def users(s, host):
+  users = set(read_blob(s, host).decode().split('\x00'))
+  print('\n'.join(sorted(users)))
+  return True
+
+def change(s, pwd, user, host):
+  return doSphinx(s, CHANGE, pwd, user, host)
+
+def commit(s, pwd, user, host):
+  return doSphinx(s, COMMIT, pwd, user, host)
+
+def undo(s, pwd, user, host):
+  return doSphinx(s, UNDO, pwd, user, host)
+
+### here be dragons ####
 
 def write_blob(s, blob, host=None, id=None):
   if id is None:
@@ -221,59 +337,16 @@ def write_blob(s, blob, host=None, id=None):
   blob = s.recv(4096)
   return blob == b'ok'
 
-def add_user(s, user, host):
-  users = set()
-  # reconnect
-  s.close()
-  # add random delay?
-  s = connect()
-  ret = read_blob(s, host)
-  if ret != b'':
-    users = set(ret.decode().split('\x00'))
-    s.close()
-  s = connect()
-  users.add(user)
-  users = sorted(users)
-  return write_blob(s, ('\x00'.join(sorted(users))).encode(), host)
-
-def add_host(s,host):
-  hosts = set()
-  id = getrootid()
-  # reconnect
-  s.close()
-  # add random delay?
-  s = connect()
-  ret = read_blob(s, id = id)
-  if hosts != b'':
-    hosts = set(ret.decode().split('\x00'))
-    s.close()
-  s = connect()
-  hosts.add(host)
-  return write_blob(s, ('\x00'.join(sorted(hosts))).encode(), id = id)
-
-def users(s, host):
-  users = set(read_blob(s, host).decode().split('\x00'))
-  print('\n'.join(sorted(users)))
-  return True
-
-def change(s, pwd, user, host):
-  return doSphinx(s, CHANGE, pwd, user, host)
-
-def commit(s, pwd, user, host):
-  return doSphinx(s, COMMIT, pwd, user, host)
-
-def undo(s, pwd, user, host):
-  return doSphinx(s, UNDO, pwd, user, host)
-
 def delete(s, user, host):
   id = getid(host, user)
   msg = b''.join([DELETE, id])
   msg = sign_blob(msg)
   s.send(msg)
   blob = s.recv(4096)
+  # todo implement remove user and remove host
   return blob == b'ok'
 
-def backup(s):
+def backup(s): # todo implement
   id = getrootid()
   ret = read_blob(s, id = id)
   if ret==b'':
@@ -289,6 +362,8 @@ def backup(s):
     for u in users:
       print("\t", u)
   return True
+
+#### main ####
 
 def main():
   def usage():
