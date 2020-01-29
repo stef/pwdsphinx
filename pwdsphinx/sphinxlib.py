@@ -97,14 +97,15 @@ OPAQUE_REGISTER_SECRET_LEN = (crypto_scalarmult_SCALARBYTES+crypto_core_ristrett
 # needs to implement the storage of this record and any binding to
 # user names or as the paper suggests sid.  *Attention* the size of
 # rec depends on the size of extra data provided.
-# int opaque_init_srv(const uint8_t *pw, const size_t pwlen, const unsigned char *extra, const uint64_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN]);
-def opaque_init_srv(pwd, extra = None):
+# int opaque_init_srv(const uint8_t *pw, const size_t pwlen, const uint8_t *extra, const uint64_t extra_len, const uint8_t *key, const uint64_t key_len, uint8_t rec[OPAQUE_USER_RECORD_LEN]);
+def opaque_init_srv(pwd, extra = None, key = None):
     if not pwd:
         raise ValueError("invalid parameter")
 
     rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN+(len(extra) if extra is not None else 0))
     extra_len = ctypes.c_ulonglong(len(extra)) if extra is not None else ctypes.c_ulonglong(0)
-    __check(sphinxlib.opaque_init_srv(pwd, len(pwd), extra, extra_len, rec))
+    key_len = ctypes.c_ulonglong(len(key)) if key is not None else ctypes.c_ulonglong(0)
+    __check(sphinxlib.opaque_init_srv(pwd, len(pwd), extra, extra_len, key, key_len, rec))
     return rec.raw
 
 
@@ -113,7 +114,7 @@ def opaque_init_srv(pwd, extra = None):
 # providing its input password pw, and receving a private sec and a "public"
 # pub output parameter. The User should protect the sec value until later in
 # the protocol and send the pub value over to the Server.
-# int opaque_session_usr_start(const uint8_t *pw, const size_t pwlen, unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], unsigned char pub[OPAQUE_USER_SESSION_PUBLIC_LEN]);
+# int opaque_session_usr_start(const uint8_t *pw, const size_t pwlen, uint8_t sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t pub[OPAQUE_USER_SESSION_PUBLIC_LEN]);
 def opaque_session_usr_start(pwd):
     if not pwd:
         raise ValueError("invalid parameter")
@@ -130,7 +131,7 @@ def opaque_session_usr_start(pwd):
 # transformed into a secret/shared session key sk and a response resp to be
 # sent back to the user. *Attention* rec and resp have variable length
 # depending on any extra data stored.
-# int opaque_session_srv(const unsigned char pub[OPAQUE_USER_SESSION_PUBLIC_LEN], const unsigned char rec[OPAQUE_USER_RECORD_LEN], unsigned char resp[OPAQUE_SERVER_SESSION_LEN], uint8_t *sk);
+# int opaque_session_srv(const uint8_t pub[OPAQUE_USER_SESSION_PUBLIC_LEN], const uint8_t rec[OPAQUE_USER_RECORD_LEN], uint8_t resp[OPAQUE_SERVER_SESSION_LEN], uint8_t *sk);
 def opaque_session_srv(pub, rec):
     if None in (pub, rec):
         raise ValueError("invalid parameter")
@@ -152,17 +153,19 @@ def opaque_session_srv(pub, rec):
 # by the srvSession() function. *Attention* resp has a length depending on extra
 # data. If rwd is not NULL it is returned - this enables to run the sphinx protocol
 # in the opaque protocol.
-# int opaque_session_usr_finish(const uint8_t *pw, const size_t pwlen, const unsigned char resp[OPAQUE_SERVER_SESSION_LEN], const unsigned char sec[OPAQUE_USER_SESSION_SECRET_LEN], uint8_t *sk, uint8_t *extra, uint8_t rwd[crypto_secretbox_KEYBYTES]);
-def opaque_session_usr_finish(pwd, resp, sec, rwd = False):
+# int opaque_session_usr_finish(const uint8_t *pw, const size_t pwlen, const uint8_t resp[OPAQUE_SERVER_SESSION_LEN], const uint8_t sec[OPAQUE_USER_SESSION_SECRET_LEN], const uint8_t *key, const uint64_t key_len, uint8_t *sk, uint8_t *extra, uint8_t rwd[crypto_secretbox_KEYBYTES]);
+def opaque_session_usr_finish(pwd, resp, sec, key = None, rwd = False):
     if None in (pwd, resp, sec):
         raise ValueError("invalid parameter")
     if len(resp) < OPAQUE_SERVER_SESSION_LEN: raise ValueError("invalid resp param")
     if len(sec) != OPAQUE_USER_SESSION_SECRET_LEN: raise ValueError("invalid sec param")
 
+    key_len = ctypes.c_ulonglong(len(key)) if key is not None else ctypes.c_ulonglong(0)
+
     sk = ctypes.create_string_buffer(32)
     extra = ctypes.create_string_buffer(len(resp) - OPAQUE_SERVER_SESSION_LEN)
     rw = ctypes.create_string_buffer(crypto_secretbox_KEYBYTES) if rwd else None
-    __check(sphinxlib.opaque_session_usr_finish(pwd, len(pwd), resp, sec, sk, extra, rw))
+    __check(sphinxlib.opaque_session_usr_finish(pwd, len(pwd), resp, sec, key, key_len, sk, extra, rw))
     if rwd:
         return sk.raw, extra.raw, rw.raw
     return sk.raw, extra.raw
@@ -209,7 +212,7 @@ def opaque_private_init_usr_start(pwd):
 # which needs to be protected until step 4 by the server. This
 # function also outputs a value pub which needs to be passed to the
 # user.
-# int opaque_private_init_srv_respond(const uint8_t *alpha, unsigned char sec[OPAQUE_REGISTER_SECRET_LEN], unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN]);
+# int opaque_private_init_srv_respond(const uint8_t *alpha, uint8_t sec[OPAQUE_REGISTER_SECRET_LEN], uint8_t pub[OPAQUE_REGISTER_PUBLIC_LEN]);
 def opaque_private_init_srv_respond(alpha):
     if not alpha:
         raise ValueError("invalid parameter")
@@ -230,8 +233,8 @@ def opaque_private_init_srv_respond(alpha):
 # size of rec depends on extra data length. If rwd is not NULL it is
 # returned - this enables to run the sphinx protocol in the opaque
 # protocol.
-# int opaque_private_init_usr_respond(const uint8_t *pw, const size_t pwlen, const uint8_t *r, const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], const unsigned char *extra, const uint64_t extra_len, unsigned char rec[OPAQUE_USER_RECORD_LEN], uint8_t rwd[crypto_secretbox_KEYBYTES]);
-def opaque_private_init_usr_respond(pw, r, pub, extra = None, rwd = False):
+# int opaque_private_init_usr_respond(const uint8_t *pw, const size_t pwlen, const uint8_t *r, const uint8_t pub[OPAQUE_REGISTER_PUBLIC_LEN], const uint8_t *extra, const uint64_t extra_len, const uint8_t *key, const uint64_t key_len, uint8_t rec[OPAQUE_USER_RECORD_LEN], uint8_t rwd[crypto_secretbox_KEYBYTES]);
+def opaque_private_init_usr_respond(pw, r, pub, extra = None, key = None, rwd = False):
     if None in (pw, r, pub):
         raise ValueError("invalid parameter")
     if len(r) != 32: raise ValueError("invalid r param")
@@ -239,8 +242,9 @@ def opaque_private_init_usr_respond(pw, r, pub, extra = None, rwd = False):
 
     rec = ctypes.create_string_buffer(OPAQUE_USER_RECORD_LEN+(len(extra) if extra is not None else 0))
     extralen = ctypes.c_ulonglong(len(extra)) if extra is not None else ctypes.c_ulonglong(0)
+    key_len = ctypes.c_ulonglong(len(key)) if key is not None else ctypes.c_ulonglong(0)
     rw = ctypes.create_string_buffer(crypto_secretbox_KEYBYTES) if rwd else None
-    __check(sphinxlib.opaque_private_init_usr_respond(pw, len(pw), r, pub, extra, extralen, rec, rw))
+    __check(sphinxlib.opaque_private_init_usr_respond(pw, len(pw), r, pub, extra, extralen, key, key_len, rec, rw))
     if rwd:
         return rec.raw, rw.raw
     return rec.raw
@@ -251,7 +255,7 @@ def opaque_private_init_usr_respond(pw, r, pub, extra = None, rwd = False):
 # init function of the paper. The server should save this record in
 # combination with a user id and/or sid value as suggested in the paper.
 # *Attention* the size of rec depends on extra data length.
-# void opaque_private_init_srv_finish(const unsigned char sec[OPAQUE_REGISTER_SECRET_LEN], const unsigned char pub[OPAQUE_REGISTER_PUBLIC_LEN], unsigned char rec[OPAQUE_USER_RECORD_LEN]);
+# void opaque_private_init_srv_finish(const uint8_t sec[OPAQUE_REGISTER_SECRET_LEN], const uint8_t pub[OPAQUE_REGISTER_PUBLIC_LEN], uint8_t rec[OPAQUE_USER_RECORD_LEN]);
 def opaque_private_init_srv_finish(sec, pub, rec):
     if None in (sec, pub, rec):
         raise ValueError("invalid parameter")
