@@ -258,12 +258,16 @@ def main():
             if pid==0:
               try:
                 handler(conn)
+              except:
+                print("fail")
               finally:
-                conn.shutdown(socket.SHUT_RDWR)
+                try: conn.shutdown(socket.SHUT_RDWR)
+                except OSError: pass
                 conn.close()
             else:
                 kids.append(pid)
-            pid, status = os.waitpid(0,os.WNOHANG)
+            try: pid, status = os.waitpid(0,os.WNOHANG)
+            except ChildProcessError: pass
             if(pid,status)!=(0,0):
                 kids.remove(pid)
 
