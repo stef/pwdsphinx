@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import socket, sys, os, datetime, binascii, pysodium, shutil
+import socket, sys, os, datetime, binascii, pysodium, shutil, ssl
 from SecureString import clearmem
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
@@ -9,26 +9,31 @@ cfg = getcfg('sphinx')
 verbose = cfg['server'].getboolean('verbose')
 address = cfg['server']['address']
 port = int(cfg['server']['port'])
-datadir = cfg['server']['datadir']
-keydir = cfg['server']['keydir']
+datadir = os.path.expanduser(cfg['server']['datadir'])
+max_kids = int(cfg['server'].get('max_kids',5))
+ssl_key = cfg['server']['ssl_key']
+ssl_cert = cfg['server']['ssl_cert']
 
 if(verbose):
   cfg.write(sys.stdout)
 
 CREATE=0x00
+READ=0x33
+UNDO=0x55
 GET=0x66
 COMMIT=0x99
 CHANGE=0xaa
+WRITE=0xcc
 DELETE=0xff
 
 def fail(s):
     if verbose: print('fail')
-    s.send(b'fail') # plaintext :/
+    s.send(b'fail') # unauth'd plaintext :/ - only protected by tls
+    s.shutdown(socket.SHUT_RDWR)
     s.close()
 
-# msg format: 0x00|id[32]|alpha[32]
-def create(conn, msg):
-    id = msg[1:33]
+def _create(conn, msg):
+    id = binascii.hexlify(msg[1:33]).decode()
     alpha = msg[33:65]
 
     sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
@@ -37,42 +42,78 @@ def create(conn, msg):
     rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
 
     # store record
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
+    tdir = os.path.join(datadir,id)
 
     if os.path.exists(tdir):
       if verbose: print("%s exists" % tdir)
       fail(conn)
       return
 
-    if not os.path.exists(os.path.expanduser(datadir)):
-        os.mkdir(os.path.expanduser(datadir),0o700)
+    if not os.path.exists(datadir):
+        os.mkdir(datadir,0o700)
 
     os.mkdir(tdir,0o700)
 
-    with open(tdir+'/rec','wb') as fd:
+    with open(os.path.join(tdir,'rec'),'wb') as fd:
       os.fchmod(fd.fileno(),0o600)
       fd.write(rec)
 
-    conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
-    conn.close()
+    conn.send(b'ok')
+
+def update_record(conn, msg = None, dst='rec'):
+   if msg is None: msg = conn.recv(4096)
+   id = binascii.hexlify(msg[1:33]).decode()
+   # we return the record
+   sk = get(conn,msg,True)
+   if not sk: fail(conn)
+   # we authenticate
+   usr_auth = conn.recv(4096)
+   auth = sphinxlib.opaque_f(sk, 2)
+   if auth != usr_auth: fail(conn)
+
+   alpha = conn.recv(4096)
+   sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
+   conn.send(pub)
+
+   rec = conn.recv(4096)
+   rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
+
+   # store record
+   tdir = os.path.join(datadir,id)
+
+   if not os.path.exists(tdir):
+     if verbose: print("%s does not exist" % tdir)
+     fail(conn)
+     return
+
+   with open(os.path.join(tdir,dst),'wb') as fd:
+     os.fchmod(fd.fileno(),0o600)
+     fd.write(rec)
+
+# msg format: 0x00|id[32]|alpha[32]
+def create(conn, msg):
+    _create(conn,msg)
+
+    # handle upsert user
+    # get id for user record
+    msg = conn.recv(33)
+    write(conn, msg)
 
 # msg format: 0x66|id[32]|pub[xx] # fixme how big is pub?
 def get(conn, msg, session=False):
-    id = msg[1:33]
+    id = binascii.hexlify(msg[1:33]).decode()
 
-    recfile = "%s/rec" % os.path.expanduser(datadir+binascii.hexlify(id).decode())
+    recfile = os.path.join(datadir,id, 'rec')
 
     if not os.path.exists(recfile):
         if verbose: print('%s does not exist' % recfile)
         fail(conn)
-        return
     with open(recfile,'rb') as fd:
         rec = fd.read()
 
     if len(rec) <= sphinxlib.OPAQUE_USER_RECORD_LEN:
         if verbose: print("rec wrong size")
         fail(conn)
-        return
 
     pub = msg[33:]
     resp, sk = sphinxlib.opaque_session_srv(pub, rec)
@@ -86,149 +127,109 @@ def get(conn, msg, session=False):
 
 # msg format: 0xff|id[32]
 def delete(conn, msg):
-    id = msg[1:33]
+    id = binascii.hexlify(msg[1:33]).decode()
     sk = get(conn, msg, True)
-    if not sk:
-        return
+    if not sk: fail(conn)
     usr_auth = conn.recv(4096)
     auth = sphinxlib.opaque_f(sk, 2)
+    clearmem(sk)
     if auth != usr_auth:
         fail(conn)
-        return
 
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
+    tdir = os.path.join(datadir,id)
     shutil.rmtree(tdir) # todo fixme use "secure delete"
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
-    conn.send(nonce+msg)
-    conn.close()
+
+    update_record(conn)
+
+    conn.send(b'ok')
 
 # msg format: 0x99|id[32]
 def change(conn, msg):
-    id = msg[1:33]
-    sk = get(conn, msg, True)
-    if not sk:
-        return
-
-    msg = conn.recv(4096)
-    alpha = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(pub,nonce,sk)
-    conn.send(nonce+msg)
-
-    msg = conn.recv(4096)
-    try:
-        rec = pysodium.crypto_secretbox_open(msg[pysodium.crypto_secretbox_NONCEBYTES:],msg[:pysodium.crypto_secretbox_NONCEBYTES],sk)
-    except:
-        fail(conn)
-        return
-    rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
-
-    # store record
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
-
-    if not os.path.exists(tdir):
-      if verbose: print("%s does not exist" % tdir)
-      fail(conn)
-      return
-
-    with open(tdir+'/new','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(rec)
-
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
-    conn.send(nonce+msg)
-    conn.close()
+    update_record(conn,msg, 'new')
+    conn.send(b'ok')
 
 # msg format: 0xff|id[32]
-def commit(conn, msg):
-    id = msg[1:33]
+def commit_undo(conn, msg, src, dst):
+    id = binascii.hexlify(msg[1:33]).decode()
     sk = get(conn, msg, True)
-    if not sk:
-        return
+    if not sk: fail(conn)
     usr_auth = conn.recv(4096)
     auth = sphinxlib.opaque_f(sk, 2)
-    if auth != usr_auth:
-        print("auth :/")
-        fail(conn)
-        return
+    clearmem(sk)
+    if auth != usr_auth: fail(conn)
 
-    tdir = os.path.expanduser(datadir+binascii.hexlify(id).decode())
+    tdir = os.path.join(datadir,id)
     try:
-      with open(tdir+'/new','rb') as fd:
+      with open(os.path.join(tdir,src),'rb') as fd:
         rec = fd.read()
     except FileNotFoundError:
-      if verbose: print("not found %s/new" % tdir)
+      if verbose: print("not found %s/%s" % (tdir,src))
       fail(conn)
       return
 
     if(len(rec)<sphinxlib.OPAQUE_USER_RECORD_LEN):
-      if verbose: print("invalid %s/new" % tdir)
+      if verbose: print("invalid %s/%s" % (tdir,src))
       fail(conn)
       return
 
-    with open(tdir+'/rec','wb') as fd:
+    os.rename(os.path.join(tdir,'rec'),os.path.join(tdir,dst))
+
+    with open(os.path.join(tdir,'rec'),'wb') as fd:
       os.fchmod(fd.fileno(),0o600)
       fd.write(rec)
 
-    os.unlink(tdir+'/new')
+    os.unlink(os.path.join(tdir,src))
 
-    nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-    msg = pysodium.crypto_secretbox(b"ok",nonce,sk)
-    conn.send(nonce+msg)
+    conn.send(b'ok')
     conn.close()
+
+def write(conn, msg):
+   id = binascii.hexlify(msg[1:33]).decode()
+   recfile = os.path.join(datadir,id, 'rec')
+   if os.path.exists(recfile):
+      # update the record file
+      conn.send(b'\xff')
+      update_record(conn)
+   else:
+      #create a new record
+      conn.send(b'\x00')
+      msg = conn.recv(4096)
+      _create(conn, msg)
+
+   conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
 
 def handler(conn):
    data = conn.recv(4096)
-   sk,pk=getkey(keydir)
-   try:
-     data = pysodium.crypto_box_seal_open(data,pk,sk)
-   except:
-     fail(conn)
-     os._exit(0)
-   clearmem(sk)
 
    if verbose:
-     print('Data received: {!r}'.format(data))
+     print('Data received: {}'.format(data.hex()))
 
    if data[0] == CREATE:
-     create(conn, data)
+      create(conn, data)
    elif data[0] == GET:
-     get(conn, data)
+      get(conn, data)
    elif data[0] == CHANGE:
-     change(conn, data)
+      change(conn, data)
    elif data[0] == DELETE:
-     delete(conn, data)
+      delete(conn, data)
    elif data[0] == COMMIT:
-     commit(conn, data)
+      commit_undo(conn, data,'new','old')
+   elif data[0] == UNDO:
+      commit_undo(conn, data,'old','new')
+   elif data[0] == READ:
+      get(conn, data)
+   elif data[0] == WRITE:
+      write(conn, data)
+   elif verbose:
+      print("unknown op: 0x%02x" % data[0])
+
+   #conn.shutdown(socket.SHUT_RDWR)
+   conn.close()
    os._exit(0)
 
-def getkey(keydir):
-  path = os.path.expanduser(keydir)
-  try:
-    with open(path+'server-key', 'rb') as fd:
-      sk = fd.read(pysodium.crypto_box_SECRETKEYBYTES)
-    with open(path+'server-key.pub', 'rb') as fd:
-      pk = fd.read(pysodium.crypto_box_PUBLICKEYBYTES)
-    return sk,pk
-  except FileNotFoundError:
-    print("no server key found, generating...")
-    if not os.path.exists(path):
-      os.mkdir(path,0o700)
-    pk, sk = pysodium.crypto_box_keypair()
-    with open(path+'server-key','wb') as fd:
-      os.fchmod(fd.fileno(),0o600)
-      fd.write(sk)
-    with open(path+'server-key.pub','wb') as fd:
-      fd.write(pk)
-    print("please share `%s` with all clients"  % (path+'server-key.pub'))
-    return sk,pk
-
 def main():
-    sk,pk=getkey(keydir)
-    clearmem(sk)
+    ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ctx.load_cert_chain(certfile=ssl_cert, keyfile=ssl_key)
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -247,12 +248,19 @@ def main():
             conn, addr = s.accept()
             if verbose:
                 print('{} Connection from {}:{}'.format(datetime.datetime.now(), addr[0], addr[1]))
-            while(len(kids)>5):
+
+            conn = ctx.wrap_socket(conn, server_side=True)
+            while(len(kids)>max_kids):
                 pid, status = os.waitpid(0,0)
                 kids.remove(pid)
+
             pid=os.fork()
             if pid==0:
+              try:
                 handler(conn)
+              finally:
+                conn.shutdown(socket.SHUT_RDWR)
+                conn.close()
             else:
                 kids.append(pid)
             pid, status = os.waitpid(0,os.WNOHANG)
