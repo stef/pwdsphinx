@@ -495,6 +495,8 @@ def main():
               ssl.RAND_add(os.urandom(16),0.0)
               try:
                 handler(conn)
+              except:
+                print("fail")
               finally:
                 conn.shutdown(socket.SHUT_RDWR)
                 conn.close()
