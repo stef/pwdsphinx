@@ -27,8 +27,7 @@ ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system shou
 #### consts ####
 
 CREATE   =b'\x00' # sphinx
-READ     =b'\x0f' # blob
-BACKUP   =b'\x33' # sphinx+blobs
+READ     =b'\x33' # blob
 UNDO     =b'\x55' # change sphinx
 GET      =b'\x66' # sphinx
 COMMIT   =b'\x99' # change sphinx
@@ -39,7 +38,6 @@ DELETE   =b'\xff' # sphinx+blobs
 ENC_CTX = "sphinx encryption key"
 SIGN_CTX = "sphinx signing key"
 SALT_CTX = "sphinx host salt"
-ROOT_CTX = "sphinx root idx"
 PASS_CTX = "sphinx password context"
 
 #### Helper fns ####
@@ -52,10 +50,6 @@ def get_masterkey():
   except FileNotFoundError:
     print("Error: Could not find masterkey!\nIf sphinx was working previously it is now broken.\nIf this is a fresh install all is good, you just need to run `%s init`." % sys.argv[0])
     sys.exit(1)
-
-def split_by_n(obj, n):
-  # src https://stackoverflow.com/questions/9475241/split-string-every-nth-character
-  return [obj[i:i+n] for i in range(0, len(obj), n)]
 
 def connect():
   ctx = ssl.create_default_context()
@@ -112,12 +106,6 @@ def getid(host, user):
   salt = pysodium.crypto_generichash(SALT_CTX, mk)
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
-
-def getrootid():
-  mk = get_masterkey()
-  root = pysodium.crypto_generichash(ROOT_CTX, mk)
-  clearmem(mk)
-  return root
 
 def unpack_rule(rules, rwd):
   rules = decrypt_blob(rules, rwd)
@@ -263,7 +251,6 @@ def create(s, pwd, user, host, char_classes, size=0):
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
   update_rec(s, getid(host, ''), user)
-  update_rec(s, getrootid(), host)
 
   print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode())
   clearmem(rwd)
@@ -333,26 +320,6 @@ def delete(s, pwd, user, host):
     blob = sign_blob(blob, id, b'')
   s.send(blob)
 
-  # add host to list of hosts for this
-  id = getrootid()
-  s.send(id)
-
-  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
-  if blob == b'none':
-    # this should not happen, it means something is corrupt
-    print("error: server has no associated root record for you")
-    return False
-  else:
-    blob = decrypt_blob(blob, b'')
-    hosts = set(blob.decode().split('\x00'))
-    # todo/fix? we do not recognize if the host is already included in this list
-    # this should not happen, but maybe it's a sign of corruption?
-    hosts.remove(host)
-    blob = ('\x00'.join(sorted(hosts))).encode()
-    # notice we do not add rwd to encryption of user blobs
-    blob = encrypt_blob(blob, b'')
-    msg = sign_blob(blob, id, b'')
-  s.send(msg)
   if b'ok' != s.recv(2):
     return False
 
@@ -363,7 +330,6 @@ def write(s, blob, user, host):
   id = getid(host, user)
   pwd, blob = blob.decode().split('\n',1)
   # goddamn fucking py3 with it's braindead string/bytes smegma shit
-  pwd = pwd + '\n'
   pwd = pwd.encode()
   blob = blob.encode()
   r, alpha = sphinxlib.challenge(pwd)
@@ -388,7 +354,6 @@ def write(s, blob, user, host):
 
     # add user to user list for this host
     update_rec(s, getid(host, ''), user)
-    update_rec(s, getrootid(), host)
   else:
     rwd = auth(s,pwd,r,id)
     blob = encrypt_blob(blob, rwd)
@@ -412,78 +377,6 @@ def read(s,pwd,user,host):
   print(blob)
   return True
 
-def get_rec(s, id):
-  msg = b''.join([BACKUP, id])
-  msg = sign_blob(msg, id, b'')
-  s.send(msg)
-
-  blob = s.recv(4096)
-  if blob == b'fail':
-    return b''
-  return decrypt_blob(blob, b'')
-
-def backup(s, pwd): # todo implement
-  pwds = [x.encode() for x in pwd.decode().split('\n')]
-  id = getrootid()
-  rec = get_rec(s,id)
-  s.close()
-  if rec==b'':
-    return
-  hosts = set(rec.decode().split('\x00'))
-  entries = []
-  for host in hosts:
-    print(host)
-    s = connect()
-    rec = get_rec(s,getid(host,''))
-    s.close()
-    if rec == b'': continue
-    users = set(rec.decode().split('\x00'))
-    for user in users:
-      print("\t", user, end=': ')
-      for pwd in pwds:
-        pwd = pwd+b'\n' # todo remove, only for debug
-        s = connect()
-        id = getid(host, user)
-        r, alpha = sphinxlib.challenge(pwd)
-        msg = b''.join([BACKUP, id, alpha])
-        s.send(msg)
-        rwd = auth(s,pwd,r,id)
-        if not rwd:
-          s.close()
-          continue
-        blob = s.recv(3)
-        types = blob[0]
-        bsize = struct.unpack('>H',blob[1:3])[0]
-        if types & 4:
-          key = s.recv(32)
-          if len(key)!=32:
-            s.close()
-            continue
-        if types & 2:
-          rules = s.recv(50)
-          if len(rules)!=50:
-            s.close()
-            continue
-          rules = decrypt_blob(rules,rwd)
-        else: rules = b''
-        if types & 1:
-          blob = s.recv(bsize)
-          if len(blob)!=bsize:
-            s.close()
-            continue
-          blob = decrypt_blob(blob,rwd)
-        else: blob = b''
-
-        entries.append((host, user, key, rules, blob))
-        s.close()
-        print("ok")
-        break
-      else:
-        print("fail")
-  # todo figure out a way to protect/encrypt this and then dump it.
-  print(entries)
-  return True
-
 #### main ####
 
 def main():
@@ -493,7 +386,6 @@ def main():
     print("usage: %s <get|change|commit|undo|delete> <user> <site>" % sys.argv[0])
     print("usage: %s <write|read> [user] <site>" % sys.argv[0])
     print("usage: %s list <site>" % sys.argv[0])
-    print("usage: %s backup" % sys.argv[0])
     sys.exit(1)
 
   if len(sys.argv) < 2: usage()
@@ -555,10 +447,6 @@ def main():
       host=sys.argv[2]
     cmd = read
     args = (user, host)
-  elif sys.argv[1] == 'backup':
-    if len(sys.argv) != 2: usage()
-    cmd = backup
-    args = tuple()
   if cmd is not None:
     s = connect()
     if cmd != users:

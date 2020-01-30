@@ -18,8 +18,7 @@ if(verbose):
   cfg.write(sys.stdout)
 
 CREATE=0x00
-READ=0x0f
-BACKUP=0x33
+READ=0x33
 UNDO=0x55
 GET=0x66
 COMMIT=0x99
@@ -136,7 +135,6 @@ def create(s, msg):
 
     # 3rd phase
     update_blob(s) # add user to host record
-    update_blob(s) # also update root record with host hash
     s.send(b'ok')
 
 def load_blob(path,fname,size=None):
@@ -356,7 +354,6 @@ def delete(conn, msg):
     fail(conn)
 
   update_blob(conn)
-  update_blob(conn)
 
   shutil.rmtree(tdir)
   conn.send(b'ok')
@@ -366,7 +363,7 @@ def write(conn, msg):
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
   id = binascii.hexlify(id).decode()
-  # 1st find out if seed for this blob already exists (might be a normal sphinx pwd) 
+  # 1st find out if seed for this blob already exists (might be a normal sphinx pwd)
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     conn.send(b"new")
@@ -401,7 +398,6 @@ def write(conn, msg):
 
     # 3rd phase
     update_blob(conn) # add user to host record
-    update_blob(conn) # also update root record with host hash
   else:
     conn.send(b"old")
     if not auth(conn, id, alpha):
@@ -433,35 +429,6 @@ def read(conn, msg):
 
   conn.send(blob)
 
-def backup(conn,msg):
-  id = msg[1:33]
-  id = binascii.hexlify(id).decode()
-  if not os.path.exists(os.path.join(datadir,id,'key')):
-    # this is a root or host record
-    sig = msg[33:97]
-    pk = load_blob(id,'pub',32)
-    try:
-        pysodium.crypto_sign_verify_detached(sig, msg[:33], pk)
-    except:
-        fail(conn)
-    conn.send(load_blob(id,'blob'))
-  else:
-    alpha = msg[33:65]
-    if not auth(conn, id, alpha):
-      fail(conn)
-    k = load_blob(id,'key')
-    rules = load_blob(id,'rules')
-    blob = load_blob(id,'blob')
-    types = bytes([((k is not None) << 2 |
-                    (rules is not None) << 1 |
-                    (blob is not None))]) 
-    if blob is not None:
-      bsize = struct.pack('>H',len(blob))
-    else:
-      bsize = bytes(2)
-    msg = b''.join([types,bsize,k,rules or b'',blob or b''])
-    conn.send(msg)
-
 def handler(conn):
    data = conn.recv(4096)
    if verbose:
@@ -479,8 +446,6 @@ def handler(conn):
      commit(conn, data)
    elif data[0] == UNDO:
      undo(conn, data)
-   elif data[0] == BACKUP:
-     backup(conn, data)
    elif data[0] == READ:
      read(conn, data)
    elif data[0] == WRITE:
