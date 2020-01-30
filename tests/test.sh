@@ -54,13 +54,14 @@ echo "get user2 rwd"
 echo -n "asdf" | ../pwdsphinx/sphinx.py get user2 example.com | read rwds
 [[ "$rwds" == "$rwds0" ]] || false
 echo "list users rwd"
-md5=$(echo "asdf" | ../pwdsphinx/sphinx.py list example.com | hash)
+md5=$(echo -n "asdf" | ../pwdsphinx/sphinx.py list example.com | hash)
 [[ "$md5" == "57c246efc4d56f6210462408b5f8ef2e" ]]
 echo "delete user2 rwd"
 echo -n "asdf" | ../pwdsphinx/sphinx.py delete user2 example.com
 echo "list users rwd"
-md5=$(echo "asdf" | ../pwdsphinx/sphinx.py list example.com | hash)
+md5=$(echo -n "asdf" | ../pwdsphinx/sphinx.py list example.com | hash)
 [[ "$md5" == "a609316768619f154ef58db4d847b75e" ]]
+echo "get user2 rwd - fail"
 echo -n "asdf" | ../pwdsphinx/sphinx.py get user2 example.com || true
 
 echo "all tests passed"
