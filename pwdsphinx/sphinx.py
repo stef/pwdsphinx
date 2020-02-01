@@ -65,12 +65,11 @@ def connect():
   s.connect((address, port))
   return s
 
-def get_signkey(id, rwd):
+def get_signkey(rwd):
   mk = get_masterkey()
   seed = pysodium.crypto_generichash(SIGN_CTX, mk)
   clearmem(mk)
   # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
-  seed = pysodium.crypto_generichash(seed, id)
   seed = pysodium.crypto_generichash(seed, rwd)
   pk, sk = pysodium.crypto_sign_seed_keypair(seed)
   clearmem(seed)
