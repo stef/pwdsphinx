@@ -90,24 +90,6 @@ def pack_rule(char_classes, size):
   # pack rule
   return struct.pack('>H', (rules << 7) | (size & 0x7f))
 
-#### OPs ####
-
-def init_key():
-  kfile = os.path.join(datadir,'masterkey')
-  if os.path.exists(kfile):
-    print("Already initialized.")
-    return 1
-  if not os.path.exists(datadir):
-    os.mkdir(datadir,0o700)
-  mk = pysodium.randombytes(32)
-  try:
-    with open(kfile,'wb') as fd:
-      if not win: os.fchmod(fd.fileno(),0o600)
-      fd.write(mk)
-  finally:
-    clearmem(mk)
-  return 0
-
 def _get(s, pwd, user, host, cmd, rwd):
    pub, sec = sphinxlib.opaque_session_usr_start(pwd)
    msg = b''.join([cmd, getid(host, user, BLOB_CTX if cmd in {READ,WRITE} else SALT_CTX), pub])
@@ -150,26 +132,19 @@ def _change(s, pwd, extra, rwd=False):
   except:
     return False
 
-def _commit(s, res):
-  try:
-    sk, extra = res
-    auth = sphinxlib.opaque_f(sk, 2)
-    s.send(auth)
-    return s.recv(4096)
-  except:
-    return
-  finally:
-    clearmem(sk)
-
-def update_record(s,pwd,user,host,op,blob = None):
-   ret = _get(s, pwd, '' if op != WRITE else user, host, op, False)
-   if not ret:
-      print("failed to retrieve user record")
-      return False
+def auth(s, pwd, user, host, op):
+   ret = _get(s, pwd, user, host, op, False)
+   if not ret: return
    sk, extra = ret
    auth = sphinxlib.opaque_f(sk, 2)
    clearmem(sk)
    s.send(auth)
+   return extra
+
+def update_record(s,pwd,user,host,op,blob = None):
+   extra = auth(s, pwd, '' if op != WRITE else user, host, op)
+   if extra is None:
+     return False
 
    if op == WRITE:
      extra = blob
@@ -185,6 +160,24 @@ def update_record(s,pwd,user,host,op,blob = None):
      extra = '\n'.join(sorted(users)).encode()
    return _change(s, pwd, extra, False)
 
+#### OPs ####
+
+def init_key():
+  kfile = os.path.join(datadir,'masterkey')
+  if os.path.exists(kfile):
+    print("Already initialized.")
+    return 1
+  if not os.path.exists(datadir):
+    os.mkdir(datadir,0o700)
+  mk = pysodium.randombytes(32)
+  try:
+    with open(kfile,'wb') as fd:
+      if not win: os.fchmod(fd.fileno(),0o600)
+      fd.write(mk)
+  finally:
+    clearmem(mk)
+  return 0
+
 def create(s, pwd, user, host, classes, size=0):
     rule = pack_rule(classes, size)
     rwd = _create(s, pwd, user, host, rule)
@@ -195,14 +188,15 @@ def create(s, pwd, user, host, classes, size=0):
     print(rpwd)
     clearmem(rpwd)
 
+    blob = user.encode()
     # upsert user
     msg = b''.join([WRITE,getid(host,'')])
     s.send(msg)
-    rec = s.recv(4096) # todo fixme arbitrary limit
+
+    rec = s.recv(1) # todo fixme arbitrary limit
     if rec == b'\x00':
        # create new user record
-       extra = user.encode()
-       rwd = _create(s, pwd, '', host, extra)
+       rwd = _create(s, pwd, '', host, blob)
        if rwd:
          clearmem(rwd)
          return True
@@ -237,25 +231,17 @@ def users(s, pwd, host):
     return True
 
 def delete(s, pwd, user, host):
-    res = _get(s, pwd, user, host, DELETE, False)
-    if not res:
-      print("could not even start delete")
+    ret = auth(s, pwd, user, host, DELETE)
+    if ret is None:
       return False
-    sk, extra = res
-    auth = sphinxlib.opaque_f(sk, 2)
-    clearmem(sk)
-    s.send(auth)
 
     # change user record
     return update_record(s,pwd,user,host,DELETE)
 
 def change(s, pwd, user, host):
-    res = _get(s, pwd, user, host, CHANGE, False)
-    if not res: return
-    sk, rule = res
-    auth = sphinxlib.opaque_f(sk, 2)
-    s.send(auth)
-    clearmem(sk)
+    rule = auth(s, pwd, user, host, CHANGE)
+    if rule is None:
+      return False
 
     rwd = _change(s, pwd, rule, rwd = True)
     if not rwd:
@@ -268,14 +254,13 @@ def change(s, pwd, user, host):
     return True
 
 def commit_undo(s, pwd, type, user, host):
-    res = _get(s, pwd, user, host, type, False)
-    if not res: return
-    resp = _commit(s, res)
+    ret = auth(s, pwd, user, host, type)
+    if ret is None:
+      return False
 
+    resp =  s.recv(4096)
     if(resp!=b'ok'):
         return
-    s.close()
-    s=connect()
     return get(s,pwd,user,host)
 
 def write(s, blob, user, host):

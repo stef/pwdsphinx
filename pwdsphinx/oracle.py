@@ -32,6 +32,14 @@ def fail(s):
     s.shutdown(socket.SHUT_RDWR)
     s.close()
 
+def auth(conn, msg):
+    sk = get(conn, msg, True)
+    if not sk: fail(conn)
+    usr_auth = conn.recv(4096)
+    auth = sphinxlib.opaque_f(sk, 2)
+    clearmem(sk)
+    if auth != usr_auth: fail(conn)
+
 def _create(conn, msg):
     id = binascii.hexlify(msg[1:33]).decode()
     alpha = msg[33:65]
@@ -62,14 +70,8 @@ def _create(conn, msg):
 
 def update_record(conn, msg = None, dst='rec'):
    if msg is None: msg = conn.recv(4096)
-   id = binascii.hexlify(msg[1:33]).decode()
-   # we return the record
-   sk = get(conn,msg,True)
-   if not sk: fail(conn)
-   # we authenticate
-   usr_auth = conn.recv(4096)
-   auth = sphinxlib.opaque_f(sk, 2)
-   if auth != usr_auth: fail(conn)
+
+   auth(conn, msg)
 
    alpha = conn.recv(4096)
    sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
@@ -79,6 +81,7 @@ def update_record(conn, msg = None, dst='rec'):
    rec = sphinxlib.opaque_private_init_srv_finish(sec, pub, rec)
 
    # store record
+   id = binascii.hexlify(msg[1:33]).decode()
    tdir = os.path.join(datadir,id)
 
    if not os.path.exists(tdir):
@@ -127,15 +130,9 @@ def get(conn, msg, session=False):
 
 # msg format: 0xff|id[32]
 def delete(conn, msg):
-    id = binascii.hexlify(msg[1:33]).decode()
-    sk = get(conn, msg, True)
-    if not sk: fail(conn)
-    usr_auth = conn.recv(4096)
-    auth = sphinxlib.opaque_f(sk, 2)
-    clearmem(sk)
-    if auth != usr_auth:
-        fail(conn)
+    auth(conn, msg)
 
+    id = binascii.hexlify(msg[1:33]).decode()
     tdir = os.path.join(datadir,id)
     shutil.rmtree(tdir) # todo fixme use "secure delete"
 
@@ -151,12 +148,7 @@ def change(conn, msg):
 # msg format: 0xff|id[32]
 def commit_undo(conn, msg, src, dst):
     id = binascii.hexlify(msg[1:33]).decode()
-    sk = get(conn, msg, True)
-    if not sk: fail(conn)
-    usr_auth = conn.recv(4096)
-    auth = sphinxlib.opaque_f(sk, 2)
-    clearmem(sk)
-    if auth != usr_auth: fail(conn)
+    auth(conn, msg)
 
     tdir = os.path.join(datadir,id)
     try:
@@ -181,7 +173,8 @@ def commit_undo(conn, msg, src, dst):
     os.unlink(os.path.join(tdir,src))
 
     conn.send(b'ok')
-    conn.close()
+    data = conn.recv(4096)
+    get(conn, data)
 
 def write(conn, msg):
    id = binascii.hexlify(msg[1:33]).decode()
@@ -197,6 +190,8 @@ def write(conn, msg):
       _create(conn, msg)
 
    conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
+   data = conn.recv(4096)
+   get(conn, data)
 
 def handler(conn):
    data = conn.recv(4096)
