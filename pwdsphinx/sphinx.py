@@ -161,10 +161,8 @@ def doSphinx(s, op, pwd, user, host):
         print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
         return False
 
-  rpwd = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+  print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode())
   clearmem(rwd)
-  print(rpwd)
-  clearmem(rpwd)
 
   return True
 
