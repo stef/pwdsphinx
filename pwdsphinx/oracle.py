@@ -372,13 +372,12 @@ def read(conn, msg):
   blob = load_blob(id,'blob')
   if blob is None:
     blob = b''
-
   conn.send(blob)
 
 def handler(conn):
    data = conn.recv(4096)
    if verbose:
-     print('Data received: {!r}'.format(data))
+     print('Data received:',data.hex())
 
    if data[0] == CREATE:
      create(conn, data)
@@ -436,6 +435,7 @@ def main():
                 handler(conn)
               except:
                 print("fail")
+                raise
               finally:
                 try: conn.shutdown(socket.SHUT_RDWR)
                 except OSError: pass
