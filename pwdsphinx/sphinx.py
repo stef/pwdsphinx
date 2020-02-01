@@ -188,7 +188,6 @@ def create(s, pwd, user, host, classes, size=0):
     print(rpwd)
     clearmem(rpwd)
 
-    blob = user.encode()
     # upsert user
     msg = b''.join([WRITE,getid(host,'')])
     s.send(msg)
@@ -196,7 +195,8 @@ def create(s, pwd, user, host, classes, size=0):
     rec = s.recv(1) # todo fixme arbitrary limit
     if rec == b'\x00':
        # create new user record
-       rwd = _create(s, pwd, '', host, blob)
+       extra = user.encode()
+       rwd = _create(s, pwd, '', host, extra)
        if rwd:
          clearmem(rwd)
          return True
