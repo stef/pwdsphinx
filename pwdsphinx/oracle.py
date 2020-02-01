@@ -228,114 +228,6 @@ def change(conn, msg):
   save_blob(id,'new',k)
   conn.send(beta+rules)
 
-def commit(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
-    fail(conn)
-
-  id = binascii.hexlify(id).decode()
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    if verbose: print("%s doesn't exist" % tdir)
-    fail(conn)
-
-  if not auth(conn, id, alpha):
-    fail(conn)
-
-  k = load_blob(id,'new', 32)
-  if k is None:
-      fail(conn)
-
-  old = load_blob(id,'key', 32)
-  if old is None:
-      fail(conn)
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
-    fail(conn)
-
-  rules = load_blob(id,'rules', 50)
-  if rules is None:
-      fail(conn)
-
-  conn.send(beta+rules)
-
-  blob = conn.recv(32+50+64)
-  if len(blob)!=32+50+64:
-    fail(conn)
-
-  pk = blob[0:32]
-  try:
-    blob = verify_blob(blob,pk)
-  except ValueError:
-    fail(s)
-  rules = blob[32:]
-
-  save_blob(id,'old',old)
-  save_blob(id,'key',k)
-  save_blob(id,'pub',pk)
-  save_blob(id,'rules',rules)
-  os.unlink(os.path.join(tdir,'new'))
-  conn.send(b'ok')
-
-def undo(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
-    fail(conn)
-
-  id = binascii.hexlify(id).decode()
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    if verbose: print("%s doesn't exist" % tdir)
-    fail(conn)
-
-  if not auth(conn, id, alpha):
-    fail(conn)
-
-  k = load_blob(id,'old', 32)
-  if k is None:
-      fail(conn)
-
-  new = load_blob(id,'key', 32)
-  if new is None:
-      fail(conn)
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
-    fail(conn)
-
-  rules = load_blob(id,'rules', 50)
-  if rules is None:
-      fail(conn)
-
-  conn.send(beta+rules)
-
-  blob = conn.recv(32+50+64)
-  if len(blob)!=32+50+64:
-    fail(conn)
-
-  pk = blob[0:32]
-  try:
-    blob = verify_blob(blob,pk)
-  except ValueError:
-    fail(s)
-  rules = blob[32:]
-
-  save_blob(id,'new',new)
-  save_blob(id,'key',k)
-  save_blob(id,'pub',pk)
-  save_blob(id,'rules',rules)
-  os.unlink(os.path.join(tdir,'old'))
-  conn.send(b'ok')
-
 def delete(conn, msg):
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
@@ -356,6 +248,60 @@ def delete(conn, msg):
   update_blob(conn)
 
   shutil.rmtree(tdir)
+  conn.send(b'ok')
+
+def commit_undo(conn, msg, new, old):
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  if msg!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % msg)
+    fail(conn)
+
+  id = binascii.hexlify(id).decode()
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    if verbose: print("%s doesn't exist" % tdir)
+    fail(conn)
+
+  if not auth(conn, id, alpha):
+    fail(conn)
+
+  k = load_blob(id,new, 32)
+  if k is None:
+      fail(conn)
+
+  key = load_blob(id,'key', 32)
+  if key is None:
+      fail(conn)
+
+  try:
+      beta = sphinxlib.respond(alpha, k)
+  except:
+    fail(conn)
+
+  rules = load_blob(id,'rules', 50)
+  if rules is None:
+      fail(conn)
+
+  conn.send(beta+rules)
+
+  blob = conn.recv(32+50+64)
+  if len(blob)!=32+50+64:
+    fail(conn)
+
+  pk = blob[0:32]
+  try:
+    blob = verify_blob(blob,pk)
+  except ValueError:
+    fail(s)
+  rules = blob[32:]
+
+  save_blob(id,old,key)
+  save_blob(id,'key',k)
+  save_blob(id,'pub',pk)
+  save_blob(id,'rules',rules)
+  os.unlink(os.path.join(tdir,new))
   conn.send(b'ok')
 
 def write(conn, msg):
@@ -443,9 +389,9 @@ def handler(conn):
    elif data[0] == DELETE:
      delete(conn, data)
    elif data[0] == COMMIT:
-     commit(conn, data)
+     commit_undo(conn, data, 'new', 'old')
    elif data[0] == UNDO:
-     undo(conn, data)
+     commit_undo(conn, data, 'old', 'new')
    elif data[0] == READ:
      read(conn, data)
    elif data[0] == WRITE:
@@ -491,12 +437,14 @@ def main():
               except:
                 print("fail")
               finally:
-                conn.shutdown(socket.SHUT_RDWR)
+                try: conn.shutdown(socket.SHUT_RDWR)
+                except OSError: pass
                 conn.close()
             else:
                 kids.append(pid)
 
-            pid, status = os.waitpid(0,os.WNOHANG)
+            try: pid, status = os.waitpid(0,os.WNOHANG)
+            except ChildProcessError: pass
             if(pid,status)!=(0,0):
                 kids.remove(pid)
 
