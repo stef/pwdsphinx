@@ -450,10 +450,11 @@ def main():
             else:
                 kids.append(pid)
 
-            try: pid, status = os.waitpid(0,os.WNOHANG)
+            try:
+              pid, status = os.waitpid(0,os.WNOHANG)
+              if(pid,status)!=(0,0):
+                 kids.remove(pid)
             except ChildProcessError: pass
-            if(pid,status)!=(0,0):
-                kids.remove(pid)
 
     except KeyboardInterrupt:
         pass
