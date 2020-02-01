@@ -318,6 +318,9 @@ def main():
       size = 0
     cmd = create
     args = (sys.argv[2], sys.argv[3], sys.argv[4], size)
+  elif sys.argv[1] == 'init':
+    if len(sys.argv) != 2: usage()
+    sys.exit(init_key())
   elif sys.argv[1] == 'get':
     if len(sys.argv) != 4: usage()
     cmd = get
