@@ -19,6 +19,7 @@ cfg = getcfg('sphinx')
 verbose = cfg['client'].getboolean('verbose')
 address = cfg['client']['address']
 port = int(cfg['client']['port'])
+timeout = int(cfg['client'].get('timeout',10))
 datadir = os.path.expanduser(cfg['client']['datadir'])
 ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system should use proper certs!
 
@@ -53,6 +54,7 @@ def connect():
   ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  s.settimeout(timeout)
   s = ctx.wrap_socket(s)
   s.connect((address, port))
   return s
