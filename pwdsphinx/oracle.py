@@ -190,8 +190,6 @@ def write(conn, msg):
       _create(conn, msg)
 
    conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
-   data = conn.recv(4096)
-   get(conn, data)
 
 def handler(conn):
    data = conn.recv(4096)
@@ -262,7 +260,7 @@ def main():
             else:
                 kids.append(pid)
             try: pid, status = os.waitpid(0,os.WNOHANG)
-            except ChildProcessError: pass
+            except ChildProcessError: continue
             if(pid,status)!=(0,0):
                 kids.remove(pid)
 

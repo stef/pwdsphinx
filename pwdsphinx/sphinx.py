@@ -57,12 +57,6 @@ def connect():
   s.connect((address, port))
   return s
 
-def getrootid():
-  mk = get_masterkey()
-  root = pysodium.crypto_generichash(ROOT_CTX, mk)
-  clearmem(mk)
-  return root
-
 def getid(host, user, ctx = SALT_CTX):
   mk = get_masterkey()
   salt = pysodium.crypto_generichash(ctx, mk)
@@ -174,6 +168,8 @@ def init_key():
     with open(kfile,'wb') as fd:
       if not win: os.fchmod(fd.fileno(),0o600)
       fd.write(mk)
+  except:
+     return 1
   finally:
     clearmem(mk)
   return 0
@@ -183,10 +179,8 @@ def create(s, pwd, user, host, classes, size=0):
     rwd = _create(s, pwd, user, host, rule)
     if(not rwd):
       return
-    rpwd = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+    ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
     clearmem(rwd)
-    print(rpwd)
-    clearmem(rpwd)
 
     # upsert user
     msg = b''.join([WRITE,getid(host,'')])
@@ -199,12 +193,13 @@ def create(s, pwd, user, host, classes, size=0):
        rwd = _create(s, pwd, '', host, extra)
        if rwd:
          clearmem(rwd)
-         return True
+         return ret
        else:
          print("failed to create new user record")
     elif rec == b'\xff':
        # update existing user record
-      return update_record(s,pwd,user,host,CREATE)
+      if update_record(s,pwd,user,host,CREATE):
+        return ret
     else:
        print("invalid response when trying to upsert user")
     return False
@@ -216,19 +211,16 @@ def get(s, pwd, user, host):
     sk, extra, rwd = ret
     clearmem(sk)
     classes, size = unpack_rule(extra)
-    rpwd = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+    ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
     clearmem(rwd)
-    print(rpwd)
-    clearmem(rpwd)
-    return True
+    return ret
 
 def users(s, pwd, host):
     res = _get(s, pwd, '' , host, GET, False)
     if not res: return
     sk, extra = res
     clearmem(sk)
-    print('\n'.join(extra.decode().split('\n')))
-    return True
+    return '\n'.join(extra.decode().split('\n'))
 
 def delete(s, pwd, user, host):
     ret = auth(s, pwd, user, host, DELETE)
@@ -247,11 +239,9 @@ def change(s, pwd, user, host):
     if not rwd:
       return
     classes, size = unpack_rule(rule)
-    rpwd = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+    ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
     clearmem(rwd)
-    print(rpwd)
-    clearmem(rpwd)
-    return True
+    return ret
 
 def commit_undo(s, pwd, type, user, host):
     ret = auth(s, pwd, user, host, type)
@@ -294,91 +284,83 @@ def read(s, pwd, user, host):
    sk, extra, rwd = ret
    clearmem(sk)
    clearmem(rwd)
-   print(extra)
-   return True
+   return extra
 
-def main():
+def main(params):
   def usage():
-    print("usage: %s init" % sys.argv[0])
-    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % sys.argv[0])
-    print("usage: %s <get|change|commit|delete> <user> <site>" % sys.argv[0])
-    print("usage: %s <write|read> [user] <site>" % sys.argv[0])
-    print("usage: %s list <site>" % sys.argv[0])
+    print("usage: %s init" % params[0])
+    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
+    print("usage: %s <get|change|commit|delete> <user> <site>" % params[0])
+    print("usage: %s <write|read> [user] <site>" % params[0])
+    print("usage: %s list <site>" % params[0])
     sys.exit(1)
 
-  if len(sys.argv) < 2: usage()
+  if len(params) < 2: usage()
 
   cmd = None
   args = []
-  if sys.argv[1] == 'create':
-    if len(sys.argv) not in (5,6): usage()
-    if len(sys.argv) == 6:
-      size=int(sys.argv[5])
+  if params[1] == 'create':
+    if len(params) not in (5,6): usage()
+    if len(params) == 6:
+      size=int(params[5])
     else:
       size = 0
     cmd = create
-    args = (sys.argv[2], sys.argv[3], sys.argv[4], size)
-  elif sys.argv[1] == 'init':
-    if len(sys.argv) != 2: usage()
+    args = (params[2], params[3], params[4], size)
+  elif params[1] == 'init':
+    if len(params) != 2: usage()
     sys.exit(init_key())
-  elif sys.argv[1] == 'get':
-    if len(sys.argv) != 4: usage()
+  elif params[1] == 'get':
+    if len(params) != 4: usage()
     cmd = get
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'change':
-    if len(sys.argv) != 4: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'change':
+    if len(params) != 4: usage()
     cmd = change
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'commit':
-    if len(sys.argv) != 4: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'commit':
+    if len(params) != 4: usage()
     cmd = commit_undo
-    args = (COMMIT, sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'undo':
-    if len(sys.argv) != 4: usage()
+    args = (COMMIT, params[2], params[3])
+  elif params[1] == 'undo':
+    if len(params) != 4: usage()
     cmd = commit_undo
-    args = (UNDO, sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'delete':
-    if len(sys.argv) != 4: usage()
+    args = (UNDO, params[2], params[3])
+  elif params[1] == 'delete':
+    if len(params) != 4: usage()
     cmd = delete
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'list':
-    if len(sys.argv) != 3: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'list':
+    if len(params) != 3: usage()
     cmd = users
-    args = (sys.argv[2],)
-  elif sys.argv[1] == 'write':
-    if len(sys.argv) not in (3,4): usage()
-    if len(sys.argv) == 4:
-      user=sys.argv[2]
-      host=sys.argv[3]
+    args = (params[2],)
+  elif params[1] in ('write', 'read'):
+    if len(params) not in (3,4): usage()
+    if len(params) == 4:
+      user=params[2]
+      host=params[3]
     else:
       user = ''
-      host=sys.argv[2]
-    cmd = write
-    args = (user, host)
-  elif sys.argv[1] == 'read':
-    if len(sys.argv) not in (3,4): usage()
-    if len(sys.argv) == 4:
-      user=sys.argv[2]
-      host=sys.argv[3]
-    else:
-      user = ''
-      host=sys.argv[2]
-    cmd = read
+      host=params[2]
+    cmd = write if params[1] == 'write' else read
     args = (user, host)
 
   if cmd is not None:
     s = connect()
     pwd = sys.stdin.buffer.read()
+    print("pwd=", pwd)
     ret = cmd(s, pwd, *args)
     clearmem(pwd)
     s.close()
     if not ret:
       print("fail")
       sys.exit(1)
+    if cmd not in (delete, write):
+      print(ret)
+      sys.stdout.flush()
+      clearmem(ret)
   else:
     usage()
 
-  return ret
-
 if __name__ == '__main__':
-  main()
+  main(sys.argv)
