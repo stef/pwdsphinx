@@ -61,6 +61,7 @@ def connect():
   ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  s.settimeout(3)
   s = ctx.wrap_socket(s)
   s.connect((address, port))
   return s
@@ -159,12 +160,12 @@ def doSphinx(s, op, pwd, user, host):
       s.send(msg)
       if s.recv(2)!=b'ok':
         print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
-        return False
+        return 
 
-  print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode())
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
   clearmem(rwd)
 
-  return True
+  return ret
 
 def update_rec(s, id, item):
     s.send(id)
@@ -253,9 +254,9 @@ def create(s, pwd, user, host, char_classes, size=0):
   # first query user record for this host
   update_rec(s, getid(host, ''), user)
 
-  print(bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode())
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode()
   clearmem(rwd)
-  return True
+  return ret
 
 def get(s, pwd, user, host):
   return doSphinx(s, GET, pwd, user, host)
@@ -273,13 +274,12 @@ def read_blob(s, host=None, id=None, rwd = None):
   s.send(msg)
   blob = s.recv(4096)
   if blob == b'fail':
-    return b''
+    return
   return decrypt_blob(blob, rwd)
 
 def users(s, host):
   users = set(read_blob(s, host).decode().split('\x00'))
-  print('\n'.join(sorted(users)))
-  return True
+  return '\n'.join(sorted(users))
 
 def change(s, pwd, user, host):
   return doSphinx(s, CHANGE, pwd, user, host)
@@ -308,7 +308,7 @@ def delete(s, pwd, user, host):
   if blob == b'none':
     # this should not happen, it means something is corrupt
     print("error: server has no associated user record for this host")
-    return False
+    return
   else:
     blob = decrypt_blob(blob, b'')
     users = set(blob.decode().split('\x00'))
@@ -322,7 +322,7 @@ def delete(s, pwd, user, host):
   s.send(blob)
 
   if b'ok' != s.recv(2):
-    return False
+    return
 
   clearmem(rwd)
   return True
@@ -372,82 +372,72 @@ def read(s,pwd,user,host):
   blob = s.recv(8192+48)
   if len(blob)==0:
     print('no blob found')
-    return True
+    return
   blob = decrypt_blob(blob, rwd)
   clearmem(rwd)
-  print(blob.decode())
-  return True
+  return blob.decode()
 
 #### main ####
 
-def main():
+def main(params):
   def usage():
-    print("usage: %s init" % sys.argv[0])
-    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % sys.argv[0])
-    print("usage: %s <get|change|commit|undo|delete> <user> <site>" % sys.argv[0])
-    print("usage: %s <write|read> [user] <site>" % sys.argv[0])
-    print("usage: %s list <site>" % sys.argv[0])
+    print("usage: %s init" % params[0])
+    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
+    print("usage: %s <get|change|commit|undo|delete> <user> <site>" % params[0])
+    print("usage: %s <write|read> [user] <site>" % params[0])
+    print("usage: %s list <site>" % params[0])
     sys.exit(1)
 
-  if len(sys.argv) < 2: usage()
+  if len(params) < 2: usage()
 
   cmd = None
   args = []
-  if sys.argv[1] == 'create':
-    if len(sys.argv) not in (5,6): usage()
-    if len(sys.argv) == 6:
-      size=sys.argv[5]
+  if params[1] == 'create':
+    if len(params) not in (5,6): usage()
+    if len(params) == 6:
+      size=params[5]
     else:
       size = 0
     cmd = create
-    args = (sys.argv[2], sys.argv[3], sys.argv[4], size)
-  elif sys.argv[1] == 'init':
-    if len(sys.argv) != 2: usage()
+    args = (params[2], params[3], params[4], size)
+  elif params[1] == 'init':
+    if len(params) != 2: usage()
     sys.exit(init_key())
-  elif sys.argv[1] == 'get':
-    if len(sys.argv) != 4: usage()
+  elif params[1] == 'get':
+    if len(params) != 4: usage()
     cmd = get
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'change':
-    if len(sys.argv) != 4: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'change':
+    if len(params) != 4: usage()
     cmd = change
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'commit':
-    if len(sys.argv) != 4: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'commit':
+    if len(params) != 4: usage()
     cmd = commit
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'delete':
-    if len(sys.argv) != 4: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'delete':
+    if len(params) != 4: usage()
     cmd = delete
-    args = (sys.argv[2], sys.argv[3])
-  elif sys.argv[1] == 'list':
-    if len(sys.argv) != 3: usage()
+    args = (params[2], params[3])
+  elif params[1] == 'list':
+    if len(params) != 3: usage()
     cmd = users
-    args = (sys.argv[2],)
-  elif sys.argv[1] == 'undo':
-    if len(sys.argv) != 4: usage()
+    args = (params[2],)
+  elif params[1] == 'undo':
+    if len(params) != 4: usage()
     cmd = undo
-    args = (sys.argv[2],sys.argv[3])
-  elif sys.argv[1] == 'write':
-    if len(sys.argv) not in (3,4): usage()
-    if len(sys.argv) == 4:
-      user=sys.argv[2]
-      host=sys.argv[3]
+    args = (params[2],params[3])
+  elif params[1] in ('write', 'read'):
+    if len(params) not in (3,4): usage()
+    if len(params) == 4:
+      user=params[2]
+      host=params[3]
     else:
       user = ''
-      host=sys.argv[2]
-    cmd = write
+      host=params[2]
+    cmd = write if params[1] == 'write' else read
     args = (user, host)
-  elif sys.argv[1] == 'read':
-    if len(sys.argv) not in (3,4): usage()
-    if len(sys.argv) == 4:
-      user=sys.argv[2]
-      host=sys.argv[3]
-    else:
-      user = ''
-      host=sys.argv[2]
-    cmd = read
-    args = (user, host)
+
   if cmd is not None:
     s = connect()
     if cmd != users:
@@ -468,12 +458,16 @@ def main():
     if not ret:
       print("fail")
       sys.exit(1)
+    if cmd not in (delete, write):
+      print(ret)
+      sys.stdout.flush()
+      clearmem(ret)
   else:
     usage()
 
 if __name__ == '__main__':
   try:
-    main()
+    main(sys.argv)
   except:
     print("fail")
     raise # todo remove only for dbg
