@@ -348,7 +348,6 @@ def main(params):
   if cmd is not None:
     s = connect()
     pwd = sys.stdin.buffer.read()
-    print("pwd=", pwd)
     ret = cmd(s, pwd, *args)
     clearmem(pwd)
     s.close()
