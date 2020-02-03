@@ -9,6 +9,7 @@ cfg = getcfg('sphinx')
 verbose = cfg['server'].getboolean('verbose')
 address = cfg['server']['address']
 port = int(cfg['server']['port'])
+timeout = int(cfg['server'].get('timeout',10))
 datadir = os.path.expanduser(cfg['server']['datadir'])
 max_kids = int(cfg['server'].get('max_kids',5))
 ssl_key = cfg['server']['ssl_key']
@@ -192,6 +193,7 @@ def write(conn, msg):
    conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
 
 def handler(conn):
+   conn.settimeout(timeout)
    data = conn.recv(4096)
 
    if verbose:
