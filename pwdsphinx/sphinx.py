@@ -132,7 +132,7 @@ def doSphinx(s, op, pwd, user, host):
   crwd = None
   if op != GET: # == CHANGE, UNDO, COMMIT
     # auth: do sphinx with current seed, use it to sign the nonce
-    crwd = auth(s,pwd,r,id)
+    crwd = auth(s,id,pwd,r)
 
   resp = s.recv(32+50) # beta + sealed rules
   if resp == b'fail' or len(resp)!=32+50:
@@ -164,7 +164,8 @@ def doSphinx(s, op, pwd, user, host):
 
   return ret
 
-def update_rec(s, id, item):
+def update_rec(s, host, item):
+    id = getid(host, '')
     s.send(id)
     # wait for user blob
     blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
@@ -172,9 +173,11 @@ def update_rec(s, id, item):
       # it is a new blob, we need to attach an auth signing pubkey
       sk, pk = get_signkey(id, b'')
       clearmem(sk)
+      # we encrypt with an empty rwd, so that the user list is independent of the master pwd
       blob = encrypt_blob(item.encode(), b'')
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
+      # again no rwd, to be independent of the master pwd
       blob = sign_blob(blob, id, b'')
     else:
       blob = decrypt_blob(blob, b'')
@@ -188,13 +191,20 @@ def update_rec(s, id, item):
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(s,pwd,r,id):
-  msg = s.recv(64)
-  if len(msg)!=64:
-    return False
-  beta = msg[:32]
-  nonce = msg[32:]
-  rwd = sphinxlib.finish(pwd, r, beta, id)
+def auth(s,id,pwd=None,r=None):
+  if r is None:
+    nonce = s.recv(32)
+    if len(nonce)!=32:
+       return False
+    rwd = b''
+    beta = b''
+  else:
+    msg = s.recv(64)
+    if len(msg)!=64:
+       return False
+    beta = msg[:32]
+    nonce = msg[32:]
+    rwd = sphinxlib.finish(pwd, r, beta, id)
   sk, pk = get_signkey(id, rwd)
   sig = pysodium.crypto_sign_detached(nonce,sk)
   clearmem(sk)
@@ -248,8 +258,7 @@ def create(s, pwd, user, host, char_classes, size=0):
 
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
-  # first query user record for this host
-  update_rec(s, getid(host, ''), user)
+  update_rec(s, host, user)
 
   ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode()
   clearmem(rwd)
@@ -258,24 +267,17 @@ def create(s, pwd, user, host, char_classes, size=0):
 def get(s, pwd, user, host):
   return doSphinx(s, GET, pwd, user, host)
 
-def read_blob(s, host=None, id=None, rwd = None):
-  if id is None:
-    if host is not None:
-        id = getid(host, '')
-    else:
-      fail(s)
-      raise ValueError("must have either host or id provided in params")
-  if rwd is None:
-    rwd = b''
+def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
   s.send(msg)
+  auth(s,id)
   blob = s.recv(4096)
   if blob == b'fail':
     return
   return decrypt_blob(blob, rwd)
 
 def users(s, host):
-  users = set(read_blob(s, host).decode().split('\x00'))
+  users = set(read_blob(s, getid(host, '')).decode().split('\x00'))
   return '\n'.join(sorted(users))
 
 def change(s, pwd, user, host):
@@ -293,7 +295,7 @@ def delete(s, pwd, user, host):
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([DELETE, id, alpha])
   s.send(msg) # alpha
-  rwd = auth(s,pwd,r,id)
+  rwd = auth(s,id,pwd,r)
 
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
@@ -328,7 +330,7 @@ def write(s, blob, user, host):
   id = getid(host, user)
   pwd, blob = blob.decode().split('\n',1)
   # goddamn fucking py3 with it's braindead string/bytes smegma shit
-  pwd = pwd.encode()
+  pwd = pwd
   blob = blob.encode()
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([WRITE, id, alpha])
@@ -351,9 +353,9 @@ def write(s, blob, user, host):
     s.send(msg)
 
     # add user to user list for this host
-    update_rec(s, getid(host, ''), user)
+    update_rec(s, host, user)
   else:
-    rwd = auth(s,pwd,r,id)
+    rwd = auth(s,id,pwd,r)
     blob = encrypt_blob(blob, rwd)
     clearmem(rwd)
     s.send(blob)
@@ -365,7 +367,7 @@ def read(s,pwd,user,host):
   msg = b''.join([READ, id, alpha])
   s.send(msg)
   # first auth
-  rwd = auth(s,pwd,r,id)
+  rwd = auth(s,id,pwd,r)
   blob = s.recv(8192+48)
   if len(blob)==0:
     print('no blob found')
