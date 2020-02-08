@@ -19,7 +19,9 @@ orig_data_files = set(listdir(data_dir))
 char_classes = 'ulsd'
 size = 80
 pwd = 'asdf'
+pwd2 = 'qwer'
 user = 'user1'
+user2 = 'user2'
 host = 'example.com'
 
 class Input:
@@ -122,11 +124,21 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
         with sphinx.connect() as s:
-            self.assertIsInstance(sphinx.create(s, pwd, 'user2', host, char_classes, size), str)
+            self.assertIsInstance(sphinx.create(s, pwd, user2, host, char_classes, size), str)
         with sphinx.connect() as s:
             users = sphinx.users(s, host)
             self.assertIsInstance(users, str)
-            self.assertEqual(users, 'user1\nuser2')
+            self.assertEqual(users, '\n'.join((user,user2)))
+
+    def test_list_users_diff_mpwd(self):
+        with sphinx.connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
+        with sphinx.connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd2, user2, host, char_classes, size), str)
+        with sphinx.connect() as s:
+            users = sphinx.users(s, host)
+            self.assertIsInstance(users, str)
+            self.assertEqual(users, '\n'.join((user,user2)))
 
     def test_write(self):
         test_str = 'some test string'
@@ -138,11 +150,44 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
            self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
         with sphinx.connect() as s:
-           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), 'user2', host))
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user2, host))
         with sphinx.connect() as s:
            users = sphinx.users(s, host)
            self.assertIsInstance(users, str)
-           self.assertEqual(users, 'user1\nuser2')
+           self.assertEqual(users, '\n'.join((user,user2)))
+
+    def test_write_list_diff_mpwd(self):
+        test_str = 'some test string'
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd2, test_str)).encode(), user2, host))
+        with sphinx.connect() as s:
+           users = sphinx.users(s, host)
+           self.assertIsInstance(users, str)
+           self.assertEqual(users, '\n'.join((user,user2)))
+
+    def test_write_then_create_list(self):
+        test_str = 'some test string'
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
+        with sphinx.connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
+        with sphinx.connect() as s:
+           users = sphinx.users(s, host)
+           self.assertIsInstance(users, str)
+           self.assertEqual(users, user)
+
+    def test_create_then_write_list(self):
+        test_str = 'some test string'
+        with sphinx.connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
+        with sphinx.connect() as s:
+           users = sphinx.users(s, host)
+           self.assertIsInstance(users, str)
+           self.assertEqual(users, user)
 
     def test_read(self):
         test_str = 'some test string'
