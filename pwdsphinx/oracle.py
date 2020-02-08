@@ -107,6 +107,8 @@ def create(s, msg):
       fail(s)
 
     # 1st step OPRF with a new seed
+    # this might be if the user already has stored a blob for this id
+    # and now also wants a sphinx rwd
     if(os.path.exists(os.path.join(tdir,'key'))):
       k = load_blob(id,'key',32)
     else:
@@ -183,25 +185,26 @@ def get(conn, msg):
     conn.send(beta+rules)
 
 def auth(s,id,alpha):
-  k = load_blob(id,'key')
-  if k is None:
-    return True
   pk = load_blob(id,'pub',32)
   if pk is None:
     print('no pubkey found in %s' % id)
-    return False
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
     fail(s)
   nonce=pysodium.randombytes(32)
+  k = load_blob(id,'key')
+  if k is not None:
+    try:
+       beta = sphinxlib.respond(alpha, k)
+    except:
+       fail(s)
+  else:
+    beta = b''
   s.send(b''.join([beta,nonce]))
   sig = s.recv(64)
   try:
     pysodium.crypto_sign_verify_detached(sig, nonce, pk)
   except:
-    return False
-  return True
+    print('bad sig')
+    fail(s)
 
 def change(conn, msg):
   op,   msg = pop(msg,1)
@@ -217,8 +220,7 @@ def change(conn, msg):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
 
-  if not auth(conn, id, alpha):
-    fail(conn)
+  auth(conn, id, alpha)
 
   k=pysodium.randombytes(32)
 
@@ -249,8 +251,7 @@ def delete(conn, msg):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
 
-  if not auth(conn, id, alpha):
-    fail(conn)
+  auth(conn, id, alpha)
 
   update_blob(conn)
 
@@ -271,8 +272,7 @@ def commit_undo(conn, msg, new, old):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
 
-  if not auth(conn, id, alpha):
-    fail(conn)
+  auth(conn, id, alpha)
 
   k = load_blob(id,new, 32)
   if k is None:
@@ -353,8 +353,7 @@ def write(conn, msg):
     update_blob(conn) # add user to host record
   else:
     conn.send(b"old")
-    if not auth(conn, id, alpha):
-      fail(conn)
+    auth(conn, id, alpha)
     blob = conn.recv(8192+48) # max 8192B sealed(+48B) blob
     if len(blob)<=48:
       fail(conn)
@@ -373,8 +372,7 @@ def read(conn, msg):
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
   id = binascii.hexlify(id).decode()
-  if not auth(conn, id, alpha):
-    fail(conn)
+  auth(conn, id, alpha)
 
   blob = load_blob(id,'blob')
   if blob is None:
