@@ -133,13 +133,24 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
 
+    def test_write_list(self):
+        test_str = 'some test string'
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
+        with sphinx.connect() as s:
+           self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), 'user2', host))
+        with sphinx.connect() as s:
+           users = sphinx.users(s, host)
+           self.assertIsInstance(users, str)
+           self.assertEqual(users, 'user1\nuser2')
+
     def test_read(self):
         test_str = 'some test string'
         with sphinx.connect() as s:
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host).decode()
+            blob = sphinx.read(s, pwd, user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str)
 
@@ -149,7 +160,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str0)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host).decode()
+            blob = sphinx.read(s, pwd, user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str0)
 
@@ -158,7 +169,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str1)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host).decode()
+            blob = sphinx.read(s, pwd, user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str1)
 
@@ -210,38 +221,23 @@ class TestEndToEnd(unittest.TestCase):
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'undo', user, host)))
 
-    def test_main_write_read(self):
-        class Input:
-             def __init__(self, txt = None):
-                 if txt:
-                     self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
-                 else:
-                     self.buffer = BytesIO(pwd.encode())
-        sys.stdin = Input("some note")
-        self.assertIsNone(sphinx.main(('sphinx.py', 'write', user, host)))
-        sys.stdin = Input()
-        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user, host)))
-        sys.stdin = Input("some other note")
-        self.assertIsNone(sphinx.main(('sphinx.py', 'write', host)))
+    #def test_main_write_read(self):
+    #    class Input:
+    #         def __init__(self, txt = None):
+    #             if txt:
+    #                 self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
+    #             else:
+    #                 self.buffer = BytesIO(pwd.encode())
+    #    sys.stdin = Input("some note")
+    #    self.assertIsNone(sphinx.main(('sphinx.py', 'write', user, host)))
+    #    sys.stdin = Input()
+    #    self.assertIsNone(sphinx.main(('sphinx.py', 'read', user, host)))
+    #    sys.stdin = Input("some other note")
+    #    self.assertIsNone(sphinx.main(('sphinx.py', 'write', host)))
 
-    def test_main_inv_param_create(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'create'))
-    def test_main_inv_param_get(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'get'))
-    def test_main_inv_param_change(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'change'))
-    def test_main_inv_param_commit(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'commit'))
-    def test_main_inv_param_undo(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'undo'))
-    def test_main_inv_param_delete(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'delete'))
-    def test_main_inv_param_list(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'list'))
-    def test_main_inv_param_write(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'write'))
-    def test_main_inv_param_read(self):
-        self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', 'read'))
+    def test_main_inv_params(self):
+        for cmd in ('create','get','change','commit','undo','delete','list','write','read'):
+            self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', cmd))
 
 if __name__ == '__main__':
     unittest.main()
