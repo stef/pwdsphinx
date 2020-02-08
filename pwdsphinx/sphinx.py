@@ -145,7 +145,10 @@ def doSphinx(s, op, pwd, user, host):
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
   # in case of change/undo/commit we need to use the crwd to decrypt the rules
-  classes, size = unpack_rule(rules, crwd or rwd)
+  try:
+    classes, size = unpack_rule(rules, crwd or rwd)
+  except ValueError:
+    return
   if crwd:
     clearmem(crwd)
     # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
@@ -208,6 +211,7 @@ def auth(s,id,pwd=None,r=None):
     beta = msg[:32]
     nonce = msg[32:]
     rwd = sphinxlib.finish(pwd, r, beta, id)
+
   sk, pk = get_signkey(id, rwd)
   sig = pysodium.crypto_sign_detached(nonce,sk)
   clearmem(sk)
@@ -311,6 +315,8 @@ def delete(s, pwd, user, host):
     # this should not happen, it means something is corrupt
     print("error: server has no associated user record for this host")
     return
+  elif blob == b'fail':
+    return
   else:
     blob = decrypt_blob(blob, b'')
     users = set(blob.decode().split('\x00'))
@@ -331,10 +337,7 @@ def delete(s, pwd, user, host):
 
 def write(s, blob, user, host):
   id = getid(host, user)
-  pwd, blob = blob.decode().split('\n',1)
-  # goddamn fucking py3 with it's braindead string/bytes smegma shit
-  pwd = pwd
-  blob = blob.encode()
+  pwd, blob = blob.split(b'\n',1)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([WRITE, id, alpha])
   s.send(msg)
@@ -374,6 +377,8 @@ def read(s,pwd,user,host):
   blob = s.recv(8192+48)
   if len(blob)==0:
     print('no blob found')
+    return
+  elif blob == b'fail':
     return
   blob = decrypt_blob(blob, rwd)
   clearmem(rwd)
@@ -435,8 +440,8 @@ def main(params):
       user=params[2]
       host=params[3]
     else:
-      user = ''
-      host=params[2]
+      user = params[2]
+      host= ''
     cmd = write if params[1] == 'write' else read
     args = (user, host)
 

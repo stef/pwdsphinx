@@ -19,14 +19,16 @@ orig_data_files = set(listdir(data_dir))
 char_classes = 'ulsd'
 size = 80
 pwd = 'asdf'
-pwd2 = 'qwer'
 user = 'user1'
 user2 = 'user2'
 host = 'example.com'
 
 class Input:
-    def __init__(self):
-       self.buffer = BytesIO(pwd.encode())
+     def __init__(self, txt = None):
+         if txt:
+             self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
+         else:
+             self.buffer = BytesIO(pwd.encode())
 
 def cleanup():
     for f in listdir(data_dir):
@@ -67,10 +69,12 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_get_inv_mpwd(self):
         with sphinx.connect() as s:
-            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
+            rwd0 = sphinx.create(s, pwd, user, host, char_classes, size)
+            self.assertIsInstance(rwd0, str)
 
         with sphinx.connect() as s:
-            self.assertIsInstance(sphinx.get(s, pwd2, user, host), str)
+            rwd = sphinx.get(s, 'zxcv', user, host)
+            self.assertIsNone(rwd)
 
     def test_get_nonexistant_host(self):
         with sphinx.connect() as s:
@@ -88,7 +92,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
 
         with sphinx.connect() as s:
-            self.assertIsNone(sphinx.delete(s, pwd2, user, host))
+            self.assertIsNone(sphinx.delete(s, 'zxcv', user, host))
 
     def test_change(self):
         with sphinx.connect() as s:
@@ -138,6 +142,42 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIsInstance(pwd5, str)
         self.assertEqual(pwd1, pwd5)
 
+    def test_commit_undo_inv_mpwd(self):
+        # create
+        with sphinx.connect() as s:
+            pwd0 = sphinx.create(s, pwd, user, host, char_classes, size)
+            self.assertIsInstance(pwd0, str)
+
+        # change invalid mpwd
+        with sphinx.connect() as s:
+           self.assertRaises(ValueError, sphinx.change,s, 'zxcv', user, host)
+
+        # change correct mpwd
+        with sphinx.connect() as s:
+           pwd2 = sphinx.change(s, pwd, user, host)
+        self.assertIsInstance(pwd2, str)
+        self.assertNotEqual(pwd0, pwd2)
+
+        # commit invalid mpwd
+        with sphinx.connect() as s:
+           self.assertRaises(ValueError, sphinx.commit,s, 'zxcv', user, host)
+
+        # commit correct mpwd
+        with sphinx.connect() as s:
+           pwd4 = sphinx.commit(s, pwd, user, host, )
+        self.assertIsInstance(pwd4, str)
+        self.assertEqual(pwd2, pwd4)
+
+        # undo invalid mpwd
+        with sphinx.connect() as s:
+           self.assertRaises(ValueError, sphinx.undo,s, 'zxcv', user, host)
+
+        # undo correct mpwd
+        with sphinx.connect() as s:
+           pwd5 = sphinx.undo(s, pwd, user, host, )
+        self.assertIsInstance(pwd5, str)
+        self.assertEqual(pwd0, pwd5)
+
     def test_list_users(self):
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
@@ -152,7 +192,7 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
         with sphinx.connect() as s:
-            self.assertIsInstance(sphinx.create(s, pwd2, user2, host, char_classes, size), str)
+            self.assertIsInstance(sphinx.create(s, 'zxcv', user2, host, char_classes, size), str)
         with sphinx.connect() as s:
             users = sphinx.users(s, host)
             self.assertIsInstance(users, str)
@@ -179,7 +219,7 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
            self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
         with sphinx.connect() as s:
-           self.assertTrue(sphinx.write(s, '\n'.join((pwd2, test_str)).encode(), user2, host))
+           self.assertTrue(sphinx.write(s, '\n'.join(('zxcv', test_str)).encode(), user2, host))
         with sphinx.connect() as s:
            users = sphinx.users(s, host)
            self.assertIsInstance(users, str)
@@ -213,7 +253,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host)
+            blob = sphinx.read(s, pwd.encode(), user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str)
 
@@ -223,7 +263,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str0)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host)
+            blob = sphinx.read(s, pwd.encode(), user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str0)
 
@@ -232,7 +272,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.write(s, '\n'.join((pwd, test_str1)).encode(), user, host))
 
         with sphinx.connect() as s:
-            blob = sphinx.read(s, pwd, user, host)
+            blob = sphinx.read(s, pwd.encode(), user, host)
         self.assertIsInstance(blob, str)
         self.assertEqual(blob, test_str1)
 
@@ -284,19 +324,13 @@ class TestEndToEnd(unittest.TestCase):
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'undo', user, host)))
 
-    #def test_main_write_read(self):
-    #    class Input:
-    #         def __init__(self, txt = None):
-    #             if txt:
-    #                 self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
-    #             else:
-    #                 self.buffer = BytesIO(pwd.encode())
-    #    sys.stdin = Input("some note")
-    #    self.assertIsNone(sphinx.main(('sphinx.py', 'write', user, host)))
-    #    sys.stdin = Input()
-    #    self.assertIsNone(sphinx.main(('sphinx.py', 'read', user, host)))
-    #    sys.stdin = Input("some other note")
-    #    self.assertIsNone(sphinx.main(('sphinx.py', 'write', host)))
+    def test_main_write_read(self):
+        sys.stdin = Input("some note")
+        self.assertIsNone(sphinx.main(('sphinx.py', 'write', user, host)))
+        sys.stdin = Input()
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user, host)))
+        sys.stdin = Input("some other note")
+        self.assertIsNone(sphinx.main(('sphinx.py', 'write', host)))
 
     def test_main_inv_params(self):
         for cmd in ('create','get','change','commit','undo','delete','list','write','read'):
