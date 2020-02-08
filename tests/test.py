@@ -56,10 +56,21 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_get(self):
         with sphinx.connect() as s:
+            rwd0 = sphinx.create(s, pwd, user, host, char_classes, size)
+            self.assertIsInstance(rwd0, str)
+
+        with sphinx.connect() as s:
+            rwd = sphinx.get(s, pwd, user, host)
+            self.assertIsInstance(rwd, str)
+
+        self.assertEqual(rwd,rwd0)
+
+    def test_get_inv_mpwd(self):
+        with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
 
         with sphinx.connect() as s:
-            self.assertIsInstance(sphinx.get(s, pwd, user, host), str)
+            self.assertIsInstance(sphinx.get(s, pwd2, user, host), str)
 
     def test_get_nonexistant_host(self):
         with sphinx.connect() as s:
@@ -71,6 +82,13 @@ class TestEndToEnd(unittest.TestCase):
 
         with sphinx.connect() as s:
             self.assertTrue(sphinx.delete(s, pwd, user, host))
+
+    def test_delete_inv_mpwd(self):
+        with sphinx.connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
+
+        with sphinx.connect() as s:
+            self.assertIsNone(sphinx.delete(s, pwd2, user, host))
 
     def test_change(self):
         with sphinx.connect() as s:
