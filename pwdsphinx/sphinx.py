@@ -93,8 +93,9 @@ def _get(s, pwd, user, host, cmd, rwd):
    resp = s.recv(4096)
    if resp == b'fail' or len(resp) < sphinxlib.OPAQUE_SERVER_SESSION_LEN:
       print("opaque_server_session failed")
-      return
-   return sphinxlib.opaque_session_usr_finish(pwd, resp, sec, getlocalkey(), rwd)
+      return False
+   ret = sphinxlib.opaque_session_usr_finish(pwd, resp, sec, getlocalkey(), rwd)
+   return ret
 
 def _create(s, pwd, user, host, extra, cmd = CREATE):
   rwd = None
@@ -105,7 +106,7 @@ def _create(s, pwd, user, host, extra, cmd = CREATE):
   resp = s.recv(4096)
   rec, rwd = sphinxlib.opaque_private_init_usr_respond(pwd, r, resp, extra, getlocalkey(), rwd=True)
   s.send(rec)
-  resp = s.recv(4096)
+  resp = s.recv(2)
   if(resp==b'ok'):
     return rwd
   if rwd: clearmem(rwd)
@@ -156,6 +157,28 @@ def update_record(s,pwd,user,host,op,blob = None):
      extra = '\n'.join(sorted(users)).encode()
    return _change(s, pwd, extra, False)
 
+def upsert_user(s, user, host):
+   msg = b''.join([WRITE,getid(host,'')])
+   s.send(msg)
+
+   rec = s.recv(1) # todo fixme arbitrary limit
+   if rec == b'\x00':
+      # create new user record
+      extra = user.encode()
+      rwd = _create(s, b'nopass', '', host, extra)
+      if not rwd:
+        print("failed to create new user record")
+      clearmem(rwd)
+      resp = s.recv(2)
+      if(resp==b'ok'):
+        return True
+   elif rec == b'\xff':
+     # update existing user record
+     return update_record(s,b'nopass',user,host,CREATE)
+   else:
+      print("invalid response when trying to upsert user")
+   return False
+
 #### OPs ####
 
 def init_key():
@@ -185,31 +208,14 @@ def create(s, pwd, user, host, classes, size=0):
     clearmem(rwd)
 
     # upsert user
-    msg = b''.join([WRITE,getid(host,'')])
-    s.send(msg)
-
-    rec = s.recv(1) # todo fixme arbitrary limit
-    if rec == b'\x00':
-       # create new user record
-       extra = user.encode()
-       rwd = _create(s, pwd, '', host, extra)
-       if rwd:
-         clearmem(rwd)
-         return ret
-       else:
-         print("failed to create new user record")
-    elif rec == b'\xff':
-       # update existing user record
-      if update_record(s,pwd,user,host,CREATE):
-        return ret
-    else:
-       print("invalid response when trying to upsert user")
-    return False
+    if not upsert_user(s, user, host):
+      return False
+    return ret
 
 def get(s, pwd, user, host):
     ret = _get(s, pwd, user, host, GET, True)
     if not ret:
-        return
+        return False
     sk, extra, rwd = ret
     clearmem(sk)
     classes, size = unpack_rule(extra)
@@ -218,7 +224,7 @@ def get(s, pwd, user, host):
     return ret
 
 def users(s, pwd, host):
-    res = _get(s, pwd, '' , host, GET, False)
+    res = _get(s, b'nopass', '' , host, GET, False)
     if not res: return
     sk, extra = res
     clearmem(sk)
@@ -230,7 +236,7 @@ def delete(s, pwd, user, host):
       return False
 
     # change user record
-    return update_record(s,pwd,user,host,DELETE)
+    return update_record(s,b'nopass',user,host,DELETE)
 
 def change(s, pwd, user, host):
     rule = auth(s, pwd, user, host, CHANGE)
@@ -252,7 +258,7 @@ def commit_undo(s, pwd, type, user, host):
 
     resp =  s.recv(4096)
     if(resp!=b'ok'):
-        return
+        return False
     return get(s,pwd,user,host)
 
 def write(s, blob, user, host):
@@ -267,17 +273,22 @@ def write(s, blob, user, host):
    exists = s.recv(1)
    if exists == b'\x00':
       rwd = _create(s, pwd, user, host, blob, cmd = WRITE)
-      if rwd:
-        clearmem(rwd)
-        return True
-      else:
+      if not rwd:
         print("failed to create new blob")
+        return False
+      clearmem(rwd)
    elif exists == b'\xff':
       # update existing user record
-     return update_record(s,pwd,user,host,WRITE,blob)
+      return update_record(s,pwd,user,host,WRITE,blob)
    else:
       print("invalid response when checking existance of record")
-   return False
+
+   resp = s.recv(2)
+   if(resp!=b'ok'):
+     return False
+
+   # upsert user
+   return upsert_user(s, user, host)
 
 def read(s, pwd, user, host):
    ret = _get(s, pwd, user, host, READ, True)

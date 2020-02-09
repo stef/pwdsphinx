@@ -69,12 +69,27 @@ def _create(conn, msg):
 
     conn.send(b'ok')
 
+def _write(conn, msg):
+   id = binascii.hexlify(msg[1:33]).decode()
+   recfile = os.path.join(datadir,id, 'rec')
+   if os.path.exists(recfile):
+      # update the record file
+      conn.send(b'\xff')
+      update_record(conn)
+   else:
+      #create a new record
+      conn.send(b'\x00')
+      msg = conn.recv(4096)
+      _create(conn, msg)
+
+   conn.send(b"ok")
+
 def update_record(conn, msg = None, dst='rec'):
    if msg is None: msg = conn.recv(4096)
 
    auth(conn, msg)
 
-   alpha = conn.recv(4096)
+   alpha = conn.recv(32)
    sec, pub = sphinxlib.opaque_private_init_srv_respond(alpha)
    conn.send(pub)
 
@@ -88,7 +103,6 @@ def update_record(conn, msg = None, dst='rec'):
    if not os.path.exists(tdir):
      if verbose: print("%s does not exist" % tdir)
      fail(conn)
-     return
 
    with open(os.path.join(tdir,dst),'wb') as fd:
      os.fchmod(fd.fileno(),0o600)
@@ -101,7 +115,7 @@ def create(conn, msg):
     # handle upsert user
     # get id for user record
     msg = conn.recv(33)
-    write(conn, msg)
+    _write(conn, msg)
 
 # msg format: 0x66|id[32]|pub[xx] # fixme how big is pub?
 def get(conn, msg, session=False):
@@ -178,19 +192,11 @@ def commit_undo(conn, msg, src, dst):
     get(conn, data)
 
 def write(conn, msg):
-   id = binascii.hexlify(msg[1:33]).decode()
-   recfile = os.path.join(datadir,id, 'rec')
-   if os.path.exists(recfile):
-      # update the record file
-      conn.send(b'\xff')
-      update_record(conn)
-   else:
-      #create a new record
-      conn.send(b'\x00')
-      msg = conn.recv(4096)
-      _create(conn, msg)
+   _write(conn,msg)
 
-   conn.send(b"ok") # unfortunately we have no shared secret at this moment, so we need to send plaintext
+   # update user record
+   msg = conn.recv(33)
+   _write(conn, msg)
 
 def handler(conn):
    conn.settimeout(timeout)
