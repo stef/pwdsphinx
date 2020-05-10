@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import socket, sys, ssl, os, datetime, binascii, pysodium, shutil, os.path, struct
+import socket, sys, ssl, os, datetime, binascii, pysodium, shutil, os.path, struct, traceback
 from SecureString import clearmem
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
@@ -26,9 +26,13 @@ CHANGE=0xaa
 WRITE=0xcc
 DELETE=0xff
 
+RULE_SIZE=42
+
 def fail(s):
-    if verbose: print('fail')
-    s.send(b'fail') # plaintext :/
+    if verbose: 
+        traceback.print_stack()
+        print('fail')
+    s.send(b'\x00\x04fail') # plaintext :/
     s.shutdown(socket.SHUT_RDWR)
     s.close()
     os._exit(0)
@@ -57,7 +61,7 @@ def update_blob(s):
     new = False
     if blob is None:
       new = True
-      blob = b'none'
+      blob = b'\x00\x00'
     s.send(blob)
     blob = s.recv(8192) # todo/fixme arbitrary limit
     if new:
@@ -114,8 +118,8 @@ def create(s, msg):
     s.send(beta)
 
     # wait for auth signing pubkey and rules
-    msg = s.recv(32+50+64) # pubkey, rule, signature
-    if len(msg)!=32+50+64:
+    msg = s.recv(32+RULE_SIZE+64) # pubkey, rule, signature
+    if len(msg)!=32+RULE_SIZE+64:
       fail(s)
     # verify auth sig on packet
     pk = msg[0:32]
@@ -166,7 +170,7 @@ def get(conn, msg):
       # maybe execute protocol with static but random value to not leak which host ids exist?
       fail(conn)
 
-    rules = load_blob(id,'rules', 50)
+    rules = load_blob(id,'rules', RULE_SIZE)
     if rules is None:
         fail(conn)
 
@@ -223,7 +227,7 @@ def change(conn, msg):
     fail(conn)
 
   #print("beta=",beta.hex())
-  rules = load_blob(id,'rules', 50)
+  rules = load_blob(id,'rules', RULE_SIZE)
   if rules is None:
       fail(conn)
 
@@ -280,14 +284,14 @@ def commit_undo(conn, msg, new, old):
   except:
     fail(conn)
 
-  rules = load_blob(id,'rules', 50)
+  rules = load_blob(id,'rules', RULE_SIZE)
   if rules is None:
       fail(conn)
 
   conn.send(beta+rules)
 
-  blob = conn.recv(32+50+64)
-  if len(blob)!=32+50+64:
+  blob = conn.recv(32+RULE_SIZE+64)
+  if len(blob)!=32+RULE_SIZE+64:
     fail(conn)
 
   pk = blob[0:32]
