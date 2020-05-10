@@ -21,11 +21,15 @@ if platform.system() == 'Windows':
 
 cfg = getcfg('sphinx')
 
-verbose = cfg['client'].getboolean('verbose')
+verbose = cfg['client'].getboolean('verbose', fallback=False)
 address = cfg['client']['address']
-port = int(cfg['client']['port'])
-datadir = os.path.expanduser(cfg['client']['datadir'])
+port = int(cfg['client'].get('port',2355))
+datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
 ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system should use proper certs!
+#  make RWD optional in (sign|seal)key, if it is b'' then this protects against
+#  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
+#  the seeds/blobs can be controlled by an attacker if the masterkey is known
+rwd_keys = cfg['client'].get('rwd_keys',False)
 
 #### consts ####
 
@@ -42,6 +46,8 @@ ENC_CTX = "sphinx encryption key"
 SIGN_CTX = "sphinx signing key"
 SALT_CTX = "sphinx host salt"
 PASS_CTX = "sphinx password context"
+
+RULE_SIZE = 42
 
 #### Helper fns ####
 
@@ -72,7 +78,8 @@ def get_signkey(id, rwd):
   clearmem(mk)
   # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
   seed = pysodium.crypto_generichash(seed, id)
-  seed = pysodium.crypto_generichash(seed, rwd)
+  if rwd_keys:
+    seed = pysodium.crypto_generichash(seed, rwd)
   pk, sk = pysodium.crypto_sign_seed_keypair(seed)
   clearmem(seed)
   return sk, pk
@@ -82,20 +89,24 @@ def get_sealkey(rwd):
   sk = pysodium.crypto_generichash(ENC_CTX, mk)
   clearmem(mk)
   # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
-  sk = pysodium.crypto_generichash(sk, rwd)
-  pk = pysodium.crypto_scalarmult_curve25519_base(sk)
-  return sk, pk
+  if rwd_keys:
+    sk = pysodium.crypto_generichash(sk, rwd)
+  return sk
 
 def encrypt_blob(blob, rwd):
   # todo implement padding
-  sk, pk = get_sealkey(rwd)
+  sk = get_sealkey(rwd)
+  nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
+  ct = pysodium.crypto_secretbox(blob,nonce,sk)
   clearmem(sk)
-  return pysodium.crypto_box_seal(blob,pk)
+  return nonce+ct
 
 def decrypt_blob(blob, rwd):
   # todo implement padding
-  sk, pk = get_sealkey(rwd)
-  res = pysodium.crypto_box_seal_open(blob,pk,sk)
+  sk = get_sealkey(rwd)
+  nonce = blob[:pysodium.crypto_secretbox_NONCEBYTES]
+  blob = blob[pysodium.crypto_secretbox_NONCEBYTES:]
+  res = pysodium.crypto_secretbox_open(blob,nonce,sk)
   clearmem(sk)
   return res
 
@@ -137,8 +148,8 @@ def doSphinx(s, op, pwd, user, host):
     # auth: do sphinx with current seed, use it to sign the nonce
     crwd = auth(s,id,pwd,r)
 
-  resp = s.recv(32+50) # beta + sealed rules
-  if resp == b'fail' or len(resp)!=32+50:
+  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
+  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
     raise ValueError("error: sphinx protocol failure.")
   beta = resp[:32]
   rules = resp[32:]
@@ -170,22 +181,32 @@ def doSphinx(s, op, pwd, user, host):
 
   return ret
 
-def update_rec(s, host, item):
+def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
     id = getid(host, '')
     s.send(id)
     # wait for user blob
-    blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
-    if blob == b'none':
+    bsize = s.recv(2)
+    bsize = struct.unpack('!H', bsize)[0]
+    # todo oracle can also just say fail - without a pktsize
+    if bsize == 0:
       # it is a new blob, we need to attach an auth signing pubkey
       sk, pk = get_signkey(id, b'')
       clearmem(sk)
       # we encrypt with an empty rwd, so that the user list is independent of the master pwd
       blob = encrypt_blob(item.encode(), b'')
+      bsize = len(blob)
+      if bsize >= 2**16:
+          raise ValueError("error: blob is bigger than 64KB.")
+      blob = struct.pack("!H", bsize) + blob
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
       # again no rwd, to be independent of the master pwd
       blob = sign_blob(blob, id, b'')
     else:
+      blob = s.recv(bsize)
+      if blob == b'fail':
+          print("error: reading blob failed")
+          return
       blob = decrypt_blob(blob, b'')
       items = set(blob.decode().split('\x00'))
       # todo/fix? we do not recognize if the user is already included in this list
@@ -194,6 +215,10 @@ def update_rec(s, host, item):
       blob = ('\x00'.join(sorted(items))).encode()
       # notice we do not add rwd to encryption of user blobs
       blob = encrypt_blob(blob, b'')
+      bsize = len(blob)
+      if bsize+2 >= 2**16:
+          raise ValueError("error: blob is bigger than 64KB.")
+      blob = struct.pack("!H", bsize) + blob
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
@@ -245,7 +270,7 @@ def create(s, pwd, user, host, char_classes, size=0):
 
   # wait for response from sphinx server
   beta = s.recv(32)
-  if beta == b'fail':
+  if beta == b'\x00\x04fail':
     raise ValueError("error: sphinx protocol failure.")
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
@@ -278,7 +303,9 @@ def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
   s.send(msg)
   auth(s,id)
-  blob = s.recv(4096)
+  bsize = s.recv(2)
+  bsize = struct.unpack('!H', bsize)[0]
+  blob = s.recv(bsize)
   if blob == b'fail':
     return
   return decrypt_blob(blob, rwd)
@@ -310,23 +337,31 @@ def delete(s, pwd, user, host):
   id = getid(host, '')
   s.send(id)
   # wait for user blob
-  blob = s.recv(8192)  # todo/fixme this is an arbitrary limit
-  if blob == b'none':
+  bsize = s.recv(2)
+  bsize = struct.unpack('!H', bsize)[0]
+  if bsize == 0:
     # this should not happen, it means something is corrupt
     print("error: server has no associated user record for this host")
     return
-  elif blob == b'fail':
+
+  blob = s.recv(bsize)
+  # todo handle this
+  if blob == b'fail':
     return
-  else:
-    blob = decrypt_blob(blob, b'')
-    users = set(blob.decode().split('\x00'))
-    # todo/fix? we do not recognize if the user is already included in this list
-    # this should not happen, but maybe it's a sign of corruption?
-    users.remove(user)
-    blob = ('\x00'.join(sorted(users))).encode()
-    # notice we do not add rwd to encryption of user blobs
-    blob = encrypt_blob(blob, b'')
-    blob = sign_blob(blob, id, b'')
+  blob = decrypt_blob(blob, b'')
+  users = set(blob.decode().split('\x00'))
+  # todo/fix? we do not recognize if the user is already included in this list
+  # this should not happen, but maybe it's a sign of corruption?
+  users.remove(user)
+  blob = ('\x00'.join(sorted(users))).encode()
+  # notice we do not add rwd to encryption of user blobs
+  blob = encrypt_blob(blob, b'')
+  bsize = len(blob)
+  if bsize >= 2**16:
+      raise ValueError("error: blob is bigger than 64KB.")
+  blob = struct.pack("!H", bsize) + blob
+  blob = sign_blob(blob, id, b'')
+
   s.send(blob)
 
   if b'ok' != s.recv(2):
@@ -344,7 +379,7 @@ def write(s, blob, user, host):
   if s.recv(3) == b'new':
     # wait for response from sphinx server
     beta = s.recv(32)
-    if beta == b'fail' or len(beta)<32:
+    if beta == b'\x00\x04fail' or len(beta)<32:
       raise ValueError("error: sphinx protocol failure.")
     rwd = sphinxlib.finish(pwd, r, beta, id)
     # second phase, derive new auth signing pubkey
@@ -352,6 +387,10 @@ def write(s, blob, user, host):
     clearmem(sk)
     # encrypt blob
     blob = encrypt_blob(blob, rwd)
+    bsize = len(blob)
+    if bsize >= 2**16:
+        raise ValueError("error: blob is bigger than 64KB.")
+    blob = struct.pack("!H", bsize) + blob
     # send over new signed(pubkey, rule)
     msg = b''.join([pk, blob])
     msg = sign_blob(msg, id, rwd)
@@ -364,6 +403,10 @@ def write(s, blob, user, host):
     rwd = auth(s,id,pwd,r)
     blob = encrypt_blob(blob, rwd)
     clearmem(rwd)
+    bsize = len(blob)
+    if bsize+2 >= 2**16:
+        raise ValueError("error: blob is bigger than 64KB.")
+    blob = struct.pack("!H", bsize) + blob
     s.send(blob)
   return True
 
@@ -374,11 +417,13 @@ def read(s,pwd,user,host):
   s.send(msg)
   # first auth
   rwd = auth(s,id,pwd,r)
-  blob = s.recv(8192+48)
-  if len(blob)==0:
+  bsize = s.recv(2)
+  bsize = struct.unpack('!H', bsize)[0]
+  if bsize==0:
     print('no blob found')
     return
-  elif blob == b'fail':
+  blob = s.recv(bsize)
+  if blob == b'fail':
     return
   blob = decrypt_blob(blob, rwd)
   clearmem(rwd)
