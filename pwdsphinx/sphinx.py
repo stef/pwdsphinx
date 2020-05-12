@@ -331,7 +331,7 @@ def delete(s, pwd, user, host):
   s.send(msg) # alpha
   rwd = auth(s,id,pwd,r)
 
-  # add user to user list for this host
+  # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
   id = getid(host, '')
