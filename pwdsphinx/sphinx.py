@@ -42,10 +42,10 @@ CHANGE   =b'\xaa' # sphinx
 WRITE    =b'\xcc' # blob
 DELETE   =b'\xff' # sphinx+blobs
 
-ENC_CTX = "sphinx encryption key"
-SIGN_CTX = "sphinx signing key"
-SALT_CTX = "sphinx host salt"
-PASS_CTX = "sphinx password context"
+ENC_CTX = b"sphinx encryption key"
+SIGN_CTX = b"sphinx signing key"
+SALT_CTX = b"sphinx host salt"
+PASS_CTX = b"sphinx password context"
 
 RULE_SIZE = 42
 
