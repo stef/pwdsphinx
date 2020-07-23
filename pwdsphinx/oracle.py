@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import asyncio, datetime, os, binascii, shutil, sys
 from SecureString import clearmem
 import pysodium
