@@ -1,3 +1,10 @@
+
+<!--
+SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+
 sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself
 (**N**o **X**aggeration)
 
