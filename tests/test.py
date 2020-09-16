@@ -74,7 +74,7 @@ class TestEndToEnd(unittest.TestCase):
 
         with sphinx.connect() as s:
             rwd = sphinx.get(s, 'zxcv', user, host)
-            self.assertIsNone(rwd)
+            self.assertNotEqual(rwd0,rwd)
 
     def test_get_nonexistant_host(self):
         with sphinx.connect() as s:
