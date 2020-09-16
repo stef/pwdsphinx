@@ -119,8 +119,8 @@ def getid(host, user):
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
-def unpack_rule(rules, rwd):
-  rules = decrypt_blob(rules, rwd)
+def unpack_rule(rules):
+  rules = decrypt_blob(rules, b'')
   rule = struct.unpack(">H",rules)[0]
   size = (rule & 0x7f)
   rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
@@ -140,10 +140,9 @@ def doSphinx(s, op, pwd, user, host):
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([op, id, alpha])
   s.send(msg)
-  crwd = None
   if op != GET: # == CHANGE, UNDO, COMMIT
-    # auth: do sphinx with current seed, use it to sign the nonce
-    crwd = auth(s,id,pwd,r)
+     # auth: do sphinx with current seed, use it to sign the nonce
+    auth(s,id,pwd,r)
 
   resp = s.recv(32+RULE_SIZE) # beta + sealed rules
   if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
@@ -152,18 +151,16 @@ def doSphinx(s, op, pwd, user, host):
   rules = resp[32:]
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
-  # in case of change/undo/commit we need to use the crwd to decrypt the rules
   try:
-    classes, size = unpack_rule(rules, crwd or rwd)
+    classes, size = unpack_rule(rules)
   except ValueError:
     return
-  if crwd:
-    clearmem(crwd)
+  if op != GET: # == CHANGE, UNDO, COMMIT
     # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
     if op in {UNDO,COMMIT}:
       sk, pk = get_signkey(id, rwd)
       clearmem(sk)
-      rule = encrypt_blob(pack_rule(classes, size), rwd)
+      rule = encrypt_blob(pack_rule(classes, size), b'')
 
       # send over new signed(pubkey, rule)
       msg = b''.join([pk, rule])
@@ -278,7 +275,7 @@ def create(s, pwd, user, host, char_classes, size=0):
   try: size=int(size)
   except:
     raise ValueError("error: size has to be integer.")
-  rule = encrypt_blob(pack_rule(char_classes, size), rwd)
+  rule = encrypt_blob(pack_rule(char_classes, size), b'')
 
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
