@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: 2018, Marsiske Stefan 
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import socket, sys, ssl, os, datetime, binascii, pysodium, shutil, os.path, struct, traceback
-from SecureString import clearmem
+import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback
+import pysodium
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
 cfg = getcfg('sphinx')
@@ -32,7 +32,7 @@ DELETE=0xff
 RULE_SIZE=42
 
 def fail(s):
-    if verbose: 
+    if verbose:
         traceback.print_stack()
         print('fail')
     s.send(b'\x00\x04fail') # plaintext :/
@@ -301,7 +301,7 @@ def commit_undo(conn, msg, new, old):
   try:
     blob = verify_blob(blob,pk)
   except ValueError:
-    fail(s)
+    fail(conn)
   rules = blob[32:]
 
   save_blob(id,old,key)
@@ -415,7 +415,7 @@ def main():
     try:
         s.bind((address, port))
     except socket.error as msg:
-        print('Bind failed. Error Code : %s Message: ' % (str(msg[0]), msg[1]))
+        print('Bind failed. Error Code : %s Message: %s' % (str(msg[0]), msg[1]))
         sys.exit()
     #Start listening on socket
     s.listen()
