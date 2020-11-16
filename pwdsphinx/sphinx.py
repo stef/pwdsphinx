@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, os, socket, ssl, io, struct, binascii, platform
+import sys, os, socket, ssl, struct, platform
 from SecureString import clearmem
 import pysodium
 try:
