@@ -113,20 +113,11 @@ Like the server, the client can be configured changing the settings in
 the `[client]` section of the config file. The `host` and `port` should
 match what you set in the server.
 
-The datadir (default: `~/.sphinx`) variable holds the location for
-your client parameters. Particularly it contains a salt (by default
-`~/.sphinx/salt`) which is used to calculate the ids for secrets on
-the server, and more importantly it also contains a secret key
-(default: `~/.sphinx/key`) that is used to sign every message sent to
-the server to authorize the operations on your passwords. Both the
-salt and the key is generated automatically if not available. You
-might want to back up and encrypt both the salt and the key.
-
-#### Authorization
-
-All operations are authenticated by your (default: `~/.sphinx/key`)
-file which is used to sign all operations. You should protect this
-file, so that only you can operate on your passwords.
+The datadir (default: `~/.sphinx`) variable holds the location for your client
+parameters. Particularly it contains a masterkey (by default
+`~/.sphinx/masterkey`) which is used to derive secrets. The master key is
+generated automatically if not available. You might want to back up and encrypt
+the master key.
 
 #### Operations
 
