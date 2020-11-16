@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018, Marsiske Stefan 
 # SPDX-License-Identifier: GPL-3.0-or-later 
 
-import sys, os, socket, ssl, io, struct, binascii, platform
+import sys, os, socket, ssl, struct, platform
 from SecureString import clearmem
 import pysodium
 try:
