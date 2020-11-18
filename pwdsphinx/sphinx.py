@@ -517,6 +517,6 @@ def main(params):
 if __name__ == '__main__':
   try:
     main(sys.argv)
-  except:
+  except Exception:
     print("fail")
     raise # todo remove only for dbg
