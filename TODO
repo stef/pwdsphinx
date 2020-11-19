@@ -1,2 +1,0 @@
-* expose pake in sphinx.py
-* use decaf signature instead of sodium.
