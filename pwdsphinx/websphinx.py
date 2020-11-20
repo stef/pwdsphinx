@@ -109,6 +109,16 @@ def commit(data):
   except:
     send_message({ 'results': 'fail' })
 
+def undo(data):
+  def callback(arg):
+    res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'undo', "mode": data['mode']}
+    send_message({ 'results': res })
+  try:
+    handler = SphinxHandler(datadir)
+    handler.commit(callback, data['name'], data['site'])
+  except:
+    send_message({ 'results': 'fail' })
+
 def main():
   global log
   if log: log = open(log,'ab')
@@ -135,6 +145,8 @@ def main():
       change(data)
     elif data['cmd'] == 'commit':
       commit(data)
+    elif data['cmd'] == 'undo':
+      undo(data)
 
 if __name__ == '__main__':
   main()
