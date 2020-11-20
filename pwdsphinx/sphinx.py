@@ -39,7 +39,6 @@ UNDO     =b'\x55' # change sphinx
 GET      =b'\x66' # sphinx
 COMMIT   =b'\x99' # change sphinx
 CHANGE   =b'\xaa' # sphinx
-WRITE    =b'\xcc' # blob
 DELETE   =b'\xff' # sphinx+blobs
 
 ENC_CTX = b"sphinx encryption key"
@@ -367,65 +366,6 @@ def delete(s, pwd, user, host):
   clearmem(rwd)
   return True
 
-def write(s, blob, user, host):
-  id = getid(host, user)
-  pwd, blob = blob.split(b'\n',1)
-  r, alpha = sphinxlib.challenge(pwd)
-  msg = b''.join([WRITE, id, alpha])
-  s.send(msg)
-  if s.recv(3) == b'new':
-    # wait for response from sphinx server
-    beta = s.recv(32)
-    if beta == b'\x00\x04fail' or len(beta)<32:
-      raise ValueError("error: sphinx protocol failure.")
-    rwd = sphinxlib.finish(pwd, r, beta, id)
-    # second phase, derive new auth signing pubkey
-    sk, pk = get_signkey(id, rwd)
-    clearmem(sk)
-    # encrypt blob
-    blob = encrypt_blob(blob, rwd)
-    bsize = len(blob)
-    if bsize >= 2**16:
-        raise ValueError("error: blob is bigger than 64KB.")
-    blob = struct.pack("!H", bsize) + blob
-    # send over new signed(pubkey, rule)
-    msg = b''.join([pk, blob])
-    msg = sign_blob(msg, id, rwd)
-    clearmem(rwd)
-    s.send(msg)
-
-    # add user to user list for this host
-    update_rec(s, host, user)
-  else:
-    rwd = auth(s,id,pwd,r)
-    blob = encrypt_blob(blob, rwd)
-    clearmem(rwd)
-    bsize = len(blob)
-    if bsize+2 >= 2**16:
-        raise ValueError("error: blob is bigger than 64KB.")
-    blob = struct.pack("!H", bsize) + blob
-    s.send(blob)
-  return True
-
-def read(s,pwd,user,host):
-  id = getid(host, user)
-  r, alpha = sphinxlib.challenge(pwd)
-  msg = b''.join([READ, id, alpha])
-  s.send(msg)
-  # first auth
-  rwd = auth(s,id,pwd,r)
-  bsize = s.recv(2)
-  bsize = struct.unpack('!H', bsize)[0]
-  if bsize==0:
-    print('no blob found')
-    return
-  blob = s.recv(bsize)
-  if blob == b'fail':
-    return
-  blob = decrypt_blob(blob, rwd)
-  clearmem(rwd)
-  return blob.decode()
-
 #### main ####
 
 def main(params):
@@ -433,7 +373,6 @@ def main(params):
     print("usage: %s init" % params[0])
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
     print("usage: %s <get|change|commit|undo|delete> <user> <site>" % params[0])
-    print("usage: %s <write|read> [user] <site>" % params[0])
     print("usage: %s list <site>" % params[0])
     sys.exit(1)
 
@@ -476,16 +415,6 @@ def main(params):
     if len(params) != 4: usage()
     cmd = undo
     args = (params[2],params[3])
-  elif params[1] in ('write', 'read'):
-    if len(params) not in (3,4): usage()
-    if len(params) == 4:
-      user=params[2]
-      host=params[3]
-    else:
-      user = params[2]
-      host= ''
-    cmd = write if params[1] == 'write' else read
-    args = (user, host)
 
   if cmd is not None:
     s = connect()
@@ -507,7 +436,7 @@ def main(params):
     if not ret:
       print("fail")
       sys.exit(1)
-    if cmd not in (delete, write):
+    if cmd != delete:
       print(ret)
       sys.stdout.flush()
       clearmem(ret)

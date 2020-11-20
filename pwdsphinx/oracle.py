@@ -26,7 +26,6 @@ UNDO=0x55
 GET=0x66
 COMMIT=0x99
 CHANGE=0xaa
-WRITE=0xcc
 DELETE=0xff
 
 RULE_SIZE=42
@@ -311,62 +310,6 @@ def commit_undo(conn, msg, new, old):
   os.unlink(os.path.join(tdir,new))
   conn.send(b'ok')
 
-def write(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  id = binascii.hexlify(id).decode()
-  # 1st find out if seed for this blob already exists (might be a normal sphinx pwd)
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    conn.send(b"new")
-    # no seed available, need to set up that first.
-    k=pysodium.randombytes(32)
-    try:
-        beta = sphinxlib.respond(alpha, k)
-    except:
-      fail(conn)
-    conn.send(beta)
-
-    # wait for auth signing pubkey and rules
-    msg = conn.recv(8192+32+64+48) # pubkey, signature, max 8192B sealed(+48B) blob
-    if len(msg)<=32+64+48:
-      fail(conn)
-    # verify auth sig on packet
-    pk = msg[0:32]
-    try:
-      msg = verify_blob(msg,pk)
-    except ValueError:
-      fail(conn)
-
-    blob = msg[32:]
-
-    if not os.path.exists(datadir):
-        os.mkdir(datadir,0o700)
-    if not os.path.exists(tdir):
-        os.mkdir(tdir,0o700)
-
-    save_blob(id,'key',k)
-    save_blob(id,'pub',pk)
-
-    # 3rd phase
-    update_blob(conn) # add user to host record
-  else:
-    conn.send(b"old")
-    auth(conn, id, alpha)
-    blob = conn.recv(8192+48) # max 8192B sealed(+48B) blob
-    if len(blob)<=48:
-      fail(conn)
-
-  if not os.path.exists(datadir):
-    os.mkdir(datadir,0o700)
-  tdir = os.path.join(datadir,id)
-  if not os.path.exists(tdir):
-    os.mkdir(tdir,0o700)
-
-  save_blob(id,'blob',blob)
-  conn.send(b'ok')
-
 def read(conn, msg):
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
@@ -398,8 +341,6 @@ def handler(conn):
      commit_undo(conn, data, 'old', 'new')
    elif data[0] == READ:
      read(conn, data)
-   elif data[0] == WRITE:
-     write(conn, data)
    elif verbose:
      print("unknown op: 0x%02x" % data[0])
 

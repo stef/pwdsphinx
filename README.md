@@ -214,28 +214,3 @@ client, your `username` as the 2nd and the `site` as the 3rd
 parameter. This command does not need anything on standard input, nor
 does it provide anything on standard output in case everything goes
 well.
-
-#### Storing short blobs
-
-Many password managers provide a means to store arbitrary user chosen weak
-passwords. This is a bad practice, but expected by users, the extended sphinx
-protocol does support this, but advises against its usage. If you want to
-disobey the advice, you can store blobs of not more than 8190 bytes like this:
-
-```sh
-echo -ne 'asdf\nfoobarbazqwerasdf' | ./sphinx.py write username https://example.com
-```
-
-This would store the "incredibly strong" `foobarbazqwerasdf` string as a blob
-encrypted by the even less impressive password `asdf`.
-
-Which you can query later using:
-
-```sh
-echo -n 'asdf' | ./sphinx.py read username https://example.com
-```
-
-But really, don't do this. It is really bad practice. Instead use the sphinx
-client to store a normal strong sphinx password (which you create using
-`create`) and use that password for encrypting a file using anything that
-encrypts like age, pbp.
