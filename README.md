@@ -197,7 +197,7 @@ If you somehow messed up and have to go back to use the old password, you can
 undo committing your password using:
 
 ```
-echo 'my master password' | ./sphinx.py commit username https://example.com
+echo 'my master password' | ./sphinx.py undo username https://example.com
 ```
 
 #### Deleting passwords
