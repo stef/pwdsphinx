@@ -25,7 +25,7 @@ verbose = cfg['client'].getboolean('verbose', fallback=False)
 address = cfg['client']['address']
 port = int(cfg['client'].get('port',2355))
 datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
-ssl_cert = cfg['client']['ssl_cert'] # TODO only for dev, production system should use proper certs!
+ssl_cert = cfg['client'].get('ssl_cert') # TODO only for dev, production system should use proper certs!
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
@@ -61,9 +61,10 @@ def get_masterkey():
 
 def connect():
   ctx = ssl.create_default_context()
-  ctx.load_verify_locations(ssl_cert) # TODO only for dev, production system should use proper certs!
-  ctx.check_hostname=False            # TODO only for dev, production system should use proper certs!
-  ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
+  if(ssl_cert):
+      ctx.load_verify_locations(ssl_cert) # TODO only for dev, production system should use proper certs!
+      ctx.check_hostname=False            # TODO only for dev, production system should use proper certs!
+      ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   s.settimeout(3)
