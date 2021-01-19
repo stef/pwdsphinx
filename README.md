@@ -1,12 +1,10 @@
-
 <!--
 SPDX-FileCopyrightText: 2018, Marsiske Stefan 
 
 SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 
-sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself
-(**N**o **X**aggeration)
+sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself (**N**o **X**aggeration)
 
 pwdsphinx is python wrapper around libsphinx - a cryptographic password storage
 as described in https://eprint.iacr.org/2015/1099
@@ -65,6 +63,7 @@ able to communicate with the server and manage passwords.
 
 Both the client and the server can be configured by any of the
 following files:
+
  - `/etc/sphinx/config`
  - `~/.sphinxrc`
  - `~/.config/sphinx/config`
