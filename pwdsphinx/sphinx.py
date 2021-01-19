@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: 2018, Marsiske Stefan 
-# SPDX-License-Identifier: GPL-3.0-or-later 
+# SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 import sys, os, socket, ssl, struct, platform
 from SecureString import clearmem
@@ -368,7 +368,8 @@ def delete(s, pwd, user, host):
 
 #### main ####
 
-def main(params):
+def main():
+  params = sys.argv
   def usage():
     print("usage: %s init" % params[0])
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
@@ -445,7 +446,7 @@ def main(params):
 
 if __name__ == '__main__':
   try:
-    main(sys.argv)
+    main()
   except Exception:
     print("fail")
     raise # todo remove only for dbg
