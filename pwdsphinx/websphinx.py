@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 #
 # This file is part of WebSphinx.
-# 
+#
 # SPDX-FileCopyrightText:  2018, Marsiske Stefan <pitchfork@ctrlc.hu>
 # SPDX-License-Identifier:  GPL-3.0-or-later
-# 
+#
 # WebSphinx is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation either version 3 of the License, or
@@ -20,17 +20,22 @@
 
 
 import subprocess
-import os, sys, struct, json, platform
+import sys, struct, json
 try:
-    from pwdsphinx.sphinx import datadir, SphinxHandler
+    from pwdsphinx import sphinx
     from pwdsphinx.config import getcfg
 except ImportError:
-    from sphinx import datadir, SphinxHandler
+    import sphinx
     from config import getcfg
 
 cfg = getcfg('sphinx')
 pinentry = cfg['websphinx']['pinentry']
 log = cfg['websphinx']['log']
+
+def handler(cb, cmd, *args):
+    s = sphinx.connect()
+    cb(cmd(s, *args))
+    s.close()
 
 def getpwd(title):
     proc=subprocess.Popen([pinentry, '-g'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -52,13 +57,13 @@ def send_message(data):
   sys.stdout.buffer.flush()
 
 def users(data):
-  try:
-    handler = SphinxHandler(datadir)
-    users = handler.list(data['site'])
-    res = {'names': [i.decode() for i in users],
-           'cmd': 'list', "mode": data['mode'],
-           'site': data['site']}
+  def callback(users):
+    res = {'names': [i for i in users.split("\n")],
+           'cmd': 'list', "mode": data['mode'], 'site': data['site']}
     send_message({ 'results': res })
+
+  try:
+    handler(callback, sphinx.users, data['site'])
   except:
     send_message({ 'results': 'fail' })
 
@@ -67,9 +72,8 @@ def get(data):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'login', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    handler = SphinxHandler(datadir)
     pwd=getpwd("current ")
-    handler.get(callback, pwd, data['name'], data['site'])
+    handler(callback, sphinx.get, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
 
@@ -78,13 +82,12 @@ def create(data):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'create', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    handler = SphinxHandler(datadir)
     pwd=getpwd("")
     pwd2=getpwd("again")
-    if pwd != pwd2: 
+    if pwd != pwd2:
         send_message({ 'results': 'fail' })
     else:
-        handler.create(callback, pwd, data['name'], data['site'], data['rules'], data['size'])
+        handler(callback, sphinx.create, pwd, data['name'], data['site'], data['rules'], data['size'])
   except:
     send_message({ 'results': 'fail' })
 
@@ -93,9 +96,8 @@ def change(data):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'change', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    handler = SphinxHandler(datadir)
     pwd=getpwd("new ")
-    handler.change(callback, pwd, data['name'], data['site'])
+    handler(callback, sphinx.change, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
 
@@ -104,8 +106,8 @@ def commit(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'commit', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    handler = SphinxHandler(datadir)
-    handler.commit(callback, data['name'], data['site'])
+    pwd=getpwd("")
+    handler(callback, sphinx.commit, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
 
@@ -114,8 +116,8 @@ def undo(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'undo', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    handler = SphinxHandler(datadir)
-    handler.commit(callback, data['name'], data['site'])
+    pwd=getpwd("")
+    handler(callback, sphinx.undo, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
 
