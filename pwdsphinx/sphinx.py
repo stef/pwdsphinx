@@ -22,14 +22,23 @@ if platform.system() == 'Windows':
 cfg = getcfg('sphinx')
 
 verbose = cfg['client'].getboolean('verbose', fallback=False)
-address = cfg['client']['address']
+hostname = cfg['client']['address']
+address = socket.gethostbyname(hostname)
 port = int(cfg['client'].get('port',2355))
 datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
-ssl_cert = cfg['client'].get('ssl_cert') # TODO only for dev, production system should use proper certs!
+ssl_cert = cfg['client'].get('ssl_cert') # only for dev, production system should use proper certs!
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
 rwd_keys = cfg['client'].get('rwd_keys',False)
+
+if verbose:
+    print("hostname:", hostname)
+    print("address:", address)
+    print("port:", port)
+    print("datadir:", datadir)
+    print("ssl_cert:", ssl_cert)
+    print("rwd_keys:", rwd_keys)
 
 #### consts ####
 
@@ -62,13 +71,17 @@ def get_masterkey():
 def connect():
   ctx = ssl.create_default_context()
   if(ssl_cert):
-      ctx.load_verify_locations(ssl_cert) # TODO only for dev, production system should use proper certs!
-      ctx.check_hostname=False            # TODO only for dev, production system should use proper certs!
-      ctx.verify_mode=ssl.CERT_NONE       # TODO only for dev, production system should use proper certs!
+      ctx.load_verify_locations(ssl_cert) # only for dev, production system should use proper certs!
+      ctx.check_hostname=False            # only for dev, production system should use proper certs!
+      ctx.verify_mode=ssl.CERT_NONE       # only for dev, production system should use proper certs!
+  else:
+      ctx.load_default_certs()
+      ctx.verify_mode = ssl.CERT_REQUIRED
+      ctx.check_hostname = True
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   s.settimeout(3)
-  s = ctx.wrap_socket(s)
+  s = ctx.wrap_socket(s, server_hostname=hostname)
   s.connect((address, port))
   return s
 
