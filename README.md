@@ -128,11 +128,11 @@ password on standard input to the client, and provide parameters like
 in this example:
 
 ```
-echo 'my master password' | ./sphinx.py create username https://example.com ulsd 0
+echo 'my master password' | ./sphinx.py create username example.com ulsd 0
 ```
 
 The parameters to the client are `create` for the operation, then `username`
-for the username on the site `https://example.com` then a combination of the
+for the username on the site `example.com` then a combination of the
 letters `ulsd` and the `0` for the size of the final password. The letters
 `ulsd` stand in order for the following character classes: `u` upper-case
 letters, `l` lower-case letters, `s` symbols and `d` for digits. If the command
@@ -145,7 +145,7 @@ actually use different "master" passwords for different user/site combinations.
 Note2, using echo is only for demonstration, you should use something like this
 instead:
 ```
-echo GETPIN | pinentry | grep '^D' | cut -c3- | ./sphinx.py create username https://example.com ulsd 0
+echo GETPIN | pinentry | grep '^D' | cut -c3- | ./sphinx.py create username example.com ulsd 0
 ```
 Using pinentry you can go fancy and do double password input, and even have
 something checking password quality for you, check it out, it's quite
@@ -157,7 +157,7 @@ Getting a password from the sphinx oracle works by running the
 following command:
 
 ```
-echo 'my master password' | ./sphinx.py get username https://example.com
+echo 'my master password' | ./sphinx.py get username example.com
 ```
 
 Here again you supply your master password on standard input, provide
@@ -172,7 +172,7 @@ is easy while you can keep your master password the unchanged (or you
 can change it too, if you want). The command is this:
 
 ```
-echo 'my master password' | ./sphinx.py change username https://example.com
+echo 'my master password' | ./sphinx.py change username example.com
 ```
 
 Here again you supply your master password on standard input. This
@@ -188,7 +188,7 @@ After changing the password, you will still get the old password when running
 `get`. To switch to use the new password you have to commit the changes with
 
 ```
-echo 'my master password' | ./sphinx.py commit username https://example.com
+echo 'my master password' | ./sphinx.py commit username example.com
 ```
 
 #### Undoing a password commit
@@ -196,7 +196,7 @@ If you somehow messed up and have to go back to use the old password, you can
 undo committing your password using:
 
 ```
-echo 'my master password' | ./sphinx.py undo username https://example.com
+echo 'my master password' | ./sphinx.py undo username example.com
 ```
 
 #### Deleting passwords
@@ -205,7 +205,7 @@ In case you want to delete a password, you can do using the following
 command:
 
 ```
-./sphinx.py delete username https://example.com
+./sphinx.py delete username example.com
 ```
 
 You provide the `delete` operation as the first parameter to the
