@@ -6,6 +6,7 @@
 import sys, os, socket, ssl, struct, platform
 from SecureString import clearmem
 import pysodium
+from qrcodegen import QrCode
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
@@ -380,6 +381,30 @@ def delete(s, pwd, user, host):
   clearmem(rwd)
   return True
 
+def print_qr(qrcode: QrCode) -> None:
+  border = 4
+  for y in range(-border, qrcode.get_size() + border):
+    for x in range(-border, qrcode.get_size() + border):
+      print("\u2588 "[1 if qrcode.get_module(x,y) else 0] * 2, end="")
+    print()
+  print()
+
+def qrcode(output, key):
+  mk=get_masterkey() if key else b''
+  data = (b'\x00' if not key else b'\x01' +
+          mk +
+          struct.pack("!H", port) +
+          hostname.encode("utf8"))
+
+  qr = QrCode.encode_binary(data, QrCode.Ecc.LOW)
+  if key:
+    clearmem(mk)
+    clearmem(data)
+  if output=='txt':
+    print_qr(qr)
+  else:
+    print(qr.to_svg_str(2))
+
 #### main ####
 
 def main():
@@ -389,6 +414,7 @@ def main():
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
     print("usage: %s <get|change|commit|undo|delete> <user> <site>" % params[0])
     print("usage: %s list <site>" % params[0])
+    print("usage: %s qr [svg] [key]" % params[0])
     sys.exit(1)
 
   if len(params) < 2: usage()
@@ -430,6 +456,19 @@ def main():
     if len(params) != 4: usage()
     cmd = undo
     args = (params[2],params[3])
+  elif params[1] == 'qr':
+    cmd = qrcode
+    output = 'txt'
+    key = False
+    if "svg" in params:
+      output="svg"
+      del params[params.index("svg")]
+    if "key" in params:
+      key=True
+      del params[params.index("key")]
+    if params[2:]: usage()
+    qrcode(output, key)
+    return
 
   if cmd is not None:
     s = connect()
