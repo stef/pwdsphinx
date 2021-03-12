@@ -239,7 +239,6 @@ def auth(s,id,pwd=None,r=None):
     if len(nonce)!=32:
        return False
     rwd = b''
-    beta = b''
   else:
     msg = s.recv(64)
     if len(msg)!=64:
