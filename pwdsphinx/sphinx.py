@@ -7,6 +7,7 @@ import sys, os, socket, ssl, struct, platform
 from SecureString import clearmem
 import pysodium
 from qrcodegen import QrCode
+from zxcvbn import zxcvbn
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
@@ -473,6 +474,15 @@ def main():
     s = connect()
     if cmd != users:
       pwd = sys.stdin.buffer.read()
+      if cmd == create:
+        q = zxcvbn(pwd.decode('utf8'))
+        print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
+              ("★" * q['score'],
+               "☆" * (4-q['score']),
+               q['score'],
+               q['crack_times_display']['online_throttling_100_per_hour'],
+               q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
+               q['guesses']))
       try:
         ret = cmd(s, pwd, *args)
       except:
