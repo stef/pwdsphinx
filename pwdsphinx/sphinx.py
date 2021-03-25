@@ -99,26 +99,23 @@ def get_signkey(id, rwd):
   clearmem(seed)
   return sk, pk
 
-def get_sealkey(rwd):
+def get_sealkey():
   mk = get_masterkey()
   sk = pysodium.crypto_generichash(ENC_CTX, mk)
   clearmem(mk)
-  # rehash with rwd so the user always contributes his pwd and the sphinx server it's seed
-  if rwd_keys:
-    sk = pysodium.crypto_generichash(sk, rwd)
   return sk
 
-def encrypt_blob(blob, rwd):
+def encrypt_blob(blob):
   # todo implement padding
-  sk = get_sealkey(rwd)
+  sk = get_sealkey()
   nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
   ct = pysodium.crypto_secretbox(blob,nonce,sk)
   clearmem(sk)
   return nonce+ct
 
-def decrypt_blob(blob, rwd):
+def decrypt_blob(blob):
   # todo implement padding
-  sk = get_sealkey(rwd)
+  sk = get_sealkey()
   nonce = blob[:pysodium.crypto_secretbox_NONCEBYTES]
   blob = blob[pysodium.crypto_secretbox_NONCEBYTES:]
   res = pysodium.crypto_secretbox_open(blob,nonce,sk)
@@ -138,7 +135,7 @@ def getid(host, user):
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
 def unpack_rule(rules):
-  rules = decrypt_blob(rules, b'')
+  rules = decrypt_blob(rules)
   rule = struct.unpack(">H",rules)[0]
   size = (rule & 0x7f)
   rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
@@ -178,7 +175,7 @@ def doSphinx(s, op, pwd, user, host):
     if op in {UNDO,COMMIT}:
       sk, pk = get_signkey(id, rwd)
       clearmem(sk)
-      rule = encrypt_blob(pack_rule(classes, size), b'')
+      rule = encrypt_blob(pack_rule(classes, size))
 
       # send over new signed(pubkey, rule)
       msg = b''.join([pk, rule])
@@ -205,7 +202,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       sk, pk = get_signkey(id, b'')
       clearmem(sk)
       # we encrypt with an empty rwd, so that the user list is independent of the master pwd
-      blob = encrypt_blob(item.encode(), b'')
+      blob = encrypt_blob(item.encode())
       bsize = len(blob)
       if bsize >= 2**16:
           raise ValueError("error: blob is bigger than 64KB.")
@@ -219,14 +216,14 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       if blob == b'fail':
           print("error: reading blob failed")
           return
-      blob = decrypt_blob(blob, b'')
+      blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
       # todo/fix? we do not recognize if the user is already included in this list
       # this should not happen, but maybe it's a sign of corruption?
       items.add(item)
       blob = ('\x00'.join(sorted(items))).encode()
       # notice we do not add rwd to encryption of user blobs
-      blob = encrypt_blob(blob, b'')
+      blob = encrypt_blob(blob)
       bsize = len(blob)
       if bsize+2 >= 2**16:
           raise ValueError("error: blob is bigger than 64KB.")
@@ -292,7 +289,7 @@ def create(s, pwd, user, host, char_classes, size=0):
   try: size=int(size)
   except:
     raise ValueError("error: size has to be integer.")
-  rule = encrypt_blob(pack_rule(char_classes, size), b'')
+  rule = encrypt_blob(pack_rule(char_classes, size))
 
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
@@ -319,10 +316,12 @@ def read_blob(s, id, rwd = b''):
   blob = s.recv(bsize)
   if blob == b'fail':
     return
-  return decrypt_blob(blob, rwd)
+  return decrypt_blob(blob)
 
 def users(s, host):
-  users = set(read_blob(s, getid(host, '')).decode().split('\x00'))
+  res = read_blob(s, getid(host, ''))
+  if not res: return "no users found"
+  users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
 def change(s, pwd, user, host):
@@ -359,14 +358,14 @@ def delete(s, pwd, user, host):
   # todo handle this
   if blob == b'fail':
     return
-  blob = decrypt_blob(blob, b'')
+  blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
   # todo/fix? we do not recognize if the user is already included in this list
   # this should not happen, but maybe it's a sign of corruption?
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
-  blob = encrypt_blob(blob, b'')
+  blob = encrypt_blob(blob)
   bsize = len(blob)
   if bsize >= 2**16:
       raise ValueError("error: blob is bigger than 64KB.")
