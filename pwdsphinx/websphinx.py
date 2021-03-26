@@ -21,6 +21,7 @@
 
 import subprocess
 import sys, struct, json
+from zxcvbn import zxcvbn
 try:
     from pwdsphinx import sphinx
     from pwdsphinx.config import getcfg
@@ -39,10 +40,46 @@ def handler(cb, cmd, *args):
 
 def getpwd(title):
     proc=subprocess.Popen([pinentry, '-g'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate(input=('SETTITLE sphinx %spassword prompt\nSETPROMPT sphinx %spassword\ngetpin\n' % (title,title)).encode())
+    out, err = proc.communicate(input=('SETTITLE sphinx password prompt\nSETDESC %s\nSETPROMPT master password\ngetpin\n' % (title)).encode())
     if proc.returncode == 0:
         for line in out.split(b'\n'):
             if line.startswith(b"D "): return line[2:]
+
+def fetchOK(proc, cmd):
+    proc.stdin.write(f"{cmd}\n".encode("utf8"))
+    proc.stdin.flush()
+    if((line:=proc.stdout.readline())!=b"OK\n"):
+        raise ValueError(f"fail \"{cmd}\": {line}")
+
+def pwdq(pwd):
+    q = zxcvbn(pwd.decode('utf8'))
+    q['guesses']
+    q['score']
+    q['crack_times_display']
+    q['feedback']
+
+    proc=subprocess.Popen([pinentry, '-g'],
+                          stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
+
+    if((resp:=proc.stdout.readline())!=b'OK Pleased to meet you\n'):
+        raise ValueError(f"strange greeting \"{resp}\"")
+    fetchOK(proc ,"SETTITLE Password Quality Check")
+    fetchOK(proc ,"SETOK use this")
+    fetchOK(proc ,"SETCANCEL try another")
+    fetchOK(proc ,"SETDESC your %s%s (%s/4) master password:%%0a - can be online recovered in %s,%%0a - offline in %s,%%0a - trying ~%s guesses%%0a%%0aAre you sure you want to use this password?" %
+            ("★" * q['score'],
+             "☆" * (4-q['score']),
+             q['score'],
+             q['crack_times_display']['online_throttling_100_per_hour'],
+             q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
+             q['guesses']))
+    try:
+        fetchOK(proc ,"CONFIRM")
+    except ValueError:
+        return False
+    return True
 
 # Send message using Native messaging protocol
 def send_message(data):
@@ -72,7 +109,7 @@ def get(data):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'login', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("current ")
+    pwd=getpwd("get password for user \"%s\" at host \"%s\"" % (data['name'], data['site']))
     handler(callback, sphinx.get, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
@@ -82,21 +119,25 @@ def create(data):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'create', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("")
-    pwd2=getpwd("again")
-    if pwd != pwd2:
-        send_message({ 'results': 'fail' })
-    else:
-        handler(callback, sphinx.create, pwd, data['name'], data['site'], data['rules'], data['size'])
+    pwd=None
+    while not pwd:
+        pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        if pwd != pwd2:
+            send_message({ 'results': 'fail' })
+            return
+        if not pwdq(pwd): pwd=None
+    handler(callback, sphinx.create, pwd, data['name'], data['site'], data['rules'], data['size'])
   except:
     send_message({ 'results': 'fail' })
+    raise
 
 def change(data):
   def callback(arg):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'change', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("new ")
+    pwd=getpwd("change password for user: \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
     handler(callback, sphinx.change, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
@@ -106,7 +147,7 @@ def commit(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'commit', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("")
+    pwd=getpwd("commit password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
     handler(callback, sphinx.commit, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
@@ -116,7 +157,7 @@ def undo(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'undo', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("")
+    pwd=getpwd("undo password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
     handler(callback, sphinx.undo, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
