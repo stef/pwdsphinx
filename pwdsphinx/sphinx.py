@@ -32,7 +32,7 @@ ssl_cert = cfg['client'].get('ssl_cert') # only for dev, production system shoul
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
-rwd_keys = cfg['client'].get('rwd_keys',False)
+rwd_keys = not not cfg['client'].get('rwd_keys',False)
 
 if verbose:
     print("hostname:", hostname)
@@ -394,9 +394,10 @@ def print_qr(qrcode: QrCode) -> None:
     print()
   print()
 
+
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
-  data = (b'\x00' if not key else b'\x01' +
+  data = (bytes([1*key+2*rwd_keys]) +
           mk +
           struct.pack("!H", port) +
           hostname.encode("utf8"))
