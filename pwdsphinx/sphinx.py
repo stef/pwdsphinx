@@ -259,7 +259,7 @@ def init_key():
     print("Already initialized.")
     return 1
   if not os.path.exists(datadir):
-    os.mkdir(datadir,0o700)
+    os.makedirs(datadir, 0o700, exist_ok=True)
   mk = pysodium.randombytes(32)
   try:
     with open(kfile,'wb') as fd:
