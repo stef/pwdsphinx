@@ -381,10 +381,16 @@ def delete(s, pwd, user, host):
   return True
 
 def print_qr(qrcode: QrCode) -> None:
-  border = 4
-  for y in range(-border, qrcode.get_size() + border):
+  chars = {
+    (True, True):    ' ',      # empty
+    (False, True):   '\u2580', # upper
+    (True, False):   '\u2584', # lower
+    (False, False):  '\u2588', # full
+  }
+  border = 1
+  for y in range(-border, qrcode.get_size() + border, 2):
     for x in range(-border, qrcode.get_size() + border):
-      print("\u2588 "[1 if qrcode.get_module(x,y) else 0] * 2, end="")
+      print(chars[(qrcode.get_module(x,y),qrcode.get_module(x,y+1))], end="")
     print()
   print()
 
