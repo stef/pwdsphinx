@@ -488,7 +488,7 @@ def main():
                q['score'],
                q['crack_times_display']['online_throttling_100_per_hour'],
                q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
-               q['guesses']))
+               q['guesses']), file=sys.stderr)
       try:
         ret = cmd(s, pwd, *args)
       except:
