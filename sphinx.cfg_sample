@@ -9,7 +9,6 @@ verbose = False
 address = 127.0.0.1
 port = 2355
 datadir = ~/.sphinx/
-keydir = ~/.sphinx/
 
 [websphinx]
 pinentry=/usr/bin/pinentry
