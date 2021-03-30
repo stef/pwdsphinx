@@ -14,8 +14,8 @@ address = cfg['server']['address']
 port = int(cfg['server']['port'])
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server']['datadir'])
-ssl_key = cfg['server']['ssl_key']
-ssl_cert = cfg['server']['ssl_cert']
+ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
+ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
 
 if(verbose):
   cfg.write(sys.stdout)
