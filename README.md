@@ -213,3 +213,31 @@ client, your `username` as the 2nd and the `site` as the 3rd
 parameter. This command does not need anything on standard input, nor
 does it provide anything on standard output in case everything goes
 well.
+
+#### QR code config
+
+In case you want to use phone with the same sphinx server, you need to export
+your config to the phone via a QR code.
+
+```
+./sphinx.py qr
+```
+
+Will display a QR code containing only public information - like the server
+host and port, and if you use rwd_keys. This is mostly useful if you want to
+share your setup with a friend or family.
+
+If you want to connect your own phone to the setup used with pwdsphinx, you
+also need to export your client secret in the QR code:
+
+```
+./sphinx.py qr key
+```
+
+This contains your client secret, and you should keep this QR code
+confidential. Make sure there is no cameras making copies of this while this QR
+code is displayed on your screen.
+
+If for whatever reason you want to display the QR code as an SVG, just append
+the `svg` keyword to the end of the `sphinx qr` command.
+
