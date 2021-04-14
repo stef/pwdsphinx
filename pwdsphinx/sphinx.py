@@ -8,6 +8,7 @@ from SecureString import clearmem
 import pysodium
 from qrcodegen import QrCode
 from zxcvbn import zxcvbn
+from equihash import solve
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
@@ -51,6 +52,9 @@ GET      =b'\x66' # sphinx
 COMMIT   =b'\x99' # change sphinx
 CHANGE   =b'\xaa' # sphinx
 DELETE   =b'\xff' # sphinx+blobs
+
+CHALLENGE_CREATE = b'\x5a'
+CHALLENGE_VERIFY = b'\xa5'
 
 ENC_CTX = b"sphinx encryption key"
 SIGN_CTX = b"sphinx signing key"
@@ -154,7 +158,7 @@ def doSphinx(s, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([op, id, alpha])
-  s.send(msg)
+  s = ratelimit(s, msg)
   if op != GET: # == CHANGE, UNDO, COMMIT
      # auth: do sphinx with current seed, use it to sign the nonce
     auth(s,id,pwd,r)
@@ -251,6 +255,29 @@ def auth(s,id,pwd=None,r=None):
   s.send(sig)
   return rwd
 
+def ratelimit(s,req):
+  pkt0 = b''.join([CHALLENGE_CREATE, req])
+  s.send(pkt0)
+  challenge = s.recv(1+1+8+32) # n,k,ts,sig
+  s.close()
+  n = challenge[0]
+  k = challenge[1]
+  if k==4:
+    if n < 90:
+      if verbose: print("got an easy puzzle: %d" % n, file=sys.stderr)
+    elif n > 100:
+      if verbose: print("got a hard puzzle: %d" % n, file=sys.stderr)
+    else:
+      if verbose: print("got a moderate puzzle: %d" % n, file=sys.stderr)
+  seed = challenge + req
+  solution = solve(n, k, seed)
+  s = connect()
+  pkt1 = b''.join([CHALLENGE_VERIFY, challenge])
+  s.send(pkt1)
+  s.send(req)
+  s.send(solution)
+  return s
+
 #### OPs ####
 
 def init_key():
@@ -309,6 +336,7 @@ def get(s, pwd, user, host):
 
 def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
+  s = ratelimit(s, msg)
   s.send(msg)
   auth(s,id)
   bsize = s.recv(2)
@@ -338,7 +366,7 @@ def delete(s, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([DELETE, id, alpha])
-  s.send(msg) # alpha
+  s = ratelimit(s, msg)
   rwd = auth(s,id,pwd,r)
 
   # delete user from user list for this host
