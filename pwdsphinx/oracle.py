@@ -37,19 +37,21 @@ DELETE=0xff
 RULE_SIZE=42
 
 Difficulties = [
-    { 'n': 60,  'k': 4 }, # 320KiB, ~0.02
-    { 'n': 65,  'k': 4 }, # 640KiB, ~0.04
-    { 'n': 70,  'k': 4 }, # 1MiB, ~0.08
-    { 'n': 75,  'k': 4 }, # 2MiB, ~0.2
-    { 'n': 80,  'k': 4 }, # 5MiB, ~0.5
-    { 'n': 85,  'k': 4 }, # 10MiB, ~0.9
-    { 'n': 90,  'k': 4 }, # 20MiB, ~2.4
-    { 'n': 95,  'k': 4 }, # 40MiB, ~4.6
-    { 'n': 100, 'k': 4 }, # 80MiB, ~7.8
-    { 'n': 105, 'k': 4 }, # 160MiB, ~25
-    { 'n': 110, 'k': 4 }, # 320MiB, ~57
-    { 'n': 115, 'k': 4 }, # 640MiB, ~70
-    { 'n': 120, 'k': 4 }, # 1GiB, ~109
+    # timeouts are based on benchmarking a raspberry pi 1b
+    { 'n': 60,  'k': 4, 'timeout': 1 },    # 320KiB, ~0.02
+    { 'n': 65,  'k': 4, 'timeout': 2 },    # 640KiB, ~0.04
+    { 'n': 70,  'k': 4, 'timeout': 4 },    # 1MiB, ~0.08
+    { 'n': 75,  'k': 4, 'timeout': 9 },    # 2MiB, ~0.2
+    { 'n': 80,  'k': 4, 'timeout': 16 },   # 5MiB, ~0.5
+    { 'n': 85,  'k': 4, 'timeout': 32 },   # 10MiB, ~0.9
+    { 'n': 90,  'k': 4, 'timeout': 64 },   # 20MiB, ~2.4
+    { 'n': 95,  'k': 4, 'timeout': 128 },  # 40MiB, ~4.6
+    # timeouts below are interpolated from above
+    { 'n': 100, 'k': 4, 'timeout': 256 },  # 80MiB, ~7.8
+    { 'n': 105, 'k': 4, 'timeout': 512 },  # 160MiB, ~25
+    { 'n': 110, 'k': 4, 'timeout': 1024 }, # 320MiB, ~57
+    { 'n': 115, 'k': 4, 'timeout': 2048 }, # 640MiB, ~70
+    { 'n': 120, 'k': 4, 'timeout': 4096 }, # 1GiB, ~109
 ]
 
 def fail(s):
@@ -367,7 +369,6 @@ def handler(conn, data):
    os._exit(0)
 
 def create_challenge(conn):
-  print("create challenge")
   req = conn.read(65)
   if req[0] == READ and len(req)!=33:
     fail(conn)
@@ -428,7 +429,6 @@ def create_challenge(conn):
   conn.send(resp)
 
 def verify_challenge(conn):
-  print("verify challenge")
   # read challenge
   challenge = conn.read(1+1+4+32) # n,k,ts,sig
   if(len(challenge)!=38):
@@ -463,7 +463,6 @@ def verify_challenge(conn):
   solsize = equihash.solsize(n,k)
   solution = conn.read(solsize)
   if len(solution)!= solsize:
-    print(n,k,len(solution), solsize)
     fail(conn)
 
   seed = b''.join([challenge,req])
@@ -475,7 +474,6 @@ def verify_challenge(conn):
 def ratelimit(conn):
    op = conn.recv(1)
    if op[0] == CREATE:
-     print("create")
      data = [b'0']+conn.recv(64)
      create(conn, data)
    elif op[0] == CHALLENGE_CREATE:
