@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+# SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback
+import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct
 import pysodium
+import equihash
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
 cfg = getcfg('sphinx')
@@ -16,6 +17,8 @@ max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server']['datadir'])
 ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
+rl_decay = int(cfg['server'].get('rl_decay',1800))
+rl_threshold = int(cfg['server'].get('rl_threshold',1))
 
 if(verbose):
   cfg.write(sys.stdout)
@@ -27,9 +30,27 @@ GET=0x66
 COMMIT=0x99
 CHANGE=0xaa
 WRITE=0xcc
+CHALLENGE_CREATE = 0x5a
+CHALLENGE_VERIFY = 0xa5
 DELETE=0xff
 
 RULE_SIZE=42
+
+Difficulties = [
+    { 'n': 60,  'k': 4 }, # 320KiB, ~0.02
+    { 'n': 65,  'k': 4 }, # 640KiB, ~0.04
+    { 'n': 70,  'k': 4 }, # 1MiB, ~0.08
+    { 'n': 75,  'k': 4 }, # 2MiB, ~0.2
+    { 'n': 80,  'k': 4 }, # 5MiB, ~0.5
+    { 'n': 85,  'k': 4 }, # 10MiB, ~0.9
+    { 'n': 90,  'k': 4 }, # 20MiB, ~2.4
+    { 'n': 95,  'k': 4 }, # 40MiB, ~4.6
+    { 'n': 100, 'k': 4 }, # 80MiB, ~7.8
+    { 'n': 105, 'k': 4 }, # 160MiB, ~25
+    { 'n': 110, 'k': 4 }, # 320MiB, ~57
+    { 'n': 115, 'k': 4 }, # 640MiB, ~70
+    { 'n': 120, 'k': 4 }, # 1GiB, ~109
+]
 
 def fail(s):
     if verbose:
@@ -323,14 +344,11 @@ def read(conn, msg):
     blob = b''
   conn.send(blob)
 
-def handler(conn):
-   data = conn.recv(4096)
+def handler(conn, data):
    if verbose:
      print('Data received:',data.hex())
 
-   if data[0] == CREATE:
-     create(conn, data)
-   elif data[0] == GET:
+   if data[0] == GET:
      get(conn, data)
    elif data[0] == CHANGE:
      change(conn, data)
@@ -347,6 +365,123 @@ def handler(conn):
 
    conn.close()
    os._exit(0)
+
+def create_challenge(conn):
+  print("create challenge")
+  req = conn.read(65)
+  if req[0] == READ and len(req)!=33:
+    fail(conn)
+  elif len(req)!=65:
+    fail(conn)
+  now = datetime.datetime.now().timestamp()
+  id = binascii.hexlify(req[1:33]).decode()
+  diff = load_blob(id,'difficulty',6) # ts: u32, n: u8, k:u8
+  if not diff: # no diff yet, use easiest hardness
+    n = Difficulties[0]['n']
+    k = Difficulties[0]['k']
+    level = 0
+    count = 0
+  else:
+    level = struct.unpack("B", diff[0:1])[0]
+    count = struct.unpack("B", diff[1:2])[0]
+    ts = struct.unpack("I", diff[2:])[0]
+    if (level >= len(Difficulties) or count > rl_threshold + 1):
+      print("invalid level in rl_ctx:", level)
+      level = len(Difficulties) - 1
+      count = 0
+    elif ((now - rl_decay) > ts and level > 0): # cooldown, decay difficulty
+      periods = int((now - ts) // rl_decay)
+      if level >= periods:
+        level -= periods
+      else:
+        level = 0
+      count = 0
+    else: # increase hardness
+      if count >= rl_threshold:
+        count = 0
+        if level < len(Difficulties) - 1: level+=1
+      else:
+        count+=1
+    n = Difficulties[level]['n']
+    k = Difficulties[level]['k']
+
+  rl_ctx = b''.join([
+    struct.pack("B", level),   # level
+    struct.pack("B", count),   # count
+    struct.pack('I', int(now)) # ts
+  ])
+  save_blob(id, 'difficulty', rl_ctx)
+
+  challenge = b''.join([bytes([n, k]), struct.pack('I', int(now))])
+
+  key = load_blob('', "key", 32)
+  if not key:
+    key=pysodium.randombytes(32)
+    save_blob('','key',key)
+
+  state = pysodium.crypto_generichash_init(32, key)
+  pysodium.crypto_generichash_update(state,req)
+  pysodium.crypto_generichash_update(state,challenge)
+  sig = pysodium.crypto_generichash_final(state,32)
+
+  resp = b''.join([challenge, sig])
+  conn.send(resp)
+
+def verify_challenge(conn):
+  print("verify challenge")
+  # read challenge
+  challenge = conn.read(1+1+4+32) # n,k,ts,sig
+  if(len(challenge)!=38):
+    fail(conn)
+  n, tmp = pop(challenge,1)
+  n = n[0]
+  k, tmp = pop(tmp,1)
+  k = k[0]
+  ts, tmp = pop(tmp,4)
+  sig, tmp = pop(tmp,32)
+  # read request
+  req = conn.read(65)
+  if req[0] == READ and len(req)!=33:
+    fail(conn)
+  elif len(req)!=65:
+    fail(conn)
+  # read mac key
+  key = load_blob('', "key", 32)
+  if not key:
+    fail(conn)
+
+  tosign = challenge[:6]
+
+  state = pysodium.crypto_generichash_init(32, key)
+  pysodium.crypto_generichash_update(state,req)
+  pysodium.crypto_generichash_update(state,tosign)
+  mac = pysodium.crypto_generichash_final(state,32)
+  # poor mans const time comparison
+  if(sum(m^i for (m, i) in zip(mac,sig))):
+    fail(conn)
+
+  solsize = equihash.solsize(n,k)
+  solution = conn.read(solsize)
+  if len(solution)!= solsize:
+    print(n,k,len(solution), solsize)
+    fail(conn)
+
+  seed = b''.join([challenge,req])
+  if not equihash.verify(n,k, seed, solution):
+    fail(conn)
+
+  handler(conn, req)
+
+def ratelimit(conn):
+   op = conn.recv(1)
+   if op[0] == CREATE:
+     print("create")
+     data = [b'0']+conn.recv(64)
+     create(conn, data)
+   elif op[0] == CHALLENGE_CREATE:
+     create_challenge(conn)
+   elif op[0] == CHALLENGE_VERIFY:
+     verify_challenge(conn)
 
 def main():
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -379,7 +514,7 @@ def main():
             if pid==0:
               ssl.RAND_add(os.urandom(16),0.0)
               try:
-                handler(conn)
+                ratelimit(conn)
               except:
                 print("fail")
                 raise
