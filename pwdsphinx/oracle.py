@@ -19,6 +19,7 @@ ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
 rl_decay = int(cfg['server'].get('rl_decay',1800))
 rl_threshold = int(cfg['server'].get('rl_threshold',1))
+rl_gracetime = int(cfg['server'].get('rl_gracetime',10))
 
 if(verbose):
   cfg.write(sys.stdout)
@@ -44,15 +45,19 @@ Difficulties = [
     { 'n': 75,  'k': 4, 'timeout': 9 },    # 2MiB, ~0.2
     { 'n': 80,  'k': 4, 'timeout': 16 },   # 5MiB, ~0.5
     { 'n': 85,  'k': 4, 'timeout': 32 },   # 10MiB, ~0.9
-    { 'n': 90,  'k': 4, 'timeout': 64 },   # 20MiB, ~2.4
-    { 'n': 95,  'k': 4, 'timeout': 128 },  # 40MiB, ~4.6
+    { 'n': 90,  'k': 4, 'timeout': 80 },   # 20MiB, ~2.4
+    { 'n': 95,  'k': 4, 'timeout': 160 },  # 40MiB, ~4.6
     # timeouts below are interpolated from above
-    { 'n': 100, 'k': 4, 'timeout': 256 },  # 80MiB, ~7.8
-    { 'n': 105, 'k': 4, 'timeout': 512 },  # 160MiB, ~25
-    { 'n': 110, 'k': 4, 'timeout': 1024 }, # 320MiB, ~57
-    { 'n': 115, 'k': 4, 'timeout': 2048 }, # 640MiB, ~70
-    { 'n': 120, 'k': 4, 'timeout': 4096 }, # 1GiB, ~109
+    { 'n': 100, 'k': 4, 'timeout': 320 },  # 80MiB, ~7.8
+    { 'n': 105, 'k': 4, 'timeout': 640 },  # 160MiB, ~25
+    { 'n': 110, 'k': 4, 'timeout': 1280 }, # 320MiB, ~57
+    { 'n': 115, 'k': 4, 'timeout': 2560 }, # 640MiB, ~70
+    { 'n': 120, 'k': 4, 'timeout': 5120 }, # 1GiB, ~109
 ]
+RL_Timeouts = {(e['n'],e['k']): e['timeout'] for e in Difficulties}
+
+normal = "\033[38;5;%sm"
+reset = "\033[0m"
 
 def fail(s):
     if verbose:
@@ -376,7 +381,7 @@ def create_challenge(conn):
     fail(conn)
   now = datetime.datetime.now().timestamp()
   id = binascii.hexlify(req[1:33]).decode()
-  diff = load_blob(id,'difficulty',6) # ts: u32, n: u8, k:u8
+  diff = load_blob(id,'difficulty',9) # ts: u32, level: u8, count:u32
   if not diff: # no diff yet, use easiest hardness
     n = Difficulties[0]['n']
     k = Difficulties[0]['k']
@@ -384,9 +389,9 @@ def create_challenge(conn):
     count = 0
   else:
     level = struct.unpack("B", diff[0:1])[0]
-    count = struct.unpack("B", diff[1:2])[0]
-    ts = struct.unpack("I", diff[2:])[0]
-    if (level >= len(Difficulties) or count > rl_threshold + 1):
+    count = struct.unpack("I", diff[1:5])[0]
+    ts = struct.unpack("I", diff[5:])[0]
+    if level >= len(Difficulties):
       print("invalid level in rl_ctx:", level)
       level = len(Difficulties) - 1
       count = 0
@@ -398,19 +403,24 @@ def create_challenge(conn):
         level = 0
       count = 0
     else: # increase hardness
-      if count >= rl_threshold:
+      if count >= rl_threshold and (level < len(Difficulties) - 1):
         count = 0
-        if level < len(Difficulties) - 1: level+=1
+        level+=1
       else:
         count+=1
     n = Difficulties[level]['n']
     k = Difficulties[level]['k']
 
+  if (level == len(Difficulties) - 1) and count>rl_threshold*2:
+    print(f"{normal}alert{normal}: someones trying (%d) really hard at: %s" %
+          (196, 253, count, id))
+
   rl_ctx = b''.join([
     struct.pack("B", level),   # level
-    struct.pack("B", count),   # count
+    struct.pack("I", count),   # count
     struct.pack('I', int(now)) # ts
   ])
+  if(verbose): print("rl difficulty", {"level": level, "count": count, "ts": int(now)})
   save_blob(id, 'difficulty', rl_ctx)
 
   challenge = b''.join([bytes([n, k]), struct.pack('I', int(now))])
@@ -438,6 +448,7 @@ def verify_challenge(conn):
   k, tmp = pop(tmp,1)
   k = k[0]
   ts, tmp = pop(tmp,4)
+  ts = struct.unpack("I", ts)[0]
   sig, tmp = pop(tmp,32)
   # read request
   req = conn.read(65)
@@ -458,6 +469,11 @@ def verify_challenge(conn):
   mac = pysodium.crypto_generichash_final(state,32)
   # poor mans const time comparison
   if(sum(m^i for (m, i) in zip(mac,sig))):
+    fail(conn)
+
+  now = datetime.datetime.now().timestamp()
+  if now - (RL_Timeouts[(n,k)]+rl_gracetime) > ts:
+    # solution is too old
     fail(conn)
 
   solsize = equihash.solsize(n,k)
