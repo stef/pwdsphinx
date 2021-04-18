@@ -13,6 +13,7 @@ cfg = getcfg('sphinx')
 verbose = cfg['server'].getboolean('verbose')
 address = cfg['server']['address']
 port = int(cfg['server']['port'])
+timeout = int(cfg['server']['timeout'])
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server']['datadir'])
 ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
@@ -124,6 +125,7 @@ def update_blob(s):
 def create(s, msg):
     if len(msg)!=65:
       fail(s)
+    print('Data received:',msg.hex())
     op,   msg = pop(msg,1)
     id,   msg = pop(msg,32)
     alpha,msg = pop(msg,32)
@@ -375,8 +377,9 @@ def handler(conn, data):
 
 def create_challenge(conn):
   req = conn.read(65)
-  if req[0] == READ and len(req)!=33:
-    fail(conn)
+  if req[0] == READ:
+    if len(req)!=33:
+      fail(conn)
   elif len(req)!=65:
     fail(conn)
   now = datetime.datetime.now().timestamp()
@@ -421,9 +424,12 @@ def create_challenge(conn):
     struct.pack('I', int(now)) # ts
   ])
   if(verbose): print("rl difficulty", {"level": level, "count": count, "ts": int(now)})
-  save_blob(id, 'difficulty', rl_ctx)
+  try:
+    save_blob(id, 'difficulty', rl_ctx)
+  except FileNotFoundError:
+    if diff: raise
 
-  challenge = b''.join([bytes([n, k]), struct.pack('I', int(now))])
+  challenge = b''.join([bytes([n, k]), struct.pack('Q', int(now))])
 
   key = load_blob('', "key", 32)
   if not key:
@@ -440,20 +446,22 @@ def create_challenge(conn):
 
 def verify_challenge(conn):
   # read challenge
-  challenge = conn.read(1+1+4+32) # n,k,ts,sig
-  if(len(challenge)!=38):
+  challenge = conn.read(1+1+8+32) # n,k,ts,sig
+  if(len(challenge)!=42):
     fail(conn)
   n, tmp = pop(challenge,1)
   n = n[0]
   k, tmp = pop(tmp,1)
   k = k[0]
-  ts, tmp = pop(tmp,4)
-  ts = struct.unpack("I", ts)[0]
+  ts, tmp = pop(tmp,8)
+  ts = struct.unpack("Q", ts)[0]
   sig, tmp = pop(tmp,32)
+
   # read request
   req = conn.read(65)
-  if req[0] == READ and len(req)!=33:
-    fail(conn)
+  if req[0] == READ:
+    if len(req)!=33:
+      fail(conn)
   elif len(req)!=65:
     fail(conn)
   # read mac key
@@ -461,7 +469,7 @@ def verify_challenge(conn):
   if not key:
     fail(conn)
 
-  tosign = challenge[:6]
+  tosign = challenge[:10]
 
   state = pysodium.crypto_generichash_init(32, key)
   pysodium.crypto_generichash_update(state,req)
@@ -490,7 +498,7 @@ def verify_challenge(conn):
 def ratelimit(conn):
    op = conn.recv(1)
    if op[0] == CREATE:
-     data = [b'0']+conn.recv(64)
+     data = b'0'+conn.recv(64)
      create(conn, data)
    elif op[0] == CHALLENGE_CREATE:
      create_challenge(conn)
@@ -501,6 +509,7 @@ def main():
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ctx.load_cert_chain(certfile=ssl_cert, keyfile=ssl_key)
 
+    socket.setdefaulttimeout(timeout)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -515,7 +524,20 @@ def main():
         # main loop
         while 1:
             #wait to accept a connection - blocking call
-            conn, addr = s.accept()
+            try:
+              conn, addr = s.accept()
+            except socket.timeout:
+              try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+                if pid != 0:
+                  print("remove pid", pid)
+                  kids.remove(pid)
+                continue
+              except ChildProcessError:
+                continue
+            except:
+              raise
+
             if verbose:
                 print('{} Connection from {}:{}'.format(datetime.datetime.now(), addr[0], addr[1]))
             conn = ctx.wrap_socket(conn, server_side=True)
@@ -536,12 +558,13 @@ def main():
                 try: conn.shutdown(socket.SHUT_RDWR)
                 except OSError: pass
                 conn.close()
+              sys.exit(0)
             else:
                 kids.append(pid)
 
             try:
-              pid, status = os.waitpid(0,os.WNOHANG)
-              if(pid,status)!=(0,0):
+              pid, status = os.waitpid(-1,os.WNOHANG)
+              if pid!=0:
                  kids.remove(pid)
             except ChildProcessError: pass
 

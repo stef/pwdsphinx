@@ -86,7 +86,7 @@ def connect():
       ctx.check_hostname = True
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  s.settimeout(3)
+  s.settimeout(5)
   s = ctx.wrap_socket(s, server_hostname=hostname)
   s.connect((address, port))
   return s
@@ -161,10 +161,13 @@ def doSphinx(s, op, pwd, user, host):
   s = ratelimit(s, msg)
   if op != GET: # == CHANGE, UNDO, COMMIT
      # auth: do sphinx with current seed, use it to sign the nonce
-    auth(s,id,pwd,r)
+    if not auth(s,id,pwd,r):
+      s.close()
+      return
 
   resp = s.recv(32+RULE_SIZE) # beta + sealed rules
   if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+    s.close()
     raise ValueError("error: sphinx protocol failure.")
   beta = resp[:32]
   rules = resp[32:]
@@ -173,12 +176,15 @@ def doSphinx(s, op, pwd, user, host):
   try:
     classes, size = unpack_rule(rules)
   except ValueError:
+    s.close()
     return
   if op != GET: # == CHANGE, UNDO, COMMIT
     # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
     if op in {UNDO,COMMIT}:
       sk, pk = get_signkey(id, rwd)
       clearmem(sk)
+      # todo either drop this, since there is 0 change here, rwdkeys does not affect this, and the rules
+      # currently cannot be changed, or support changing the rules also in the change operation
       rule = encrypt_blob(pack_rule(classes, size))
 
       # send over new signed(pubkey, rule)
@@ -187,8 +193,10 @@ def doSphinx(s, op, pwd, user, host):
       s.send(msg)
       if s.recv(2)!=b'ok':
         print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
-        return 
+        s.close()
+        return
 
+  s.close()
   ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
   clearmem(rwd)
 
@@ -209,7 +217,8 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = encrypt_blob(item.encode())
       bsize = len(blob)
       if bsize >= 2**16:
-          raise ValueError("error: blob is bigger than 64KB.")
+        s.close()
+        raise ValueError("error: blob is bigger than 64KB.")
       blob = struct.pack("!H", bsize) + blob
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
@@ -218,8 +227,9 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
     else:
       blob = s.recv(bsize)
       if blob == b'fail':
-          print("error: reading blob failed")
-          return
+        print("error: reading blob failed")
+        s.close()
+        return
       blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
       # todo/fix? we do not recognize if the user is already included in this list
@@ -230,7 +240,8 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = encrypt_blob(blob)
       bsize = len(blob)
       if bsize+2 >= 2**16:
-          raise ValueError("error: blob is bigger than 64KB.")
+        s.close()
+        raise ValueError("error: blob is bigger than 64KB.")
       blob = struct.pack("!H", bsize) + blob
       blob = sign_blob(blob, id, b'')
     s.send(blob)
@@ -259,6 +270,9 @@ def ratelimit(s,req):
   pkt0 = b''.join([CHALLENGE_CREATE, req])
   s.send(pkt0)
   challenge = s.recv(1+1+8+32) # n,k,ts,sig
+  if len(challenge)!= 1+1+8+32:
+    print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)))
+    raise ValueError("failed to get ratelimit challenge")
   s.close()
   n = challenge[0]
   k = challenge[1]
@@ -306,6 +320,7 @@ def create(s, pwd, user, host, char_classes, size=0):
   # wait for response from sphinx server
   beta = s.recv(32)
   if beta == b'\x00\x04fail':
+    s.close()
     raise ValueError("error: sphinx protocol failure.")
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
@@ -315,6 +330,7 @@ def create(s, pwd, user, host, char_classes, size=0):
 
   try: size=int(size)
   except:
+    s.close()
     raise ValueError("error: size has to be integer.")
   rule = encrypt_blob(pack_rule(char_classes, size))
 
@@ -326,6 +342,7 @@ def create(s, pwd, user, host, char_classes, size=0):
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   update_rec(s, host, user)
+  s.close()
 
   ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode()
   clearmem(rwd)
@@ -337,11 +354,13 @@ def get(s, pwd, user, host):
 def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
   s = ratelimit(s, msg)
-  s.send(msg)
-  auth(s,id)
+  if auth(s,id) is False:
+    s.close()
+    return
   bsize = s.recv(2)
   bsize = struct.unpack('!H', bsize)[0]
   blob = s.recv(bsize)
+  s.close()
   if blob == b'fail':
     return
   return decrypt_blob(blob)
@@ -368,6 +387,9 @@ def delete(s, pwd, user, host):
   msg = b''.join([DELETE, id, alpha])
   s = ratelimit(s, msg)
   rwd = auth(s,id,pwd,r)
+  if not rwd:
+    s.close()
+    return
 
   # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
@@ -380,11 +402,13 @@ def delete(s, pwd, user, host):
   if bsize == 0:
     # this should not happen, it means something is corrupt
     print("error: server has no associated user record for this host")
+    s.close()
     return
 
   blob = s.recv(bsize)
   # todo handle this
   if blob == b'fail':
+    s.close()
     return
   blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
@@ -396,15 +420,18 @@ def delete(s, pwd, user, host):
   blob = encrypt_blob(blob)
   bsize = len(blob)
   if bsize >= 2**16:
-      raise ValueError("error: blob is bigger than 64KB.")
+    s.close()
+    raise ValueError("error: blob is bigger than 64KB.")
   blob = struct.pack("!H", bsize) + blob
   blob = sign_blob(blob, id, b'')
 
   s.send(blob)
 
   if b'ok' != s.recv(2):
+    s.close()
     return
 
+  s.close()
   clearmem(rwd)
   return True
 
@@ -441,8 +468,7 @@ def qrcode(output, key):
 
 #### main ####
 
-def main():
-  params = sys.argv
+def main(params):
   def usage():
     print("usage: %s init" % params[0])
     print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
@@ -542,7 +568,7 @@ def main():
 
 if __name__ == '__main__':
   try:
-    main()
+    main(sys.argv)
   except Exception:
     print("fail")
     raise # todo remove only for dbg
