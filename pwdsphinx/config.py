@@ -6,8 +6,8 @@
 import os, configparser
 
 class StrippingQuotesConfigParser(configparser.ConfigParser):
-    def get(self, section, option):
-        val = configparser.ConfigParser.get(self, section, option)
+    def get(self, section, option, **kwargs):
+        val = configparser.ConfigParser.get(self, section, option, **kwargs)
         return val.strip('"')
 
 def getcfg(app):
