@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+# SPDX-FileCopyrightText: 2018,2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import os, configparser
 
+class StrippingQuotesConfigParser(configparser.ConfigParser):
+    def get(self, section, option):
+        val = configparser.ConfigParser.get(self, section, option)
+        return val.strip('"')
+
 def getcfg(app):
-  config = configparser.ConfigParser()
+  config = StrippingQuotesConfigParser()
   # read global cfg
   config.read('/etc/sphinx/config')
   # update with per-user configs
