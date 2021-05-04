@@ -169,7 +169,14 @@ def commit_undo(s, op, pwd, user, host):
   s.close()
   return True
 
-  return ret
+def read_pkt(s,size):
+    res = []
+    read = 0
+    while read<size or len(res[-1])==0:
+      res.append(s.recv(size-read))
+      read+=len(res[-1])
+
+    return b''.join(res)
 
 def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
     id = getid(host, '')
@@ -187,14 +194,14 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       bsize = len(blob)
       if bsize >= 2**16:
         s.close()
-        raise ValueError("error: blob is bigger than 64KB.")
+        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
       # again no rwd, to be independent of the master pwd
       blob = sign_blob(blob, id, b'')
     else:
-      blob = s.recv(bsize)
+      blob = read_pkt(s, bsize)
       if blob == b'fail':
         print("error: reading blob failed")
         s.close()
@@ -208,9 +215,9 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       # notice we do not add rwd to encryption of user blobs
       blob = encrypt_blob(blob)
       bsize = len(blob)
-      if bsize+2 >= 2**16:
+      if bsize >= 2**16:
         s.close()
-        raise ValueError("error: blob is bigger than 64KB.")
+        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       blob = sign_blob(blob, id, b'')
     s.send(blob)
