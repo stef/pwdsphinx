@@ -371,8 +371,43 @@ def users(s, host):
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
-def change(s, pwd, user, host):
-  return doSphinx(s, CHANGE, pwd, user, host)
+def change(s, oldpwd, newpwd, user, host, classes='ulsd', size=0):
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(oldpwd)
+  msg = b''.join([CHANGE, id, alpha])
+  s = ratelimit(s, msg)
+   # auth: do sphinx with current seed, use it to sign the nonce
+  if not auth(s,id,oldpwd,r):
+    print('failed authentication')
+    s.close()
+    return
+
+  r, alpha = sphinxlib.challenge(newpwd)
+  rule = encrypt_blob(pack_rule(classes, size))
+  s.send(b''.join([alpha, rule]))
+  import binascii
+  print(binascii.hexlify(rule))
+  beta = s.recv(32) # beta
+  if beta == b'\x00\x04fail' or len(beta)!=32:
+    s.close()
+    raise ValueError("error: sphinx protocol failure.")
+  rwd = sphinxlib.finish(newpwd, r, beta, id)
+
+  sk, pk = get_signkey(id, rwd)
+  clearmem(sk)
+  # send over new signed(pubkey)
+  s.send(sign_blob(pk, id, rwd))
+
+  if s.recv(2)!=b'ok':
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
+    s.close()
+    return
+
+  s.close()
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+  clearmem(rwd)
+
+  return ret
 
 def commit(s, pwd, user, host):
   return doSphinx(s, COMMIT, pwd, user, host)
@@ -466,6 +501,42 @@ def qrcode(output, key):
   else:
     print(qr.to_svg_str(2))
 
+def usage(params):
+  print("usage: %s init" % params[0])
+  print("usage: %s <create|change> <user> <site> [u][l][d][s] [<size>]" % params[0])
+  print("usage: %s <get|commit|undo|delete> <user> <site>" % params[0])
+  print("usage: %s list <site>" % params[0])
+  print("usage: %s qr [svg] [key]" % params[0])
+  sys.exit(1)
+
+def arg_rules(params):
+  user = params[2]
+  site = params[3]
+  size = None
+  classes = None
+  for param in params[4:]:
+    if not classes and set(list(param)) - {'u','l','s','d'} == set():
+      classes = param
+      continue
+    if not size:
+      try:
+        size = int(param)
+        continue
+      except: pass
+    print(f'invalid {params[1]} parameter: "{param}"')
+    usage(params)
+  return user, site, classes or 'ulsd', size or 0
+
+def test_pwd(pwd):
+  q = zxcvbn(pwd.decode('utf8'))
+  print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
+        ("★" * q['score'],
+         "☆" * (4-q['score']),
+         q['score'],
+         q['crack_times_display']['online_throttling_100_per_hour'],
+         q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
+         q['guesses']), file=sys.stderr)
+
 #### main ####
 
 def main(params):
@@ -497,9 +568,11 @@ def main(params):
     cmd = get
     args = (params[2], params[3])
   elif params[1] == 'change':
-    if len(params) != 4: usage()
+    try:
+      user,site,classes,size = arg_rules(params)
+    except: usage(params)
     cmd = change
-    args = (params[2], params[3])
+    args = (user, site, classes, size)
   elif params[1] == 'commit':
     if len(params) != 4: usage()
     cmd = commit
@@ -533,16 +606,15 @@ def main(params):
   if cmd is not None:
     s = connect()
     if cmd != users:
-      pwd = sys.stdin.buffer.read()
+      pwd = sys.stdin.buffer.readline().rstrip(b'\n')
+      if cmd == change:
+        newpwd = sys.stdin.buffer.readline().rstrip(b'\n')
+        if not newpwd:
+          newpwd = pwd
+        test_pwd(newpwd)
+        args=(newpwd,) + args
       if cmd == create:
-        q = zxcvbn(pwd.decode('utf8'))
-        print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
-              ("★" * q['score'],
-               "☆" * (4-q['score']),
-               q['score'],
-               q['crack_times_display']['online_throttling_100_per_hour'],
-               q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
-               q['guesses']), file=sys.stderr)
+        test_pwd(pwd)
       try:
         ret = cmd(s, pwd, *args)
       except:
