@@ -615,7 +615,7 @@ def main(params):
     if not ret:
       print("fail")
       sys.exit(1)
-    if cmd != delete:
+    if cmd not in {delete, undo, commit}:
       print(ret)
       sys.stdout.flush()
       clearmem(ret)
