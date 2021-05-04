@@ -5,16 +5,19 @@ from unittest.mock import Mock
 from io import BytesIO
 import sys
 
-from pwdsphinx import sphinx
+from pwdsphinx import sphinx, bin2pass
 
 # to get coverage, run
 # PYTHONPATH=.. coverage run ../tests/test.py
 # coverage report -m
+# to just run the tests do
+# python3 -m unittest discover --start-directory ../tests
 
 # disable the output of sphinx
 sphinx.print = Mock()
 
 data_dir = 'data/'
+data_dir = '/home/s/tasks/sphinx/zphinx/data/'
 orig_data_files = set(listdir(data_dir))
 char_classes = 'ulsd'
 size = 80
@@ -45,6 +48,51 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, size), str)
 
+    def test_huge_user(self):
+        with sphinx.connect() as s:
+            self.assertRaises(ValueError, sphinx.create,s, pwd, 'a'*(2**16 - 40), host, char_classes, size)
+        with sphinx.connect() as s:
+            rwd=sphinx.create(s, pwd, 'a'*(2**16 - 41), host, char_classes, size)
+            self.assertIsInstance(rwd, str)
+        with sphinx.connect() as s:
+            self.assertRaises(ValueError, sphinx.create, s, pwd, 'a', host, char_classes, size)
+
+    def test_rules_u(self):
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, "u", 0)
+        self.assertIsInstance(rwd, str)
+        self.assertTrue(rwd.isupper())
+
+    def test_rules_l(self):
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, "l", 0)
+        self.assertIsInstance(rwd, str)
+        self.assertTrue(rwd.islower())
+
+    def test_rules_d(self):
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, "d", 0)
+        self.assertIsInstance(rwd, str)
+        self.assertTrue(rwd.isdigit())
+
+    def test_rules_ulsd(self):
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, char_classes, 0)
+        self.assertIsInstance(rwd, str)
+        self.assertTrue(len(set([x.decode('utf8') for x in bin2pass.sets['u']]).intersection(rwd)) > 0)
+        self.assertTrue(len(set([x.decode('utf8') for x in bin2pass.sets['l']]).intersection(rwd)) > 0)
+        self.assertTrue(len(set([x.decode('utf8') for x in bin2pass.sets['d']]).intersection(rwd)) > 0)
+        self.assertTrue(len(set([x.decode('utf8') for x in bin2pass.sets['s']]).intersection(rwd)) > 0)
+
+    def test_pwd_len(self):
+        for i in range(1,41):
+            with sphinx.connect() as s:
+                rwd = sphinx.create(s, pwd, user, host, char_classes, i)
+                self.assertIsInstance(rwd, str)
+                self.assertTrue(len(rwd)==i)
+            with sphinx.connect() as s:
+                self.assertTrue(sphinx.delete(s, pwd, user, host))
+
     def test_invalid_rules(self):
         with sphinx.connect() as s:
             self.assertRaises(ValueError, sphinx.create, s, pwd, user, host, "asdf", size)
@@ -61,9 +109,9 @@ class TestEndToEnd(unittest.TestCase):
             rwd0 = sphinx.create(s, pwd, user, host, char_classes, size)
             self.assertIsInstance(rwd0, str)
 
-        with sphinx.connect() as s:
-            rwd = sphinx.get(s, pwd, user, host)
-            self.assertIsInstance(rwd, str)
+        s = sphinx.connect()
+        rwd = sphinx.get(s, pwd, user, host)
+        self.assertIsInstance(rwd, str)
 
         self.assertEqual(rwd,rwd0)
 
@@ -103,24 +151,31 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIsInstance(pwd0, str)
 
         with sphinx.connect() as s:
-            pwd1 = sphinx.change(s, pwd, user, host)
+            pwd1 = sphinx.change(s, pwd, pwd, user, host)
         self.assertIsInstance(pwd1, str)
         self.assertNotEqual(pwd0, pwd1)
+
+        with sphinx.connect() as s:
+            pwd2 = sphinx.change(s, pwd, pwd.upper(), user, host)
+        self.assertIsInstance(pwd2, str)
+        self.assertNotEqual(pwd0, pwd2)
+        self.assertNotEqual(pwd1, pwd2)
 
     def test_commit_undo(self):
         # create
         with sphinx.connect() as s:
             pwd0 = sphinx.create(s, pwd, user, host, char_classes, size)
-            self.assertIsInstance(pwd0, str)
+        self.assertIsInstance(pwd0, str)
 
         # get
         with sphinx.connect() as s:
             pwd1 = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(pwd1, str)
+        self.assertEqual(pwd0, pwd1)
 
         # change
         with sphinx.connect() as s:
-            pwd2 = sphinx.change(s, pwd, user, host)
+            pwd2 = sphinx.change(s, pwd, pwd.upper(), user, host)
         self.assertIsInstance(pwd2, str)
         self.assertNotEqual(pwd1, pwd2)
 
@@ -132,13 +187,17 @@ class TestEndToEnd(unittest.TestCase):
 
         # commit
         with sphinx.connect() as s:
-            pwd4 = sphinx.commit(s, pwd, user, host, )
+            sphinx.commit(s, pwd, user, host)
+        with sphinx.connect() as s:
+            pwd4 = sphinx.get(s, pwd.upper(), user, host)
         self.assertIsInstance(pwd4, str)
         self.assertEqual(pwd2, pwd4)
 
         # undo
         with sphinx.connect() as s:
-            pwd5 = sphinx.undo(s, pwd, user, host, )
+            sphinx.undo(s, pwd.upper(), user, host, )
+        with sphinx.connect() as s:
+            pwd5 = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(pwd5, str)
         self.assertEqual(pwd1, pwd5)
 
@@ -150,11 +209,11 @@ class TestEndToEnd(unittest.TestCase):
 
         # change invalid mpwd
         with sphinx.connect() as s:
-           self.assertRaises(ValueError, sphinx.change,s, 'zxcv', user, host)
+           self.assertRaises(ValueError, sphinx.change,s, 'zxcv', pwd, user, host)
 
         # change correct mpwd
         with sphinx.connect() as s:
-           pwd2 = sphinx.change(s, pwd, user, host)
+           pwd2 = sphinx.change(s, pwd, pwd, user, host)
         self.assertIsInstance(pwd2, str)
         self.assertNotEqual(pwd0, pwd2)
 
@@ -164,7 +223,9 @@ class TestEndToEnd(unittest.TestCase):
 
         # commit correct mpwd
         with sphinx.connect() as s:
-           pwd4 = sphinx.commit(s, pwd, user, host, )
+           sphinx.commit(s, pwd, user, host)
+        with sphinx.connect() as s:
+           pwd4 = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(pwd4, str)
         self.assertEqual(pwd2, pwd4)
 
@@ -174,7 +235,9 @@ class TestEndToEnd(unittest.TestCase):
 
         # undo correct mpwd
         with sphinx.connect() as s:
-           pwd5 = sphinx.undo(s, pwd, user, host, )
+           sphinx.undo(s, pwd, user, host)
+        with sphinx.connect() as s:
+           pwd5 = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(pwd5, str)
         self.assertEqual(pwd0, pwd5)
 
@@ -206,13 +269,15 @@ class TestEndToEnd(unittest.TestCase):
 
         # change
         with sphinx.connect() as s:
-            pwd2 = sphinx.change(s, pwd, user, host)
+            pwd2 = sphinx.change(s, pwd, pwd, user, host)
         self.assertIsInstance(pwd2, str)
         self.assertNotEqual(pwd0, pwd2)
 
         # commit
         with sphinx.connect() as s:
-            pwd4 = sphinx.commit(s, pwd, user, host, )
+            sphinx.commit(s, pwd, user, host)
+        with sphinx.connect() as s:
+            pwd4 = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(pwd4, str)
         self.assertEqual(pwd2, pwd4)
 
@@ -237,7 +302,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIsNone(sphinx.main(('sphinx.py', 'delete', user, host)))
 
     def test_main_change_commit_undo(self):
-        sys.stdin = Input()
+        sys.stdin = Input("qwer")
         self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, size)))
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'change', user, host)))
