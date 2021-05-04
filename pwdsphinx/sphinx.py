@@ -611,7 +611,7 @@ def main(params):
       except:
         ret = False
         raise # todo remove only for dbg
-    s.close()
+    s.close() # todo is still needed?
     if not ret:
       print("fail")
       sys.exit(1)
