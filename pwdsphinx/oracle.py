@@ -148,18 +148,13 @@ def create(s, msg):
     # check if id is unique
     id = binascii.hexlify(id).decode()
     tdir = os.path.join(datadir,id)
-    if(os.path.exists(os.path.join(tdir,'rules'))):
+    if(os.path.exists(tdir)):
       fail(s)
 
     # 1st step OPRF with a new seed
-    # this might be if the user already has stored a blob for this id
-    # and now also wants a sphinx rwd
-    if(os.path.exists(os.path.join(tdir,'key'))):
-      k = load_blob(id,'key',32)
-    else:
-      k=pysodium.randombytes(32)
+    k=pysodium.randombytes(32)
     try:
-        beta = sphinxlib.respond(alpha, k)
+      beta = sphinxlib.respond(alpha, k)
     except:
       fail(s)
 
@@ -178,17 +173,17 @@ def create(s, msg):
 
     rules = msg[32:]
 
+    # 3rd phase
+    update_blob(s) # add user to host record
+
     if not os.path.exists(datadir):
         os.mkdir(datadir,0o700)
-    if not os.path.exists(tdir):
-        os.mkdir(tdir,0o700)
+    os.mkdir(tdir,0o700)
 
     save_blob(id,'key',k)
     save_blob(id,'pub',pk)
     save_blob(id,'rules',rules)
 
-    # 3rd phase
-    update_blob(s) # add user to host record
     s.send(b'ok')
 
 def load_blob(path,fname,size=None):
