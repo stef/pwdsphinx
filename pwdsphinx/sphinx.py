@@ -154,51 +154,20 @@ def pack_rule(char_classes, size):
   # pack rule
   return struct.pack('>H', (rules << 7) | (size & 0x7f))
 
-def doSphinx(s, op, pwd, user, host):
+def commit_undo(s, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([op, id, alpha])
   s = ratelimit(s, msg)
-  if op != GET: # == CHANGE, UNDO, COMMIT
-     # auth: do sphinx with current seed, use it to sign the nonce
-    if not auth(s,id,pwd,r):
-      s.close()
-      return
-
-  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
-  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+  if not auth(s,id,pwd,r):
     s.close()
-    raise ValueError("error: sphinx protocol failure.")
-  beta = resp[:32]
-  rules = resp[32:]
-  rwd = sphinxlib.finish(pwd, r, beta, id)
-
-  try:
-    classes, size = unpack_rule(rules)
-  except ValueError:
+    raise ValueError("auth failed")
+  if s.recv(2)!=b'ok':
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
     s.close()
-    return
-  if op != GET: # == CHANGE, UNDO, COMMIT
-    # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
-    if op in {UNDO,COMMIT}:
-      sk, pk = get_signkey(id, rwd)
-      clearmem(sk)
-      # todo either drop this, since there is 0 change here, rwdkeys does not affect this, and the rules
-      # currently cannot be changed, or support changing the rules also in the change operation
-      rule = encrypt_blob(pack_rule(classes, size))
-
-      # send over new signed(pubkey, rule)
-      msg = b''.join([pk, rule])
-      msg = sign_blob(msg, id, rwd)
-      s.send(msg)
-      if s.recv(2)!=b'ok':
-        print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
-        s.close()
-        return
-
+    raise ValueError("Operation failed")
   s.close()
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
-  clearmem(rwd)
+  return True
 
   return ret
 
@@ -349,7 +318,30 @@ def create(s, pwd, user, host, char_classes, size=0):
   return ret
 
 def get(s, pwd, user, host):
-  return doSphinx(s, GET, pwd, user, host)
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([GET, id, alpha])
+  s = ratelimit(s, msg)
+
+  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
+  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+      s.close()
+      raise ValueError("error: sphinx protocol failure.")
+  beta = resp[:32]
+  rules = resp[32:]
+  rwd = sphinxlib.finish(pwd, r, beta, id)
+
+  try:
+    classes, size = unpack_rule(rules)
+  except ValueError:
+    s.close()
+    return
+
+  s.close()
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+  clearmem(rwd)
+
+  return ret
 
 def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
@@ -410,10 +402,10 @@ def change(s, oldpwd, newpwd, user, host, classes='ulsd', size=0):
   return ret
 
 def commit(s, pwd, user, host):
-  return doSphinx(s, COMMIT, pwd, user, host)
+  return commit_undo(s, COMMIT, pwd, user, host)
 
 def undo(s, pwd, user, host):
-  return doSphinx(s, UNDO, pwd, user, host)
+  return commit_undo(s, UNDO, pwd, user, host)
 
 def delete(s, pwd, user, host):
   # run sphinx to recover rwd for authentication
