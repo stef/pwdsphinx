@@ -84,6 +84,14 @@ def save_blob(path,fname,blob):
     os.fchmod(fd.fileno(),0o600)
     fd.write(blob)
 
+def read_pkt(s,size):
+    res = []
+    read = 0
+    while read<size:
+      res.append(s.recv(size-read))
+      read+=len(res[-1])
+    return b''.join(res)
+
 def update_blob(s):
     id = s.recv(32)
     if len(id)!=32:
@@ -95,9 +103,12 @@ def update_blob(s):
       new = True
       blob = b'\x00\x00'
     s.send(blob)
-    blob = s.recv(8192) # todo/fixme arbitrary limit
     if new:
-      pk = blob[:32]
+      pk = s.recv(32)
+      prefix = s.recv(2)
+      bsize = struct.unpack('!H', prefix)[0]
+      signedblob = read_pkt(s, bsize+64)
+      blob = pk+prefix+signedblob
       try:
         blob = verify_blob(blob,pk)
       except ValueError:
@@ -113,6 +124,10 @@ def update_blob(s):
       # save pubkey
       save_blob(id,'pub',pk)
     else:
+      prefix = s.recv(2)
+      bsize = struct.unpack('!H', prefix)[0]
+      signedblob = read_pkt(s, bsize+64)
+      blob = prefix+signedblob
       pk = load_blob(id,'pub')
       try:
         blob = verify_blob(blob,pk)
