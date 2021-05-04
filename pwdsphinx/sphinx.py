@@ -535,31 +535,20 @@ def test_pwd(pwd):
 #### main ####
 
 def main(params):
-  def usage():
-    print("usage: %s init" % params[0])
-    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
-    print("usage: %s <get|change|commit|undo|delete> <user> <site>" % params[0])
-    print("usage: %s list <site>" % params[0])
-    print("usage: %s qr [svg] [key]" % params[0])
-    sys.exit(1)
-
-  if len(params) < 2: usage()
-
+  if len(params) < 2: usage(params)
   cmd = None
   args = []
   if params[1] == 'create':
-    if len(params) not in (5,6): usage()
-    if len(params) == 6:
-      size=params[5]
-    else:
-      size = 0
+    try:
+      user,site,classes,size = arg_rules(params)
+    except: usage(params)
     cmd = create
-    args = (params[2], params[3], params[4], size)
+    args = (user, site, classes, size)
   elif params[1] == 'init':
-    if len(params) != 2: usage()
+    if len(params) != 2: usage(params)
     sys.exit(init_key())
   elif params[1] == 'get':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = get
     args = (params[2], params[3])
   elif params[1] == 'change':
@@ -569,19 +558,19 @@ def main(params):
     cmd = change
     args = (user, site, classes, size)
   elif params[1] == 'commit':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = commit
     args = (params[2], params[3])
   elif params[1] == 'delete':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = delete
     args = (params[2], params[3])
   elif params[1] == 'list':
-    if len(params) != 3: usage()
+    if len(params) != 3: usage(params)
     cmd = users
     args = (params[2],)
   elif params[1] == 'undo':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = undo
     args = (params[2],params[3])
   elif params[1] == 'qr':
@@ -594,7 +583,7 @@ def main(params):
     if "key" in params:
       key=True
       del params[params.index("key")]
-    if params[2:]: usage()
+    if params[2:]: usage(params)
     qrcode(output, key)
     return
 
