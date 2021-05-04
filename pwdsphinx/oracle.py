@@ -330,41 +330,33 @@ def commit_undo(conn, msg, new, old):
 
   auth(conn, id, alpha)
 
-  k = load_blob(id,new, 32)
-  if k is None:
-      fail(conn)
-
-  key = load_blob(id,'key', 32)
-  if key is None:
-      fail(conn)
-
-  try:
-      beta = sphinxlib.respond(alpha, k)
-  except:
+  if (new_rules:=load_blob(id,'rules.%s' % new, RULE_SIZE)) is None:
+    fail(conn)
+  if (cur_rules:=load_blob(id,'rules', RULE_SIZE)) is None:
+    fail(conn)
+  if (new_pub:=load_blob(id,'pub.%s' % new, 32)) is None:
+    fail(conn)
+  if (cur_pub:=load_blob(id,'pub', 32) )is None:
+    fail(conn)
+  if (new_key:= load_blob(id, new, 32)) is None:
+    fail(conn)
+  if (cur_key:= load_blob(id, 'key', 32)) is None:
     fail(conn)
 
-  rules = load_blob(id,'rules', RULE_SIZE)
-  if rules is None:
-      fail(conn)
+  save_blob(id,old,cur_key)
+  #clearmem(cur_key)
+  save_blob(id,"rules.%s" % old, cur_rules)
+  save_blob(id,"pub.%s" % old, cur_pub)
 
-  conn.send(beta+rules)
+  save_blob(id,"key",new_key)
+  #clearmem(new_key)
+  save_blob(id,"rules", new_rules)
+  save_blob(id,"pub", new_pub)
 
-  blob = conn.recv(32+RULE_SIZE+64)
-  if len(blob)!=32+RULE_SIZE+64:
-    fail(conn)
-
-  pk = blob[0:32]
-  try:
-    blob = verify_blob(blob,pk)
-  except ValueError:
-    fail(conn)
-  rules = blob[32:]
-
-  save_blob(id,old,key)
-  save_blob(id,'key',k)
-  save_blob(id,'pub',pk)
-  save_blob(id,'rules',rules)
   os.unlink(os.path.join(tdir,new))
+  os.unlink(os.path.join(tdir,"pub.%s" % new))
+  os.unlink(os.path.join(tdir,"rules.%s" % new))
+
   conn.send(b'ok')
 
 def read(conn, msg):
