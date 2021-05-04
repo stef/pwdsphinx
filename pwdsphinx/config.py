@@ -8,7 +8,7 @@ import os, configparser
 class StrippingQuotesConfigParser(configparser.ConfigParser):
     def get(self, section, option, **kwargs):
         val = configparser.ConfigParser.get(self, section, option, **kwargs)
-        return val.strip('"')
+        return val.strip('"') if hasattr(val,'strip') else val
 
 def getcfg(app):
   config = StrippingQuotesConfigParser()
