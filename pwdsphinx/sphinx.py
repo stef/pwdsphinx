@@ -286,7 +286,7 @@ def init_key():
     clearmem(mk)
   return 0
 
-def create(s, pwd, user, host, char_classes, size=0):
+def create(s, pwd, user, host, char_classes='ulsd', size=0):
   # 1st step OPRF on the new seed
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
@@ -304,10 +304,6 @@ def create(s, pwd, user, host, char_classes, size=0):
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
 
-  try: size=int(size)
-  except:
-    s.close()
-    raise ValueError("error: size has to be integer.")
   rule = encrypt_blob(pack_rule(char_classes, size))
 
   # send over new signed(pubkey, rule)
