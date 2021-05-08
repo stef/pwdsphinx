@@ -93,15 +93,28 @@ def read_pkt(s,size):
     return b''.join(res)
 
 def update_blob(s):
-    id = s.recv(32)
-    if len(id)!=32:
+    signed_id = s.recv(32+64)
+    if len(signed_id)!=32+64:
       fail(s)
-    id = binascii.hexlify(id).decode()
-    blob = load_blob(id,'blob')
-    new = False
-    if blob is None:
+    id = binascii.hexlify(signed_id[:32]).decode()
+    pk = load_blob(id,'pub')
+    if pk is None:
+      if os.path.exists(os.path.join(datadir,id)):
+        print("user blob authkey not found, but dir exists:", id)
+        fail(s)
       new = True
       blob = b'\x00\x00'
+    else:
+      try:
+        blob = verify_blob(signed_id,pk)
+      except ValueError:
+        print('invalid signature on user blob id')
+        fail(s)
+      blob = load_blob(id,'blob')
+      if blob is None:
+        print("user blob authkey fund, but no blob for id:", id)
+        fail(s)
+      new = False
     s.send(blob)
     if new:
       pk = s.recv(32)

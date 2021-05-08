@@ -180,7 +180,8 @@ def read_pkt(s,size):
 
 def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
     id = getid(host, '')
-    s.send(id)
+    signed_id = sign_blob(id, id, b'')
+    s.send(signed_id)
     # wait for user blob
     bsize = s.recv(2)
     bsize = struct.unpack('!H', bsize)[0]
@@ -203,9 +204,8 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
     else:
       blob = read_pkt(s, bsize)
       if blob == b'fail':
-        print("error: reading blob failed")
         s.close()
-        return
+        raise ValueError("reading user blob failed")
       blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
       # todo/fix? we do not recognize if the user is already included in this list
@@ -425,7 +425,8 @@ def delete(s, pwd, user, host):
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
   id = getid(host, '')
-  s.send(id)
+  signed_id = sign_blob(id, id, b'')
+  s.send(signed_id)
   # wait for user blob
   bsize = s.recv(2)
   bsize = struct.unpack('!H', bsize)[0]
