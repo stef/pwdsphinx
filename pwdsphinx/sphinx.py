@@ -380,8 +380,6 @@ def change(s, oldpwd, newpwd, user, host, classes='ulsd', size=0):
   r, alpha = sphinxlib.challenge(newpwd)
   rule = encrypt_blob(pack_rule(classes, size))
   s.send(b''.join([alpha, rule]))
-  import binascii
-  print(binascii.hexlify(rule))
   beta = s.recv(32) # beta
   if beta == b'\x00\x04fail' or len(beta)!=32:
     s.close()
