@@ -3,7 +3,7 @@ from os import listdir
 from shutil import rmtree
 from unittest.mock import Mock
 from io import BytesIO
-import sys
+import sys, pysodium
 
 from pwdsphinx import sphinx, bin2pass
 
@@ -27,20 +27,23 @@ user2 = 'user2'
 host = 'example.com'
 
 class Input:
-     def __init__(self, txt = None):
-         if txt:
-             self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
-         else:
-             self.buffer = BytesIO(pwd.encode())
+  def __init__(self, txt = None):
+    if txt:
+      self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
+    else:
+      self.buffer = BytesIO(pwd.encode())
 
 def cleanup():
-    for f in listdir(data_dir):
-        if f not in orig_data_files:
-            rmtree(data_dir+f)
+  for f in listdir(data_dir):
+    if f not in orig_data_files:
+      rmtree(data_dir+f)
 
+def bad_signkey(_, __):
+  pk, sk = pysodium.crypto_sign_seed_keypair(b'\xfe'*pysodium.crypto_sign_SEEDBYTES)
+  return sk, pk
+get_signkey = sphinx.get_signkey
 
 class TestEndToEnd(unittest.TestCase):
-
     def tearDown(self):
         cleanup()
 
@@ -284,6 +287,26 @@ class TestEndToEnd(unittest.TestCase):
         # commit
         with sphinx.connect() as s:
             self.assertRaises(ValueError, sphinx.commit,s, pwd, user, host)
+
+    def test_auth(self):
+        # create
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, char_classes, size)
+            self.assertIsInstance(rwd, str)
+        sphinx.get_signkey = bad_signkey
+        with sphinx.connect() as s:
+             self.assertFalse(sphinx.change(s, pwd, user, host, char_classes, size))
+        sphinx.get_signkey = get_signkey
+
+    def test_userblob_auth_create(self):
+        # create
+        with sphinx.connect() as s:
+            rwd = sphinx.create(s, pwd, user, host, char_classes, size)
+            self.assertIsInstance(rwd, str)
+        sphinx.get_signkey = bad_signkey
+        with sphinx.connect() as s:
+            self.assertRaises(ValueError, sphinx.create, s, pwd, user2, host, char_classes, size)
+        sphinx.get_signkey = get_signkey
 
     def test_main_create(self):
         sys.stdin = Input()
