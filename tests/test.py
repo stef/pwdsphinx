@@ -295,7 +295,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIsInstance(rwd, str)
         sphinx.get_signkey = bad_signkey
         with sphinx.connect() as s:
-             self.assertFalse(sphinx.change(s, pwd, user, host, char_classes, size))
+             self.assertRaises(ValueError, sphinx.change, s, pwd, pwd, user, host, char_classes, size)
         sphinx.get_signkey = get_signkey
 
     def test_userblob_auth_create(self):
