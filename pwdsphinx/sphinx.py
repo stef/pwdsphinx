@@ -207,7 +207,6 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
     # wait for user blob
     bsize = s.recv(2)
     bsize = struct.unpack('!H', bsize)[0]
-    # todo oracle can also just say fail - without a pktsize
     if bsize == 0:
       # it is a new blob, we need to attach an auth signing pubkey
       sk, pk = get_signkey(id, b'')
@@ -230,8 +229,9 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
         raise ValueError("reading user blob failed")
       blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
-      # todo/fix? we do not recognize if the user is already included in this list
       # this should not happen, but maybe it's a sign of corruption?
+      if item in items:
+        print(f'warning: "{item}" is already in the user record')
       items.add(item)
       blob = ('\x00'.join(sorted(items))).encode()
       # notice we do not add rwd to encryption of user blobs
@@ -469,8 +469,9 @@ def delete(s, pwd, user, host):
     return
   blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
-  # todo/fix? we do not recognize if the user is already included in this list
-  # this should not happen, but maybe it's a sign of corruption?
+  if user not in users:
+    # this should not happen, but maybe it's a sign of corruption?
+    print(f'warning "{user}" is not in user record')
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
@@ -532,7 +533,6 @@ def usage(params):
   sys.exit(1)
 
 def arg_rules(params):
-  # todo better symbol handling
   user = params[2]
   site = params[3]
   size = None
