@@ -125,8 +125,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIsInstance(rwd0, str)
 
         with sphinx.connect() as s:
-            rwd = sphinx.get(s, 'zxcv', user, host)
-            self.assertNotEqual(rwd0,rwd)
+            self.assertRaises(ValueError, sphinx.get, s, 'zxcv', user, host)
 
     def test_get_nonexistant_host(self):
         with sphinx.connect() as s:
