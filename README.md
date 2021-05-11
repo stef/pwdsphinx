@@ -11,7 +11,7 @@ as described in https://eprint.iacr.org/2015/1099
 
 ## Dependencies
 
-You need [libsphinx](https://github.com/stef/libsphinx).
+You need [libsphinx](https://github.com/stef/libsphinx) and [libequihash](https://github.com/stef/equihash/) for the python reference frontend.
 
 You need also to install `pysodium` using either your OS package
 manager or pip.
@@ -128,16 +128,31 @@ password on standard input to the client, and provide parameters like
 in this example:
 
 ```
-echo 'my master password' | ./sphinx.py create username example.com ulsd 0
+echo -n 'my master password' | ./sphinx.py create username example.com ulsd 0 ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
 ```
 
 The parameters to the client are `create` for the operation, then `username`
 for the username on the site `example.com` then a combination of the
 letters `ulsd` and the `0` for the size of the final password. The letters
 `ulsd` stand in order for the following character classes: `u` upper-case
-letters, `l` lower-case letters, `s` symbols and `d` for digits. If the command
-runs successfully - the resulting new high-entropy password according to the
-given rules is printed to the console.
+letters, `l` lower-case letters, `s` symbols and `d` for digits. The `s` is a
+short-cut to allow all of the symbols, if you have a stupid server that limits
+some symbols, you can specify the allowed symbols explicitly. Currently these
+are the symbols supported (note the leading space char):
+
+```
+ !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
+```
+
+Be careful, if you specify these on the command-line you'll have to escape the
+quotes you use for enclosing this list and possibly the backslash char that is
+also part of this list - in the above example this is already done.
+
+If you do not provide password rules, they will be defaulting to 'ulsd' and
+length as long as possible. 
+
+If the command runs successfully - the resulting new high-entropy password
+according to the given rules is printed to the console.
 
 Note1, since the master password is not used to encrypt anything, you can
 actually use different "master" passwords for different user/site combinations.  
@@ -157,7 +172,7 @@ Getting a password from the sphinx oracle works by running the
 following command:
 
 ```
-echo 'my master password' | ./sphinx.py get username example.com
+echo -n 'my master password' | ./sphinx.py get username example.com
 ```
 
 Here again you supply your master password on standard input, provide
@@ -172,15 +187,18 @@ is easy while you can keep your master password the unchanged (or you
 can change it too, if you want). The command is this:
 
 ```
-echo 'my master password' | ./sphinx.py change username example.com
+echo -en 'my master password\nnew masterpassword' | ./sphinx.py change username example.com 'ulsd' 0 ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
 ```
 
-Here again you supply your master password on standard input. This
-master password can be the same, but can also be a new password if you
-want to change also the master password. You provide the `change`
-operation as the first parameter to the client, your `username` as the
-2nd and the `site` as the 3rd parameter. Your new new password is
-returned on standard output.
+Here again you supply your master password on standard input, but separated by
+a new-line you also provide the master password. The new master password can be
+the same as the old , but can also be a new password if you want to change also
+the master password. You provide the `change` operation as the first parameter
+to the client, your `username` as the 2nd and the `site` as the 3rd parameter.
+You also can provide similar password generation rule parameters that were also
+used to create the original password, in case your account has new password
+rules and you want/have to accomodate them. Your new new password is returned
+on standard output.
 
 #### Committing a changed password
 
@@ -188,7 +206,7 @@ After changing the password, you will still get the old password when running
 `get`. To switch to use the new password you have to commit the changes with
 
 ```
-echo 'my master password' | ./sphinx.py commit username example.com
+echo -n 'my master password' | ./sphinx.py commit username example.com
 ```
 
 #### Undoing a password commit
@@ -196,7 +214,7 @@ If you somehow messed up and have to go back to use the old password, you can
 undo committing your password using:
 
 ```
-echo 'my master password' | ./sphinx.py undo username example.com
+echo -n 'my master password' | ./sphinx.py undo username example.com
 ```
 
 #### Deleting passwords
@@ -205,14 +223,13 @@ In case you want to delete a password, you can do using the following
 command:
 
 ```
-./sphinx.py delete username example.com
+echo -n "my master password" | ./sphinx.py delete username example.com
 ```
 
 You provide the `delete` operation as the first parameter to the
 client, your `username` as the 2nd and the `site` as the 3rd
-parameter. This command does not need anything on standard input, nor
-does it provide anything on standard output in case everything goes
-well.
+parameter. This command does not provide anything on standard output
+in case everything goes well.
 
 #### QR code config
 
