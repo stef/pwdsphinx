@@ -275,12 +275,9 @@ def change(conn, msg):
 
   auth(conn, id, alpha)
 
-  new = conn.recv(32+RULE_SIZE)
-  if(len(new)!=32+RULE_SIZE):
+  alpha = conn.recv(32)
+  if(len(alpha)!=32):
     fail(conn)
-
-  alpha, msg = pop(new,32)
-  rules, msg = pop(msg,RULE_SIZE)
 
   k=pysodium.randombytes(32)
 
@@ -291,19 +288,19 @@ def change(conn, msg):
 
   conn.send(beta)
 
-  blob = conn.recv(32+64)
-  if len(blob)!=32+64:
+  blob = conn.recv(32+RULE_SIZE+64)
+  if len(blob)!=32+RULE_SIZE+64:
     fail(conn)
 
   pk = blob[:32]
   try:
-    pub = verify_blob(blob,pk)
+    rules = verify_blob(blob,pk)[32:]
   except ValueError:
     fail(conn)
 
   save_blob(id,'new',k)
   save_blob(id,"rules.new", rules)
-  save_blob(id,"pub.new", pub)
+  save_blob(id,"pub.new", pk)
   conn.send(b'ok')
 
 def delete(conn, msg):
