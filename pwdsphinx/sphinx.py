@@ -60,6 +60,7 @@ ENC_CTX = b"sphinx encryption key"
 SIGN_CTX = b"sphinx signing key"
 SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
+CHECK_CTX = b"sphinx check digit context"
 
 RULE_SIZE = 62
 
@@ -169,7 +170,7 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   packed = size
   packed = packed + (sum(1<<i for i, c in enumerate(('u','l','d')) if c in char_classes) << 7)
   packed = packed + (sum(1<<i for i, c in enumerate(bin2pass.symbols) if c in syms) << (7 + 3))
-  packed = packed + ((check_digit & (2**5 - 1)) << (7 + 3 + 33) )
+  packed = packed + ((check_digit & ((1<<5) - 1)) << (7 + 3 + 33) )
   pt = packed.to_bytes(6,"big") + xor_mask
   nonce = pysodium.randombytes(pysodium.crypto_stream_xchacha20_NONCEBYTES)
   ct = pysodium.crypto_stream_xchacha20_xor(pt, nonce, get_sealkey())
@@ -325,7 +326,9 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
 
-  rule = pack_rule(char_classes, symbols, size, 0) # todo fix checkdigit
+  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+
+  rule = pack_rule(char_classes, symbols, size, checkdigit) # todo fix checkdigit
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
   msg = sign_blob(msg, id, rwd)
@@ -359,8 +362,11 @@ def get(s, pwd, user, host):
   except ValueError:
     s.close()
     return
-
   s.close()
+
+  if (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
+    raise ValueError("bad checkdigit")
+
   ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size,symbols).decode()
   clearmem(rwd)
 
@@ -398,18 +404,20 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     return
 
   r, alpha = sphinxlib.challenge(newpwd)
-  rule = pack_rule(classes, symbols, size, 0) # todo fix checkdigit
-  s.send(b''.join([alpha, rule]))
+  s.send(alpha)
   beta = s.recv(32) # beta
   if beta == b'\x00\x04fail' or len(beta)!=32:
     s.close()
     raise ValueError("error: sphinx protocol failure.")
   rwd = sphinxlib.finish(newpwd, r, beta, id)
 
+  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+  rule = pack_rule(classes, symbols, size, checkdigit)
+
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
   # send over new signed(pubkey)
-  s.send(sign_blob(pk, id, rwd))
+  s.send(sign_blob(b''.join([pk,rule]), id, rwd))
 
   if s.recv(2)!=b'ok':
     print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
