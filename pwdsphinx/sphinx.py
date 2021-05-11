@@ -61,7 +61,7 @@ SIGN_CTX = b"sphinx signing key"
 SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
 
-RULE_SIZE = 42
+RULE_SIZE = 62
 
 #### Helper fns ####
 
@@ -138,21 +138,42 @@ def getid(host, user):
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
-def unpack_rule(rules):
-  rules = decrypt_blob(rules)
-  rule = struct.unpack(">H",rules)[0]
-  size = (rule & 0x7f)
-  rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
-  return rule, size
+def unpack_rule(nonce_ct):
+  nonce, ct = nonce_ct[:24], nonce_ct[24:]
+  packed = pysodium.crypto_stream_xchacha20_xor(ct, nonce, get_sealkey())
+  xor_mask = packed[-32:]
+  v = int.from_bytes(packed[:-32], "big")
 
-def pack_rule(char_classes, size):
+  size = v & ((1<<7) - 1)
+  rule = {c for i,c in enumerate(('u','l','d')) if (v >> 7) & (1 << i)}
+  symbols = [c for i,c in enumerate(bin2pass.symbols) if (v>>(7+3) & (1<<i))]
+  check_digit = (v>>(7+3+33))
+
+  return rule, symbols, size, check_digit, xor_mask
+
+def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   # pack rules into 2 bytes, and encrypt them
-  if set(char_classes) - {'u','l','s','d'}:
-    raise ValueError("error: rules can only contain any of 'ulsd'.")
+  if set(char_classes) - {'u','l','d'}:
+    raise ValueError("error: rules can only contain any of 'uld'.")
+  if set(syms) - set(bin2pass.symbols) != set():
+    raise ValueError("error: symbols can only contain any of '%s'." % bin2pass.symbols)
+  if char_classes == '' and len(syms)<2:
+    raise ValueError("error: no char classes and not enough symbols specified.")
+  if xor_mask is None:
+      xor_mask = b'\x00' * 32
+  elif len(xor_mask)!=32:
+    raise ValueError("error: xor_mask must be 32bytes, is instead: %d." % len(xor_mask))
+  if size<0 or size>127:
+    raise ValueError("error: invalid max password size: %d." % size)
 
-  rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
-  # pack rule
-  return struct.pack('>H', (rules << 7) | (size & 0x7f))
+  packed = size
+  packed = packed + (sum(1<<i for i, c in enumerate(('u','l','d')) if c in char_classes) << 7)
+  packed = packed + (sum(1<<i for i, c in enumerate(bin2pass.symbols) if c in syms) << (7 + 3))
+  packed = packed + ((check_digit & (2**5 - 1)) << (7 + 3 + 33) )
+  pt = packed.to_bytes(6,"big") + xor_mask
+  nonce = pysodium.randombytes(pysodium.crypto_stream_xchacha20_NONCEBYTES)
+  ct = pysodium.crypto_stream_xchacha20_xor(pt, nonce, get_sealkey())
+  return nonce+ct
 
 def commit_undo(s, op, pwd, user, host):
   id = getid(host, user)
@@ -286,7 +307,7 @@ def init_key():
     clearmem(mk)
   return 0
 
-def create(s, pwd, user, host, char_classes='ulsd', size=0):
+def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0):
   # 1st step OPRF on the new seed
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
@@ -304,8 +325,7 @@ def create(s, pwd, user, host, char_classes='ulsd', size=0):
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
 
-  rule = encrypt_blob(pack_rule(char_classes, size))
-
+  rule = pack_rule(char_classes, symbols, size, 0) # todo fix checkdigit
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
   msg = sign_blob(msg, id, rwd)
@@ -316,7 +336,7 @@ def create(s, pwd, user, host, char_classes='ulsd', size=0):
   update_rec(s, host, user)
   s.close()
 
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode()
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size,symbols).decode()
   clearmem(rwd)
   return ret
 
@@ -335,13 +355,13 @@ def get(s, pwd, user, host):
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
   try:
-    classes, size = unpack_rule(rules)
+    classes, symbols, size, checkdigit, xor_mask = unpack_rule(rules)
   except ValueError:
     s.close()
     return
 
   s.close()
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size,symbols).decode()
   clearmem(rwd)
 
   return ret
@@ -366,19 +386,19 @@ def users(s, host):
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
-def change(s, oldpwd, newpwd, user, host, classes='ulsd', size=0):
+def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(oldpwd)
   msg = b''.join([CHANGE, id, alpha])
   s = ratelimit(s, msg)
-   # auth: do sphinx with current seed, use it to sign the nonce
+  # auth: do sphinx with current seed, use it to sign the nonce
   if not auth(s,id,oldpwd,r):
     print('failed authentication')
     s.close()
     return
 
   r, alpha = sphinxlib.challenge(newpwd)
-  rule = encrypt_blob(pack_rule(classes, size))
+  rule = pack_rule(classes, symbols, size, 0) # todo fix checkdigit
   s.send(b''.join([alpha, rule]))
   beta = s.recv(32) # beta
   if beta == b'\x00\x04fail' or len(beta)!=32:
@@ -504,22 +524,31 @@ def usage(params):
   sys.exit(1)
 
 def arg_rules(params):
+  # todo better symbol handling
   user = params[2]
   site = params[3]
   size = None
-  classes = None
+  symbols = ''
+  classes = ''
   for param in params[4:]:
     if not classes and set(list(param)) - {'u','l','s','d'} == set():
-      classes = param
+      if 's' in param:
+        symbols = bin2pass.symbols
+        classes = ''.join(set(param) - set(['s']))
+      else:
+        classes = param
       continue
     if not size:
       try:
         size = int(param)
         continue
       except: pass
+    if set(param) - set(bin2pass.symbols) == set():
+      symbols = param
+      continue
     print(f'invalid {params[1]} parameter: "{param}"')
     usage(params)
-  return user, site, classes or 'ulsd', size or 0
+  return user, site, classes or '', symbols, size or 0
 
 def test_pwd(pwd):
   q = zxcvbn(pwd.decode('utf8'))
@@ -539,10 +568,10 @@ def main(params):
   args = []
   if params[1] == 'create':
     try:
-      user,site,classes,size = arg_rules(params)
+      user,site,classes, syms, size = arg_rules(params)
     except: usage(params)
     cmd = create
-    args = (user, site, classes, size)
+    args = (user, site, classes, syms, size)
   elif params[1] == 'init':
     if len(params) != 2: usage(params)
     sys.exit(init_key())
@@ -552,10 +581,10 @@ def main(params):
     args = (params[2], params[3])
   elif params[1] == 'change':
     try:
-      user,site,classes,size = arg_rules(params)
+      user,site,classes,syms,size = arg_rules(params)
     except: usage(params)
     cmd = change
-    args = (user, site, classes, size)
+    args = (user, site, classes, syms, size)
   elif params[1] == 'commit':
     if len(params) != 4: usage(params)
     cmd = commit
