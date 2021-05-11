@@ -525,7 +525,7 @@ def qrcode(output, key):
 
 def usage(params):
   print("usage: %s init" % params[0])
-  print("usage: %s <create|change> <user> <site> [u][l][d][s] [<size>]" % params[0])
+  print("usage: %s <create|change> <user> <site> [u][l][d][s] [<size>] [<symbols>]" % params[0])
   print("usage: %s <get|commit|undo|delete> <user> <site>" % params[0])
   print("usage: %s list <site>" % params[0])
   print("usage: %s qr [svg] [key]" % params[0])
