@@ -36,12 +36,12 @@ ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, pro
 rwd_keys = not not cfg['client'].get('rwd_keys',False)
 
 if verbose:
-    print("hostname:", hostname)
-    print("address:", address)
-    print("port:", port)
-    print("datadir:", datadir)
-    print("ssl_cert:", ssl_cert)
-    print("rwd_keys:", rwd_keys)
+    print("hostname:", hostname, file=sys.stderr)
+    print("address:", address, file=sys.stderr)
+    print("port:", port, file=sys.stderr)
+    print("datadir:", datadir, file=sys.stderr)
+    print("ssl_cert:", ssl_cert, file=sys.stderr)
+    print("rwd_keys:", rwd_keys, file=sys.stderr)
 
 #### consts ####
 
@@ -158,7 +158,7 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
     raise ValueError("error: rules can only contain any of 'uld'.")
   if set(syms) - set(bin2pass.symbols) != set():
     raise ValueError("error: symbols can only contain any of '%s'." % bin2pass.symbols)
-  if char_classes == '' and len(syms)<2:
+  if xor_mask is None and (char_classes == '' and len(syms)<2):
     raise ValueError("error: no char classes and not enough symbols specified.")
   if xor_mask is None:
       xor_mask = b'\x00' * 32
@@ -176,6 +176,9 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   ct = pysodium.crypto_stream_xchacha20_xor(pt, nonce, get_sealkey())
   return nonce+ct
 
+def xor(x,y):
+  return bytes(a ^ b for (a, b) in zip(x, y))
+
 def commit_undo(s, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
@@ -185,7 +188,7 @@ def commit_undo(s, op, pwd, user, host):
     s.close()
     raise ValueError("auth failed")
   if s.recv(2)!=b'ok':
-    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
     s.close()
     raise ValueError("Operation failed")
   s.close()
@@ -231,7 +234,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       items = set(blob.decode().split('\x00'))
       # this should not happen, but maybe it's a sign of corruption?
       if item in items:
-        print(f'warning: "{item}" is already in the user record')
+        print(f'warning: "{item}" is already in the user record', file=sys.stderr)
       items.add(item)
       blob = ('\x00'.join(sorted(items))).encode()
       # notice we do not add rwd to encryption of user blobs
@@ -269,7 +272,7 @@ def ratelimit(s,req):
   s.send(pkt0)
   challenge = s.recv(1+1+8+32) # n,k,ts,sig
   if len(challenge)!= 1+1+8+32:
-    print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)))
+    print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
     raise ValueError("failed to get ratelimit challenge")
   s.close()
   n = challenge[0]
@@ -295,7 +298,7 @@ def ratelimit(s,req):
 def init_key():
   kfile = os.path.join(datadir,'masterkey')
   if os.path.exists(kfile):
-    print("Already initialized.")
+    print("Already initialized.", file=sys.stderr)
     return 1
   if not os.path.exists(datadir):
     os.makedirs(datadir, 0o700, exist_ok=True)
@@ -308,7 +311,7 @@ def init_key():
     clearmem(mk)
   return 0
 
-def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0):
+def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   # 1st step OPRF on the new seed
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
@@ -328,7 +331,15 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
   checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
 
-  rule = pack_rule(char_classes, symbols, size, checkdigit)
+  if target:
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    size = len(target)
+    char_classes = 'uld'
+    symbols = bin2pass.symbols
+  else:
+    xormask = b'\x00'*32
+
+  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
   msg = sign_blob(msg, id, rwd)
@@ -339,7 +350,9 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   update_rec(s, host, user)
   s.close()
 
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size,symbols).decode()
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+
+  ret = bin2pass.derive(rwd,char_classes,size,symbols)
   clearmem(rwd)
   return ret
 
@@ -358,7 +371,7 @@ def get(s, pwd, user, host):
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
   try:
-    classes, symbols, size, checkdigit, xor_mask = unpack_rule(rules)
+    classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
   except ValueError:
     s.close()
     return
@@ -367,7 +380,8 @@ def get(s, pwd, user, host):
   if (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
     raise ValueError("bad checkdigit")
 
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size,symbols).decode()
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  ret = bin2pass.derive(rwd,classes,size,symbols)
   clearmem(rwd)
 
   return ret
@@ -392,14 +406,14 @@ def users(s, host):
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
-def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0):
+def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(oldpwd)
   msg = b''.join([CHANGE, id, alpha])
   s = ratelimit(s, msg)
   # auth: do sphinx with current seed, use it to sign the nonce
   if not auth(s,id,oldpwd,r):
-    print('failed authentication')
+    print('failed authentication', file=sys.stderr)
     s.close()
     return
 
@@ -412,7 +426,16 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   rwd = sphinxlib.finish(newpwd, r, beta, id)
 
   checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
-  rule = pack_rule(classes, symbols, size, checkdigit)
+
+  if target:
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    size = len(target)
+    classes = 'uld'
+    symbols = bin2pass.symbols
+  else:
+    xormask = b'\x00'*32
+
+  rule = pack_rule(classes, symbols, size, checkdigit, xormask)
 
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
@@ -420,12 +443,13 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   s.send(sign_blob(b''.join([pk,rule]), id, rwd))
 
   if s.recv(2)!=b'ok':
-    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
     s.close()
     return
 
   s.close()
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  ret = bin2pass.derive(rwd,classes,size)
   clearmem(rwd)
 
   return ret
@@ -458,7 +482,7 @@ def delete(s, pwd, user, host):
   bsize = struct.unpack('!H', bsize)[0]
   if bsize == 0:
     # this should not happen, it means something is corrupt
-    print("error: server has no associated user record for this host")
+    print("error: server has no associated user record for this host", file=sys.stderr)
     s.close()
     return
 
@@ -471,7 +495,7 @@ def delete(s, pwd, user, host):
   users = set(blob.decode().split('\x00'))
   if user not in users:
     # this should not happen, but maybe it's a sign of corruption?
-    print(f'warning "{user}" is not in user record')
+    print(f'warning "{user}" is not in user record', file=sys.stderr)
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
@@ -526,7 +550,7 @@ def qrcode(output, key):
 
 def usage(params):
   print("usage: %s init" % params[0])
-  print("usage: %s <create|change> <user> <site> [u][l][d][s] [<size>] [<symbols>]" % params[0])
+  print("usage: %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
   print("usage: %s <get|commit|undo|delete> <user> <site>" % params[0])
   print("usage: %s list <site>" % params[0])
   print("usage: %s qr [svg] [key]" % params[0])
@@ -538,6 +562,7 @@ def arg_rules(params):
   size = None
   symbols = ''
   classes = ''
+  target = None
   for param in params[4:]:
     if not classes and set(list(param)) - {'u','l','s','d'} == set():
       if 's' in param:
@@ -554,9 +579,12 @@ def arg_rules(params):
     if set(param) - set(bin2pass.symbols) == set():
       symbols = param
       continue
-    print(f'invalid {params[1]} parameter: "{param}"')
-    usage(params)
-  return user, site, classes or '', symbols, size or 0
+    if verbose: print(f'using "{param}" as target password', file=sys.stderr)
+    target = param
+  if target is not None and (symbols or classes or size):
+    print(f"invalid args for {param[1]}: \"{params[4:]}\"", file=sys.stderr)
+    usage()
+  return user, site, classes or '', symbols, size or 0, target
 
 def test_pwd(pwd):
   q = zxcvbn(pwd.decode('utf8'))
@@ -576,10 +604,10 @@ def main(params):
   args = []
   if params[1] == 'create':
     try:
-      user,site,classes, syms, size = arg_rules(params)
+      user,site,classes, syms, size, target = arg_rules(params)
     except: usage(params)
     cmd = create
-    args = (user, site, classes, syms, size)
+    args = (user, site, classes, syms, size, target)
   elif params[1] == 'init':
     if len(params) != 2: usage(params)
     sys.exit(init_key())
@@ -589,10 +617,10 @@ def main(params):
     args = (params[2], params[3])
   elif params[1] == 'change':
     try:
-      user,site,classes,syms,size = arg_rules(params)
+      user,site,classes,syms,size, target = arg_rules(params)
     except: usage(params)
     cmd = change
-    args = (user, site, classes, syms, size)
+    args = (user, site, classes, syms, size, target)
   elif params[1] == 'commit':
     if len(params) != 4: usage(params)
     cmd = commit
@@ -649,7 +677,7 @@ def main(params):
         raise # todo remove only for dbg
     s.close() # todo is still needed?
     if not ret:
-      print("fail")
+      print("fail", file=sys.stderr)
       sys.exit(1)
     if cmd not in {delete, undo, commit}:
       print(ret)
@@ -662,5 +690,5 @@ if __name__ == '__main__':
   try:
     main(sys.argv)
   except Exception:
-    print("fail")
+    print("fail", file=sys.stderr)
     raise # todo remove only for dbg

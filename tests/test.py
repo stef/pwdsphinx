@@ -308,6 +308,27 @@ class TestEndToEnd(unittest.TestCase):
             self.assertRaises(ValueError, sphinx.create, s, pwd, user2, host, char_classes, syms, size)
         sphinx.get_signkey = get_signkey
 
+    def test_create_user_xormask(self):
+        with sphinx.connect() as s:
+          rwd = sphinx.create(s, pwd, user, host, '', '', 0, pwd)
+        self.assertIsInstance(rwd, str)
+        self.assertEqual(pwd, rwd)
+
+    def test_change_xormask(self):
+        with sphinx.connect() as s:
+          rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
+          self.assertIsInstance(rwd0, str)
+
+        with sphinx.connect() as s:
+            rwd1 = sphinx.change(s, pwd, pwd, user, host, '', '', 0, pwd)
+        self.assertIsInstance(rwd1, str)
+        self.assertEqual(rwd1, pwd)
+
+        with sphinx.connect() as s:
+            rwd2 = sphinx.change(s, pwd, pwd, user, host, '', '', 0, pwd+pwd)
+        self.assertIsInstance(rwd2, str)
+        self.assertEqual(rwd2, pwd+pwd)
+
     def test_main_create(self):
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, size)))
