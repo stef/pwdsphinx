@@ -146,7 +146,7 @@ are the symbols supported (note the leading space char):
 
 Be careful, if you specify these on the command-line you'll have to escape the
 quotes you use for enclosing this list and possibly the backslash char that is
-also part of this list - in the above example this is already done.
+also part of this list.
 
 If you do not provide password rules, they will be defaulting to 'ulsd' and
 length as long as possible. 
