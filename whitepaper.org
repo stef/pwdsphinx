@@ -176,6 +176,19 @@ are in the order - if allowed -: upper-case, lower-case, digits, and
 the symbols in the order as they are listed in the compacted rules
 blob.
 
+In pseudo-code:
+
+#+BEGIN_SRC python
+    v = int.from_bytes(rwd, 'big')
+    result = ''
+    while (size > 0 and len(result) < size) or (size == 0 and v > 0):
+        idx = v % len(chars)
+        v //= len(chars)
+        result = chars[idx] + result
+    return result
+#+END_SRC
+
+
 *** RWD Xor Masks and Pre-defined Account Passwords
 
 Since the conversion from the binary rwd to the ASCII account password
@@ -193,6 +206,15 @@ target-rwd with the rwd of the SPHINX query and store the result in the
 xor mask. It is important to notice, that the maximum length of such
 pre-definied output passwords is maximum 38 characters long.
 
+
+Converting a base-n number back into an rwd is as simple as the
+following example pseudo-code:
+#+BEGIN_SRC python
+    le_str = string[::-1]
+    result = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
+    return int.to_bytes(result, 32, 'big')
+#+END_SRC
+
 ** Encrypted blobs
 
 Although Password Rules contain little information, we decided to keep
@@ -208,10 +230,9 @@ from the client master-key (see below) as follows:
    enc_key = blake2b("sphinx encryption key", masterkey)
 #+END_SRC
 
-Encryption/decryption of blobs is done using XSalsa20/Poly1305 as
-introduced by NaCl/libsodium as `crypto_secretbox`. Thus blobs are
-prefixed with a 24 bytes nonce and extended with a 16 bytes
-authentication tag.
+Encryption/decryption of blobs is done using `crypto_secretbox()`.
+Thus all encrypted blobs are prefixed with a 24
+bytes nonce and extended with a 16 bytes authentication tag.
 
 ** The client master-key
 
@@ -220,13 +241,13 @@ derived from a client master-key.
 
 Although SPHINX itself is a protocol which does not require any state
 stored at the client. It lends itself to use SPHINX itself to
-authenticate any management operation. Sadly this means that the
-server would be able to mount offline bruteforce attacks against the
-master password, and hence it is not possible to use SPHINX to
+authenticate any management operation. Unfortunately this means that
+the server would be able to mount offline bruteforce attacks against
+the master password, and hence it is not possible to use SPHINX to
 authenticate with a SPHINX server directly without throwing out one of
 the most important security guarantees of the SPHINX protocol.
 
-One possibility would be to use a Threshold-version of SPHINX to
+One possibility would be to use a threshold-version of SPHINX to
 authenticate to a SPHINX server, however this brings up a few
 complications and availability issues.
 
@@ -239,23 +260,23 @@ Protocol requires a master-key at the client. This key must be synched
 to other devices that belong to the same user in case the user wants
 to use the same accounts on multiple devices. This master-key can (and
 should) be backed up by the user to provide access to their passwords
-and to manage them.
+and to be able to manage them.
 
-It is important to note that the passwords themselves to not depend
-in any way on this master-key. The master-key is only used for
-generating the record IDs, to derive authentication keys for
-management operations and to generate encryption keys for the list of
-users associated with a host.
+It is important to note that the passwords themselves to not depend in
+any way on this master-key. The master-key is only used for generating
+the record IDs, to derive authentication keys for management
+operations and to generate encryption keys for the encryption of user
+and rules blobs.
 
 For more information on what the loss of confidentiality of this
-master-key means see our section: Bruteforce attacks against our Sphinx
-implementation.
+master-key means see our section: Bruteforce attacks against our
+Sphinx implementation.
 
 ** Record IDs
 
-In order to store multiple keys for different accounts, we need to be
-able to refer to them somehow. Record IDs are calculated by the client
-in the following way:
+In order to store different accounts, we need to be able to refer to
+them somehow. Record IDs should be calculated by the client in the
+following way:
 
 #+BEGIN_EXAMPLE
    id_key = blake2b("sphinx host salt", masterkey)
@@ -263,8 +284,7 @@ in the following way:
 #+END_EXAMPLE
 
 The id_key is necessary to prohibit guessing IDs and pre-computation
-dictionary attacks against these ids. Unfortunately the server will be
-able to collect usage statistics on the records.
+dictionary attacks against these ids.
 
 This way of generating record ids should also protect against phishing
 as long as the hostname is directly taken from the URL-bar, it should
@@ -289,7 +309,7 @@ drawbacks.
 
 *** Authentication-keys without master passwords
 
-If the rwd_keys configuration option is set to false management
+If the rwd_keys configuration option is set to false, management
 operations are authenticated in the following way:
 
 When creating a new record, the client sends along a unique pubkey,
@@ -367,18 +387,20 @@ of these records is not very strong, there are countless better
 methods to do so.
 
 The usernames in these records a separated by 0x0 bytes, and the whole
-record cannot be bigger than 64KB - 40 bytes - which are needed for
-the nonce and authentication tag of encrypted blobs. Furthermore these
-user records are prefixed by their length in 2 bytes network order,
-but these two bytes do not count towards the maximum size of the user
-record. The structure of these encrypted user record blobs thus looks
-like this:
+record cannot be bigger than (64KB - 40) bytes - the 40 bytes are
+reserved for the nonce and authentication tag of encrypted
+blobs. Furthermore these user records are prefixed by their length in
+2 bytes network order, but these two bytes do not count towards the
+maximum size of the user record. The structure of these encrypted user
+record blobs thus looks like this:
 
+#+BEGIN_EXAMPLE
 +--------------+----------+------------+--------------------+
 | 2 bytes      | 24 bytes | n bytes    | 16 bytes           |
 |--------------+----------+------------+--------------------|
 | size of blob | nonce    | ciphertext | authentication tag |
 +--------------+----------+------------+--------------------+
+#+END_EXAMPLE
 
 ** The Extended Sphinx Protocol Messages
 
@@ -404,9 +426,9 @@ All initial messages (except the `read` and `create` operation) sent
 from the client to the server have the same structure:
 
 #+BEGIN_SRC
-   u8   ratelimit_opcode,
-   u8   opcode,
-   u8   id[32],
+   u8   ratelimit_opcode
+   u8   opcode
+   u8   id[32]
    u8   alpha[32]
 #+END_SRC
 
@@ -423,8 +445,8 @@ lacking the last `alpha` member.
 The ratelimit_opcodes are the following:
 
 #+BEGIN_SRC
-CHALLENGE_CREATE = 0x5a'
-CHALLENGE_VERIFY = 0xa5'
+CHALLENGE_CREATE = 0x5a
+CHALLENGE_VERIFY = 0xa5
 #+END_SRC
 
 Here `CHALLENGE_CREATE` requests a new ratelimiting challenge, and
@@ -489,18 +511,20 @@ Creation of a record is a quite straight-forward matter:
     a run of the SPHINX Query (see above), but the server instead of
     loading a sphinx seed (which doesn't exist yet) just generates one
     randomly.
- 2. The client updates the user record (see below) for this host,
+ 2. The client derives the encryption and authentication key. The
+    password rules are encrypted and appended to the authentication
+    public key. The auth pubkey and the encrypted rules are signed
+    with the auth private key and sent to the server
+ 3. The client updates the user record (see below) for this host,
     requesting the current user record, decrypting it, and appending
     the new user to this record, finally sending the encrypted blob
     back to the server.
- 3. The client derives the encryption and authentication key. The
-    password rules are encrypted and appended to the authentication
-    public key. The auth pubkey and the encrypted rules are signed
-    with the auth private key and sent to the server, which stores the
-    pubkey and the password generation rules next to the seed already
-    generated in the first step of the CREATE operation.
- 4. Finally the rwd is used to derive the password and the password
-    rules are applied.
+ 4. If everything went well, the server stores the pubkey and the
+    password generation rules next to the seed already generated in
+    the first step of the CREATE operation.
+ 4. Finally the client uses the rwd to derive the password using the
+    password rules, and returns the newly generated account password
+    to the user.
 
 Notable is that neither ratelimiting nor authentication happen during
 creation - (note there is authentication when updating the user
@@ -508,35 +532,30 @@ record, but not when creating a user record).
 
 *** Changing of passwords/records
 
-1. Changing of a record requires authentication.
-
-2. Successful authentication is followed by the client initiating a second
-Sphinx Query - possibly with a changed master password and also
-sending along a newly encrypted password rules blob. This allows a
-client - if required - to change either of these, but they can also
-stay the same.
-
-3. The server generates a new sphinx seed and executes its part of the
-Sphinx query on it - sending back the resulting `beta` value to the
-client.
-
-4. The client can finish the Sphinx query using the new sphinx
-rwd. Using this it can generate a new authentication key-pair. It
-signs the new public key with the new secret key - just to prove
-ownership of this keypair, and sends the signed public key back to the
-server.
-
-5. The server checks if the public key can be used to verify the
-signature over it, if successful the server stores the new sphinx
-seed, the new auth public key and the new encrypted password rules
-blob marking them all as `new` - still keeping the original values
-active. If all this succeeds the server finally sends back the string
-"ok" to the client.
-
-6. Upon receiving the "ok" message from the server, the client using
-the possibly changed password rules derives the new rwd from the
-result of the second sphinx query and returns the new password to the
-user.
+ 1. Changing of a record requires authentication.
+ 2. Successful authentication is followed by the client initiating a
+    second Sphinx Query - possibly with a changed master password and
+    also sending along a newly encrypted password rules blob. This
+    allows a client - if required - to change either of these, but
+    they can also stay the same.
+ 3. The server generates a new sphinx seed and executes its part of
+    the Sphinx query on it - sending back the resulting `beta` value
+    to the client.
+ 4. The client can finish the Sphinx query using the new sphinx
+    rwd. Using this it can generate a new authentication key-pair. It
+    signs the new public key with the new secret key - just to prove
+    ownership of this keypair, and sends the signed public key back to
+    the server.
+ 5. The server checks if the public key can be used to verify the
+    signature over it, if successful the server stores the new sphinx
+    seed, the new auth public key and the new encrypted password rules
+    blob marking them all as `new` - still keeping the original values
+    active. If all this succeeds the server finally sends back the
+    string "ok" to the client.
+ 6. Upon receiving the "ok" message from the server, the client using
+    the possibly changed password rules derives the new rwd from the
+    result of the second sphinx query and returns the new password to
+    the user.
 
 The above procedure allows a user to change or keep their master
 password, or to change the password rules if needed. But it is also
@@ -547,7 +566,7 @@ the new password will be different from the old one.
 Also notable is, that this operation in fact does not change the
 password despite its name, it merely generates a new one, which still
 needs to be activated using the Commit operation. Client
-implementations can automatically call Commit after a successful
+implementations may automatically call Commit after a successful
 Change operation.
 
 *** Commit new record
@@ -572,13 +591,13 @@ allows to revert the Commit and use the old password. This function is
 provided in case the password change at the service fails for some
 reason.
 
-Undoing is a simple flow and very similar to the Commit operation (in
-fact it is its opposite), it starts with and authentication using the
-currently active master password. If the authentication succeeds the
-server replaces the current record. The old password, authentication
-public key and password rules are marked as old, in case the change of
-the password fails and the account is still stuck with the old
-password, the Commit operation can be reverted by the Undo operation.
+Undoing is a simple flow and very similar to the Commit operation, it
+starts with and authentication using the currently active master
+password. If the authentication succeeds the server marks the current
+record as new. The current password, authentication public key and
+password rules are replaced bye the old one. The Undo operation can be
+redone by the Commit operation to accomodate confusion when updating
+an account password.
 
 *** Deletion of keys
 
@@ -600,15 +619,15 @@ returns the encrypted user record blob.
 *** Updating of user records
 
 Updating user records can only be done by creating or deleting sphinx
-records.
+records. During an create or delete operation:
 
-1. An update is initiated by sending the user record id to the
-server.
+ 1. An update is initiated by sending the user record id to the
+    server.
 
-2. The server responds with the user record if there is such, or
-an empty user record if there is none. User records are always
-prefixed with 2 bytes representing their size, empty user records are
-thus signaled by responding with two zero bytes.
+ 2. The server responds with the user record if there is such, or an
+    empty user record if there is none. User records are always
+    prefixed with 2 bytes representing their size, empty user records
+    are thus signaled by responding with two zero bytes.
 
 If there was no existing user record, then a create user record flow
 is executed:
@@ -629,12 +648,12 @@ In pseudo-code this looks as such
 #+END_SRC
 
 The server:
-   1. receives the authentication pubkey, the size of the blob, the
-      blob itself, and the signature over the whole message.
-   2. using the authentication pubkey the server verifies the
-      signature, if this verification fails the server aborts.
-   3. the server stores the auth pubkey and the user record blob under
-      the user record id.
+ 1. receives the authentication pubkey, the size of the blob, the
+    blob itself, and the signature over the whole message.
+ 2. using the authentication pubkey the server verifies the
+    signature, if this verification fails the server aborts.
+ 3. the server stores the auth pubkey and the user record blob under
+    the user record id.
 
 If there already was an existing user record, then an update user
 record flow is executed which is simpler than the create flow, since
