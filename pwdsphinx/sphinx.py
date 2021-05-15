@@ -62,7 +62,7 @@ SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
 CHECK_CTX = b"sphinx check digit context"
 
-RULE_SIZE = 62
+RULE_SIZE = 78
 
 #### Helper fns ####
 
@@ -139,9 +139,8 @@ def getid(host, user):
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
-def unpack_rule(nonce_ct):
-  nonce, ct = nonce_ct[:24], nonce_ct[24:]
-  packed = pysodium.crypto_stream_xchacha20_xor(ct, nonce, get_sealkey())
+def unpack_rule(ct):
+  packed = decrypt_blob(ct)
   xor_mask = packed[-32:]
   v = int.from_bytes(packed[:-32], "big")
 
@@ -172,9 +171,7 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   packed = packed + (sum(1<<i for i, c in enumerate(bin2pass.symbols) if c in syms) << (7 + 3))
   packed = packed + ((check_digit & ((1<<5) - 1)) << (7 + 3 + 33) )
   pt = packed.to_bytes(6,"big") + xor_mask
-  nonce = pysodium.randombytes(pysodium.crypto_stream_xchacha20_NONCEBYTES)
-  ct = pysodium.crypto_stream_xchacha20_xor(pt, nonce, get_sealkey())
-  return nonce+ct
+  return encrypt_blob(pt)
 
 def xor(x,y):
   return bytes(a ^ b for (a, b) in zip(x, y))
@@ -573,8 +570,10 @@ def arg_rules(params):
       continue
     if not size:
       try:
-        size = int(param)
-        continue
+        tmp = int(param)
+        if tmp<79:
+          size = tmp
+          continue
       except: pass
     if set(param) - set(bin2pass.symbols) == set():
       symbols = param
@@ -583,7 +582,7 @@ def arg_rules(params):
     target = param
   if target is not None and (symbols or classes or size):
     print(f"invalid args for {param[1]}: \"{params[4:]}\"", file=sys.stderr)
-    usage()
+    usage(param)
   return user, site, classes or '', symbols, size or 0, target
 
 def test_pwd(pwd):

@@ -36,7 +36,7 @@ CHALLENGE_CREATE = 0x5a
 CHALLENGE_VERIFY = 0xa5
 DELETE=0xff
 
-RULE_SIZE=62
+RULE_SIZE=78
 
 Difficulties = [
     # timeouts are based on benchmarking a raspberry pi 1b
