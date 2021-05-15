@@ -1,15 +1,15 @@
 * The Extended Sphinx Protocol
 
 SPHINX is a beautiful protocol for password storage querying and
-inserting of one password.
+inserting of exactly one password.
 
-However in a real-life scenario users might want to store more than
-one password, or sometimes even want to change the password or delete
-it, users might have more than one account at a site and users do not
-want to remember the list of user names, nor do they want to
-synchronize them over all of their devices. These are some things that
-SPHINX does not provide. Hence it is necessary to extend the original
-SPHINX protocol.
+However in a real-life scenario users want to store more than one
+password, or sometimes user want to change the password or delete it.
+Users might have more than one account at a site and users do not want
+to remember the list of user names, nor do they want to synchronize
+them over all of their devices. These are some things that SPHINX does
+not provide. Hence it is necessary to extend the original SPHINX
+protocol.
 
 ** Terminology
 *** Sphinx Records
@@ -60,8 +60,8 @@ previous password, listing usernames associated with a host.
 ** Core Sphinx Protocol
 
 The most essential operation in the Extended Sphinx Protocol is the
-original Sphinx query. This is the basis for all other operations
-in the protocol - the only exception being the READ operation.
+Sphinx query. This is the basis for all other operations in the
+protocol - the only exception being the READ operation.
 
 Let's recap how the SPHINX query works:
 
@@ -99,6 +99,8 @@ the rwd:
  rwd = hash(pwd,pwd_k)
 #+END_SRC
 
+In our implementation `rwd` results in a high entropy 32 byte array.
+
 * The Extended Sphinx Protocol Details
 
 In the following sections we specify our extensions we added to the
@@ -114,8 +116,14 @@ password should be. In order to store these per-service information
 without having to sync this across different devices used by a user we
 store these per-service password rules on the sphinx server.
 
+We extended the core Sphinx Protocol by having the server send along
+the password rules together with the beta value at the end of step two
+of the core sphinx protocol - so that the client can derive the
+correct password.
+
 Rules are compacted in the following way:
 
+#+BEGIN_EXAMPLE
 |---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | a | b | c | d | e | f |
 |---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---|
@@ -135,39 +143,55 @@ Rules are compacted in the following way:
 |---------------------------+---+---+---+---+-------------------|
 
 and a 32 byte long xor mask.
+#+END_EXAMPLE
 
 The longest password we can derive out of 32 bytes, is only 76 chars
 long if only digits are allowed. Thus 7 bits are enough to encode the
 size of a password.
 
-We extended the core Sphinx Protocol by having the server send along
-the password rules together with the beta value at the end of step two
-of the core sphinx protocol - so that the client can derive the
-correct password.
+The bits 7-9 encode the character classes: upper-case, lower-case,
+digits.
+
+Bits 0xa - 0x2a are a boolean array storing if a particular symbol is
+allowed or not.
+
+*** Check digit
+
+The check-digit is a 5 bit number that is used as a simple check if
+the derived password is correct or not. There is a 1/32 chance that a
+wrong password goes on undetected. The check-digit is calculated as
+such:
+
+#+BEGIN_SRC
+  check-digit = blake2b("sphinx check digit context", rwd, 1)[0] & 0x1ff
+#+END_SRC
+
+*** rwd to ASCII conversion
 
 The conversion from the 32 byte array to an ASCII printable string
-containing only the characters allowed by the rules. The conversion
-interprets the 32 bytes as an integer in big-endian order and then
-encodes it base-n, where n is the number of characters allowed by the
-rules. The digits are in the order - if allowed -: upper-case,
-lower-case, digits, and the symbols in the order as they are listed in
-the compacted rules blob.
+containing only the characters allowed by the rules interprets the 32
+bytes as an integer in big-endian order and then encodes it base-n,
+where n is the number of characters allowed by the rules. The digits
+are in the order - if allowed -: upper-case, lower-case, digits, and
+the symbols in the order as they are listed in the compacted rules
+blob.
 
-Since the conversion from binary to ASCII password is simple
-arithmetic it is also possible to reverse and this allows us to
-calculate the binary that SPHINX should output in order to generate a
-specified password. It is however not possible do actually make SPHINX
-output this value. In order to allow certain non-random specified
-passwords to be output by SPHINX we xor the output of the SPHINX query
+*** RWD Xor Masks and Pre-defined Account Passwords
+
+Since the conversion from the binary rwd to the ASCII account password
+is simple arithmetic it is also possible to reverse. This allows us to
+calculate the binary rwd that SPHINX should output in order to
+generate a specified password. It is however not possible do actually
+make SPHINX output this value directly. In order to allow certain
+non-random pre-defined passwords to be output by SPHINX we xor the rwd
 with the xor mask from the rules blob. Normally the xor mask is all
 zeroes, and thus the output of the SPHINX query is unchanged and thus
-totally random. If the user specifies an "output"" password during
-Create or Change operations, we first calculate backwards the 32 byte
-binary array that would produce that output, and then we xor this
-array, with the output of the SPHINX query and store the result in the
+totally random. If the user specifies a pre-defined password during
+Create or Change operations, we first calculate backwards the target
+rwd that would produce that pre-defined output, and then we xor this
+target-rwd with the rwd of the SPHINX query and store the result in the
 xor mask. It is important to notice, that the maximum length of such
-specified output passwords is maximum 38 characters long.
-
+pre-definied output passwords is maximum 38 characters long.
 
 ** Encrypted blobs
 
@@ -185,8 +209,9 @@ from the client master-key (see below) as follows:
 #+END_SRC
 
 Encryption/decryption of blobs is done using XSalsa20/Poly1305 as
-introduced by NaCl/libsodium. Thus blobs are prefixed with a 24
-bytes nonce and extended with a 16 bytes authentication tag.
+introduced by NaCl/libsodium as `crypto_secretbox`. Thus blobs are
+prefixed with a 24 bytes nonce and extended with a 16 bytes
+authentication tag.
 
 ** The client master-key
 
