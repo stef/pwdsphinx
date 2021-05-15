@@ -707,9 +707,11 @@ The server:
 
 Given the following abstract model of the SPHINX protocol:
 
+#+BEGIN_EXAMPLE
   Sphinx(seed) <--<[get password]--> Client(secret) <--[login]--> Server(userdb)
       ^                                  ^                            ^
        \----------------------------> Attacker <---------------------/
+#+END_EXAMPLE
 
 ** None of the 3 parties are compromised
 
