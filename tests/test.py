@@ -21,7 +21,7 @@ data_dir = '/home/s/tasks/sphinx/zphinx/data/'
 orig_data_files = set(listdir(data_dir))
 char_classes = 'uld'
 syms = bin2pass.symbols
-size = 80
+size = 0
 pwd = 'asdf'
 user = 'user1'
 user2 = 'user2'
@@ -331,25 +331,25 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_main_create(self):
         sys.stdin = Input()
-        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, size)))
+        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, str(size))))
 
     def test_main_get(self):
         sys.stdin = Input()
-        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, size)))
+        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, str(size))))
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'get', user, host)))
 
     def test_main_delete(self):
         sys.stdin = Input()
-        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, size)))
+        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, str(size))))
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'delete', user, host)))
 
     def test_main_change_commit_undo(self):
         sys.stdin = Input("qwer")
-        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, size)))
+        self.assertIsNone(sphinx.main(('sphinx.py', 'create', user, host, char_classes, syms, str(size))))
         sys.stdin = Input()
-        self.assertIsNone(sphinx.main(('sphinx.py', 'change', user, host, char_classes, syms, size)))
+        self.assertIsNone(sphinx.main(('sphinx.py', 'change', user, host, char_classes, syms, str(size))))
         sys.stdin = Input()
         self.assertIsNone(sphinx.main(('sphinx.py', 'commit', user, host)))
         sys.stdin = Input()
