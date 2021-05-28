@@ -29,7 +29,10 @@ hostname = cfg['client']['address']
 address = socket.gethostbyname(hostname)
 port = int(cfg['client'].get('port',2355))
 datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
-ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
+try:
+  ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
+except TypeError: # ignore when ssl_cert is not set
+  pass
 #  make RWD optional in signkey, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
