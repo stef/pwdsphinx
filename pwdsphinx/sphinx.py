@@ -600,7 +600,7 @@ def test_pwd(pwd):
 
 #### main ####
 
-def main(params):
+def main(params=sys.argv):
   if len(params) < 2: usage(params)
   cmd = None
   args = []
