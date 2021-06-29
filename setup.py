@@ -16,7 +16,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 setup(name = 'pwdsphinx',
-       version = '1.0-rc1',
+       version = '1.0-rc2',
        description = 'SPHINX password protocol',
        license = "GPLv3",
        author = 'Stefan Marsiske',
@@ -25,7 +25,7 @@ setup(name = 'pwdsphinx',
        long_description=read('README.md'),
        long_description_content_type="text/markdown",
        packages = ['pwdsphinx'],
-       install_requires = ("pysodium", "SecureString", "qrcodegen","zxcvbn-python"),
+       install_requires = ("pysodium", "SecureString", "qrcodegen","zxcvbn-python", 'pyequihash'),
        classifiers = ["Development Status :: 4 - Beta",
                       "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
                       "Topic :: Security :: Cryptography",
