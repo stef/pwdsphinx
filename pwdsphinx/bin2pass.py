@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+# SPDX-FileCopyrightText: 2018, 2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, struct, math
-from itertools import chain
+import sys, math, random
+
+#from itertools import chain
+#tuple(bytes([x]) for x in chain(range(32,48),range(58,65),range(91,97),range(123,127)))
+symbols = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
 
 sets = {
     # symbols
-    's': tuple(bytes([x]) for x in chain(range(32,48),range(58,65),range(91,97),range(123,127))),
     # digits
     'd': tuple(bytes([x]) for x in range(48,58)),
     # upper-case
@@ -16,69 +18,67 @@ sets = {
     # lower-case
     'l': tuple(bytes([x]) for x in range(97,123))}
 
-def encode(raw, chars):
-    l = len(raw)
-    r = l % 4
-    if r:
-        raw += b'\0' * (4 - r)
-    longs = len(raw) >> 2
-    out = []
-    words = struct.unpack('>%dL' % (longs), raw)
+allchars = ''.join(tuple(c.decode('utf8') for x in (sets[c] for c in ('u','l','d') if c in 'uld') for c in x) + tuple(symbols))
 
-    char_size = len(chars)
-    out_fact=int(math.log(2**32, char_size))+1
-    for word in words:
-        for _ in range(out_fact):
-            word, r = divmod(word, char_size)
-            out += chars[r]
+def bin2pass(raw, chars, size):
+    v = int.from_bytes(raw, 'big')
+    result = ''
+    while (size > 0 and len(result) < size) or (size == 0 and v > 0):
+        idx = v % len(chars)
+        v //= len(chars)
+        result = chars[idx] + result
+    return result
 
-    #out = b''.join(out)
+def pass2bin(string, chars = allchars):
+    le_str = string[::-1]
+    logbase = int(math.log(1<<256, len(chars)))
+    r = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
+    # add padding
+    r += sum(chars.find(random.choice(chars)) * len(chars)**i for i in range(len(le_str), logbase))
+    return int.to_bytes(r, 32, 'big')
 
-    # Trim padding
-    olen = l % 4
-    if olen:
-        olen += 1
-    olen += l / 4 * out_fact
-    return bytes(out[:int(olen)])
-
-def derive(rwd,rule,size):
-    chars = tuple(c for x in (sets[c] for c in ('s','u','l','d') if c in rule) for c in x)
-    password = encode(rwd,chars)
+def derive(rwd, rule, size, syms=symbols):
+    chars = tuple(c.decode('utf8') for x in (sets[c] for c in ('u','l','d') if c in rule) for c in x) + tuple(x for x in symbols if x in set(syms))
+    password = bin2pass(rwd,chars, size)
     if size>0: password=password[:size]
     return password
 
 def usage():
-    print("usage: %s [d|u|s|l] [<max size>] <binary\tgenerate password with [d]igits/[u]pper/[l]ower/[s]ymbols of <max size> {default: duls}" % sys.argv[0])
+    print("usage: %s [d|u|l] [<max size>] \" !\"#$%%&'()*+,-./:;<=>?@[\\]^_`{|}~\" <binary\tgenerate password with [d]igits/[u]pper/[l]ower of <max size> {default: uld}" % sys.argv[0])
     sys.exit(0)
 
 def main():
-  if len(sys.argv)>3 or 'h' in sys.argv or '--help' in sys.argv:
+  if len(sys.argv)>4 or 'h' in sys.argv or '--help' in sys.argv:
     usage()
+
+  if len(sys.argv)==2: # figure out if set or size
+    if sys.argv[1]=='s':
+      print("all symbols:", symbols)
+      return
 
   size = 0
   raw = sys.stdin.buffer.read(32)
+  syms = symbols
+  rule = 'uld'
 
-  if len(sys.argv)==1:
-    rule = 'ulsd'
-
-  elif len(sys.argv)==2: # figure out if set or size
+  for arg in sys.argv[1:]:
     try:
-      size = int(sys.argv[1])
-    except ValueError:
-      # probably a set specification
-      rule = sys.argv[1]
-  else:
-    try:
-      size = int(sys.argv[2])
-    except ValueError:
-      usage();
-    rule = sys.argv[1]
+      size = int(arg)
+      continue
+    except ValueError: pass
+    # a symbol set specification?
+    if set(arg) - set(symbols) == set():
+      syms = set(arg)
+    elif set(arg) - set("uld") == set():
+      rule = arg
+    else:
+      usage()
 
   if size<0:
     print("error size must be < 0")
     usage()
 
-  print(derive(raw,rule,size))
+  print(derive(raw,rule,size,syms).decode("utf8"))
 
 if __name__ == '__main__':
   main()

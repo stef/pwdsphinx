@@ -1,15 +1,64 @@
 [client]
+# whether to produce some output on the console
 verbose = False
+
+# the ip address or hostname the server is listening on
 address = 127.0.0.1
+
+# the port on which the server is listening
 port = 2355
+
+# the directory where the client stores its master secret - you might want to
+# back this up
 datadir = ~/.sphinx/
+
+# master password optional for authentication, if it is False it protects
+# against offline master pwd bruteforce attacks. The drawback is that for known
+# (host,username) tuples the seeds/blobs can be changed/deleted by an attacker
+# if the client masterkey is known
+# rwd_keys=False
 
 [server]
-verbose = False
-address = 127.0.0.1
-port = 2355
-datadir = ~/.sphinx/
+# the ipv4 address the server is listening on
+# address="127.0.0.1"
+
+# the port on which the server is listening, use 443 if available, so that
+# the oracle can be accessed from behind thight firewalls
+port=2355
+
+# ssl key
+ssl_key="server.der"
+
+# ssl cert
+ssl_cert="cert.pem"
+
+# tcp connection timeouts, increase in case you have bad networks, with the
+# caveat that this might lead to easier resource exhaustion - blocking all
+# workers.
+#timeout=3
+
+# how many worker processes can run in parallel
+# max_kids=5
+
+# the root directory where all data is stored, default: /var/lib/sphinx
+datadir= "data"
+
+# whether to produce some output on the console
+verbose=true
+
+# decay ratelimit after rl_decay seconds
+rl_decay= 1800
+
+# increase hardness after rl_threshold attempts if not decaying
+rl_threshold= 1
+
+# when checking freshness of puzzle solution, allow this extra
+# gracetime in addition to the hardness max solution time
+rl_gracetime=10
 
 [websphinx]
+# the path of your pinentry program
 pinentry=/usr/bin/pinentry
+
+# a file where websphinx logs, this is only for dev/debug purposes
 log=

@@ -8,6 +8,7 @@ from SecureString import clearmem
 import pysodium
 from qrcodegen import QrCode
 from zxcvbn import zxcvbn
+from equihash import solve
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
@@ -38,12 +39,12 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 rwd_keys = not not cfg['client'].get('rwd_keys',False)
 
 if verbose:
-    print("hostname:", hostname)
-    print("address:", address)
-    print("port:", port)
-    print("datadir:", datadir)
-    print("ssl_cert:", ssl_cert)
-    print("rwd_keys:", rwd_keys)
+    print("hostname:", hostname, file=sys.stderr)
+    print("address:", address, file=sys.stderr)
+    print("port:", port, file=sys.stderr)
+    print("datadir:", datadir, file=sys.stderr)
+    print("ssl_cert:", ssl_cert, file=sys.stderr)
+    print("rwd_keys:", rwd_keys, file=sys.stderr)
 
 #### consts ####
 
@@ -55,12 +56,16 @@ COMMIT   =b'\x99' # change sphinx
 CHANGE   =b'\xaa' # sphinx
 DELETE   =b'\xff' # sphinx+blobs
 
+CHALLENGE_CREATE = b'\x5a'
+CHALLENGE_VERIFY = b'\xa5'
+
 ENC_CTX = b"sphinx encryption key"
 SIGN_CTX = b"sphinx signing key"
 SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
+CHECK_CTX = b"sphinx check digit context"
 
-RULE_SIZE = 42
+RULE_SIZE = 78
 
 #### Helper fns ####
 
@@ -85,7 +90,7 @@ def connect():
       ctx.check_hostname = True
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  s.settimeout(3)
+  s.settimeout(5)
   s = ctx.wrap_socket(s, server_hostname=hostname)
   s.connect((address, port))
   return s
@@ -137,69 +142,74 @@ def getid(host, user):
   clearmem(mk)
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
-def unpack_rule(rules):
-  rules = decrypt_blob(rules)
-  rule = struct.unpack(">H",rules)[0]
-  size = (rule & 0x7f)
-  rule = {c for i,c in enumerate(('u','l','s','d')) if (rule >> 7) & (1 << i)}
-  return rule, size
+def unpack_rule(ct):
+  packed = decrypt_blob(ct)
+  xor_mask = packed[-32:]
+  v = int.from_bytes(packed[:-32], "big")
 
-def pack_rule(char_classes, size):
+  size = v & ((1<<7) - 1)
+  rule = {c for i,c in enumerate(('u','l','d')) if (v >> 7) & (1 << i)}
+  symbols = [c for i,c in enumerate(bin2pass.symbols) if (v>>(7+3) & (1<<i))]
+  check_digit = (v>>(7+3+33))
+
+  return rule, symbols, size, check_digit, xor_mask
+
+def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   # pack rules into 2 bytes, and encrypt them
-  if set(char_classes) - {'u','l','s','d'}:
-    raise ValueError("error: rules can only contain any of 'ulsd'.")
+  if set(char_classes) - {'u','l','d'}:
+    raise ValueError("error: rules can only contain any of 'uld'.")
+  if set(syms) - set(bin2pass.symbols) != set():
+    raise ValueError("error: symbols can only contain any of '%s'." % bin2pass.symbols)
+  if xor_mask is None and (char_classes == '' and len(syms)<2):
+    raise ValueError("error: no char classes and not enough symbols specified.")
+  if xor_mask is None:
+      xor_mask = b'\x00' * 32
+  elif len(xor_mask)!=32:
+    raise ValueError("error: xor_mask must be 32bytes, is instead: %d." % len(xor_mask))
+  if size<0 or size>127:
+    raise ValueError("error: invalid max password size: %d." % size)
 
-  rules = sum(1<<i for i, c in enumerate(('u','l','s','d')) if c in char_classes)
-  # pack rule
-  return struct.pack('>H', (rules << 7) | (size & 0x7f))
+  packed = size
+  packed = packed + (sum(1<<i for i, c in enumerate(('u','l','d')) if c in char_classes) << 7)
+  packed = packed + (sum(1<<i for i, c in enumerate(bin2pass.symbols) if c in syms) << (7 + 3))
+  packed = packed + ((check_digit & ((1<<5) - 1)) << (7 + 3 + 33) )
+  pt = packed.to_bytes(6,"big") + xor_mask
+  return encrypt_blob(pt)
 
-def doSphinx(s, op, pwd, user, host):
+def xor(x,y):
+  return bytes(a ^ b for (a, b) in zip(x, y))
+
+def commit_undo(s, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([op, id, alpha])
-  s.send(msg)
-  if op != GET: # == CHANGE, UNDO, COMMIT
-     # auth: do sphinx with current seed, use it to sign the nonce
-    auth(s,id,pwd,r)
+  s = ratelimit(s, msg)
+  if not auth(s,id,pwd,r):
+    s.close()
+    raise ValueError("auth failed")
+  if s.recv(2)!=b'ok':
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
+    s.close()
+    raise ValueError("Operation failed")
+  s.close()
+  return True
 
-  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
-  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
-    raise ValueError("error: sphinx protocol failure.")
-  beta = resp[:32]
-  rules = resp[32:]
-  rwd = sphinxlib.finish(pwd, r, beta, id)
+def read_pkt(s,size):
+    res = []
+    read = 0
+    while read<size or len(res[-1])==0:
+      res.append(s.recv(size-read))
+      read+=len(res[-1])
 
-  try:
-    classes, size = unpack_rule(rules)
-  except ValueError:
-    return
-  if op != GET: # == CHANGE, UNDO, COMMIT
-    # in case of undo/commit we also need to rewrite the rules and pub auth signing key blob
-    if op in {UNDO,COMMIT}:
-      sk, pk = get_signkey(id, rwd)
-      clearmem(sk)
-      rule = encrypt_blob(pack_rule(classes, size))
-
-      # send over new signed(pubkey, rule)
-      msg = b''.join([pk, rule])
-      msg = sign_blob(msg, id, rwd)
-      s.send(msg)
-      if s.recv(2)!=b'ok':
-        print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways")
-        return 
-
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),classes,size).decode()
-  clearmem(rwd)
-
-  return ret
+    return b''.join(res)
 
 def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
     id = getid(host, '')
-    s.send(id)
+    signed_id = sign_blob(id, id, b'')
+    s.send(signed_id)
     # wait for user blob
     bsize = s.recv(2)
     bsize = struct.unpack('!H', bsize)[0]
-    # todo oracle can also just say fail - without a pktsize
     if bsize == 0:
       # it is a new blob, we need to attach an auth signing pubkey
       sk, pk = get_signkey(id, b'')
@@ -208,28 +218,31 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = encrypt_blob(item.encode())
       bsize = len(blob)
       if bsize >= 2**16:
-          raise ValueError("error: blob is bigger than 64KB.")
+        s.close()
+        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
       # again no rwd, to be independent of the master pwd
       blob = sign_blob(blob, id, b'')
     else:
-      blob = s.recv(bsize)
+      blob = read_pkt(s, bsize)
       if blob == b'fail':
-          print("error: reading blob failed")
-          return
+        s.close()
+        raise ValueError("reading user blob failed")
       blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
-      # todo/fix? we do not recognize if the user is already included in this list
       # this should not happen, but maybe it's a sign of corruption?
+      if item in items:
+        print(f'warning: "{item}" is already in the user record', file=sys.stderr)
       items.add(item)
       blob = ('\x00'.join(sorted(items))).encode()
       # notice we do not add rwd to encryption of user blobs
       blob = encrypt_blob(blob)
       bsize = len(blob)
-      if bsize+2 >= 2**16:
-          raise ValueError("error: blob is bigger than 64KB.")
+      if bsize >= 2**16:
+        s.close()
+        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       blob = sign_blob(blob, id, b'')
     s.send(blob)
@@ -254,12 +267,38 @@ def auth(s,id,pwd=None,r=None):
   s.send(sig)
   return rwd
 
+def ratelimit(s,req):
+  pkt0 = b''.join([CHALLENGE_CREATE, req])
+  s.send(pkt0)
+  challenge = s.recv(1+1+8+32) # n,k,ts,sig
+  if len(challenge)!= 1+1+8+32:
+    print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
+    raise ValueError("failed to get ratelimit challenge")
+  s.close()
+  n = challenge[0]
+  k = challenge[1]
+  if k==4:
+    if n < 90:
+      if verbose: print("got an easy puzzle: %d" % n, file=sys.stderr)
+    elif n > 100:
+      if verbose: print("got a hard puzzle: %d" % n, file=sys.stderr)
+    else:
+      if verbose: print("got a moderate puzzle: %d" % n, file=sys.stderr)
+  seed = challenge + req
+  solution = solve(n, k, seed)
+  s = connect()
+  pkt1 = b''.join([CHALLENGE_VERIFY, challenge])
+  s.send(pkt1)
+  s.send(req)
+  s.send(solution)
+  return s
+
 #### OPs ####
 
 def init_key():
   kfile = os.path.join(datadir,'masterkey')
   if os.path.exists(kfile):
-    print("Already initialized.")
+    print("Already initialized.", file=sys.stderr)
     return 1
   if not os.path.exists(datadir):
     os.makedirs(datadir, 0o700, exist_ok=True)
@@ -272,7 +311,7 @@ def init_key():
     clearmem(mk)
   return 0
 
-def create(s, pwd, user, host, char_classes, size=0):
+def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   # 1st step OPRF on the new seed
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
@@ -282,6 +321,7 @@ def create(s, pwd, user, host, char_classes, size=0):
   # wait for response from sphinx server
   beta = s.recv(32)
   if beta == b'\x00\x04fail':
+    s.close()
     raise ValueError("error: sphinx protocol failure.")
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
@@ -289,11 +329,17 @@ def create(s, pwd, user, host, char_classes, size=0):
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
 
-  try: size=int(size)
-  except:
-    raise ValueError("error: size has to be integer.")
-  rule = encrypt_blob(pack_rule(char_classes, size))
+  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
 
+  if target:
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    size = len(target)
+    char_classes = 'uld'
+    symbols = bin2pass.symbols
+  else:
+    xormask = b'\x00'*32
+
+  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
   msg = sign_blob(msg, id, rwd)
@@ -302,21 +348,54 @@ def create(s, pwd, user, host, char_classes, size=0):
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   update_rec(s, host, user)
+  s.close()
 
-  ret = bin2pass.derive(pysodium.crypto_generichash(PASS_CTX, rwd),char_classes,size).decode()
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+
+  ret = bin2pass.derive(rwd,char_classes,size,symbols)
   clearmem(rwd)
   return ret
 
 def get(s, pwd, user, host):
-  return doSphinx(s, GET, pwd, user, host)
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(pwd)
+  msg = b''.join([GET, id, alpha])
+  s = ratelimit(s, msg)
+
+  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
+  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+      s.close()
+      raise ValueError("error: sphinx protocol failure.")
+  beta = resp[:32]
+  rules = resp[32:]
+  rwd = sphinxlib.finish(pwd, r, beta, id)
+
+  try:
+    classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
+  except ValueError:
+    s.close()
+    return
+  s.close()
+
+  if (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
+    raise ValueError("bad checkdigit")
+
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  ret = bin2pass.derive(rwd,classes,size,symbols)
+  clearmem(rwd)
+
+  return ret
 
 def read_blob(s, id, rwd = b''):
   msg = b''.join([READ, id])
-  s.send(msg)
-  auth(s,id)
+  s = ratelimit(s, msg)
+  if auth(s,id) is False:
+    s.close()
+    return
   bsize = s.recv(2)
   bsize = struct.unpack('!H', bsize)[0]
   blob = s.recv(bsize)
+  s.close()
   if blob == b'fail':
     return
   return decrypt_blob(blob)
@@ -327,59 +406,114 @@ def users(s, host):
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
-def change(s, pwd, user, host):
-  return doSphinx(s, CHANGE, pwd, user, host)
+def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
+  id = getid(host, user)
+  r, alpha = sphinxlib.challenge(oldpwd)
+  msg = b''.join([CHANGE, id, alpha])
+  s = ratelimit(s, msg)
+  # auth: do sphinx with current seed, use it to sign the nonce
+  if not auth(s,id,oldpwd,r):
+    print('failed authentication', file=sys.stderr)
+    s.close()
+    return
+
+  r, alpha = sphinxlib.challenge(newpwd)
+  s.send(alpha)
+  beta = s.recv(32) # beta
+  if beta == b'\x00\x04fail' or len(beta)!=32:
+    s.close()
+    raise ValueError("error: sphinx protocol failure.")
+  rwd = sphinxlib.finish(newpwd, r, beta, id)
+
+  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+
+  if target:
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    size = len(target)
+    classes = 'uld'
+    symbols = bin2pass.symbols
+  else:
+    xormask = b'\x00'*32
+
+  rule = pack_rule(classes, symbols, size, checkdigit, xormask)
+
+  sk, pk = get_signkey(id, rwd)
+  clearmem(sk)
+  # send over new signed(pubkey)
+  s.send(sign_blob(b''.join([pk,rule]), id, rwd))
+
+  if s.recv(2)!=b'ok':
+    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
+    s.close()
+    return
+
+  s.close()
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  ret = bin2pass.derive(rwd,classes,size)
+  clearmem(rwd)
+
+  return ret
 
 def commit(s, pwd, user, host):
-  return doSphinx(s, COMMIT, pwd, user, host)
+  return commit_undo(s, COMMIT, pwd, user, host)
 
 def undo(s, pwd, user, host):
-  return doSphinx(s, UNDO, pwd, user, host)
+  return commit_undo(s, UNDO, pwd, user, host)
 
 def delete(s, pwd, user, host):
   # run sphinx to recover rwd for authentication
   id = getid(host, user)
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([DELETE, id, alpha])
-  s.send(msg) # alpha
+  s = ratelimit(s, msg)
   rwd = auth(s,id,pwd,r)
+  if not rwd:
+    s.close()
+    return
 
   # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
   id = getid(host, '')
-  s.send(id)
+  signed_id = sign_blob(id, id, b'')
+  s.send(signed_id)
   # wait for user blob
   bsize = s.recv(2)
   bsize = struct.unpack('!H', bsize)[0]
   if bsize == 0:
     # this should not happen, it means something is corrupt
-    print("error: server has no associated user record for this host")
+    print("error: server has no associated user record for this host", file=sys.stderr)
+    s.close()
     return
 
   blob = s.recv(bsize)
   # todo handle this
   if blob == b'fail':
+    s.close()
     return
   blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
-  # todo/fix? we do not recognize if the user is already included in this list
-  # this should not happen, but maybe it's a sign of corruption?
+  if user not in users:
+    # this should not happen, but maybe it's a sign of corruption?
+    print(f'warning "{user}" is not in user record', file=sys.stderr)
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
   blob = encrypt_blob(blob)
   bsize = len(blob)
   if bsize >= 2**16:
-      raise ValueError("error: blob is bigger than 64KB.")
+    s.close()
+    raise ValueError("error: blob is bigger than 64KB.")
   blob = struct.pack("!H", bsize) + blob
   blob = sign_blob(blob, id, b'')
 
   s.send(blob)
 
   if b'ok' != s.recv(2):
+    s.close()
     return
 
+  s.close()
   clearmem(rwd)
   return True
 
@@ -414,55 +548,95 @@ def qrcode(output, key):
   else:
     print(qr.to_svg_str(2))
 
+def usage(params):
+  print("usage: %s init" % params[0])
+  print("usage: %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
+  print("usage: %s <get|commit|undo|delete> <user> <site>" % params[0])
+  print("usage: %s list <site>" % params[0])
+  print("usage: %s qr [svg] [key]" % params[0])
+  sys.exit(1)
+
+def arg_rules(params):
+  user = params[2]
+  site = params[3]
+  size = None
+  symbols = ''
+  classes = ''
+  target = None
+  for param in params[4:]:
+    if not classes and set(list(param)) - {'u','l','s','d'} == set():
+      if 's' in param:
+        symbols = bin2pass.symbols
+        classes = ''.join(set(param) - set(['s']))
+      else:
+        classes = param
+      continue
+    if not size:
+      try:
+        tmp = int(param)
+        if tmp<79:
+          size = tmp
+          continue
+      except: pass
+    if set(param) - set(bin2pass.symbols) == set():
+      symbols = param
+      continue
+    if verbose: print(f'using "{param}" as target password', file=sys.stderr)
+    target = param
+  if target is not None and (symbols or classes or size):
+    print(f"invalid args for {param[1]}: \"{params[4:]}\"", file=sys.stderr)
+    usage(param)
+  return user, site, classes or '', symbols, size or 0, target
+
+def test_pwd(pwd):
+  q = zxcvbn(pwd.decode('utf8'))
+  print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
+        ("★" * q['score'],
+         "☆" * (4-q['score']),
+         q['score'],
+         q['crack_times_display']['online_throttling_100_per_hour'],
+         q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
+         q['guesses']), file=sys.stderr)
+
 #### main ####
 
-def main():
-  params = sys.argv
-  def usage():
-    print("usage: %s init" % params[0])
-    print("usage: %s create <user> <site> [u][l][d][s] [<size>]" % params[0])
-    print("usage: %s <get|change|commit|undo|delete> <user> <site>" % params[0])
-    print("usage: %s list <site>" % params[0])
-    print("usage: %s qr [svg] [key]" % params[0])
-    sys.exit(1)
-
-  if len(params) < 2: usage()
-
+def main(params):
+  if len(params) < 2: usage(params)
   cmd = None
   args = []
   if params[1] == 'create':
-    if len(params) not in (5,6): usage()
-    if len(params) == 6:
-      size=params[5]
-    else:
-      size = 0
+    try:
+      user,site,classes, syms, size, target = arg_rules(params)
+    except: usage(params)
     cmd = create
-    args = (params[2], params[3], params[4], size)
+    args = (user, site, classes, syms, size, target)
   elif params[1] == 'init':
-    if len(params) != 2: usage()
+    if len(params) != 2: usage(params)
     sys.exit(init_key())
   elif params[1] == 'get':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = get
     args = (params[2], params[3])
   elif params[1] == 'change':
-    if len(params) != 4: usage()
+    try:
+      user,site,classes,syms,size, target = arg_rules(params)
+    except: usage(params)
     cmd = change
-    args = (params[2], params[3])
+    args = (user, site, classes, syms, size, target)
   elif params[1] == 'commit':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = commit
     args = (params[2], params[3])
   elif params[1] == 'delete':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = delete
     args = (params[2], params[3])
   elif params[1] == 'list':
-    if len(params) != 3: usage()
+    if len(params) != 3: usage(params)
     cmd = users
     args = (params[2],)
   elif params[1] == 'undo':
-    if len(params) != 4: usage()
+    if len(params) != 4: usage(params)
     cmd = undo
     args = (params[2],params[3])
   elif params[1] == 'qr':
@@ -475,23 +649,22 @@ def main():
     if "key" in params:
       key=True
       del params[params.index("key")]
-    if params[2:]: usage()
+    if params[2:]: usage(params)
     qrcode(output, key)
     return
 
   if cmd is not None:
     s = connect()
     if cmd != users:
-      pwd = sys.stdin.buffer.read()
+      pwd = sys.stdin.buffer.readline().rstrip(b'\n')
+      if cmd == change:
+        newpwd = sys.stdin.buffer.readline().rstrip(b'\n')
+        if not newpwd:
+          newpwd = pwd
+        test_pwd(newpwd)
+        args=(newpwd,) + args
       if cmd == create:
-        q = zxcvbn(pwd.decode('utf8'))
-        print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
-              ("★" * q['score'],
-               "☆" * (4-q['score']),
-               q['score'],
-               q['crack_times_display']['online_throttling_100_per_hour'],
-               q['crack_times_display']['offline_slow_hashing_1e4_per_second'],
-               q['guesses']), file=sys.stderr)
+        test_pwd(pwd)
       try:
         ret = cmd(s, pwd, *args)
       except:
@@ -504,11 +677,11 @@ def main():
       except:
         ret = False
         raise # todo remove only for dbg
-    s.close()
+    s.close() # todo is still needed?
     if not ret:
-      print("fail")
+      print("fail", file=sys.stderr)
       sys.exit(1)
-    if cmd != delete:
+    if cmd not in {delete, undo, commit}:
       print(ret)
       sys.stdout.flush()
       clearmem(ret)
@@ -517,7 +690,7 @@ def main():
 
 if __name__ == '__main__':
   try:
-    main()
+    main(sys.argv)
   except Exception:
-    print("fail")
+    print("fail", file=sys.stderr)
     raise # todo remove only for dbg
