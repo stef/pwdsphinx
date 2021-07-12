@@ -950,10 +950,10 @@ in the following way.
 5. Based on the context difficulty level the puzzle is created as following:
 
    The original request and the equihash parameters - based on the
-   context difficulty level - n and k are concatenated with a 32bit
-   timestamp. Using the servers puzzle key this concatenation is then
-   signed using a keyed blake2b hash. The hash is appended to the
-   concatenation forming the challenge.
+   context difficulty level - n and k (both unsigned 8bit integers) are
+   concatenated with a 32bit timestamp. Using the servers puzzle key this
+   concatenation is then signed using a keyed blake2b hash. The hash is
+   appended to the concatenation forming the challenge.
 
 #+BEGIN_SRC
    challenge = n || k || timestamp
