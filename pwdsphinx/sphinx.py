@@ -65,7 +65,7 @@ SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
 CHECK_CTX = b"sphinx check digit context"
 
-RULE_SIZE = 78
+RULE_SIZE = 79
 
 #### Helper fns ####
 
@@ -119,16 +119,18 @@ def encrypt_blob(blob):
   nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
   ct = pysodium.crypto_secretbox(blob,nonce,sk)
   clearmem(sk)
-  return nonce+ct
+  return b'\x00'+nonce+ct
 
 def decrypt_blob(blob):
   # todo implement padding
   sk = get_sealkey()
+  version = blob[0]
+  blob = blob[1:]
   nonce = blob[:pysodium.crypto_secretbox_NONCEBYTES]
   blob = blob[pysodium.crypto_secretbox_NONCEBYTES:]
   res = pysodium.crypto_secretbox_open(blob,nonce,sk)
   clearmem(sk)
-  return res
+  return version, res
 
 def sign_blob(blob, id, rwd):
   sk, pk = get_signkey(id, rwd)
@@ -143,7 +145,7 @@ def getid(host, user):
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
 def unpack_rule(ct):
-  packed = decrypt_blob(ct)
+  version, packed = decrypt_blob(ct)
   xor_mask = packed[-32:]
   v = int.from_bytes(packed[:-32], "big")
 
@@ -230,7 +232,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       if blob == b'fail':
         s.close()
         raise ValueError("reading user blob failed")
-      blob = decrypt_blob(blob)
+      version, blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
       # this should not happen, but maybe it's a sign of corruption?
       if item in items:
@@ -401,7 +403,7 @@ def read_blob(s, id, rwd = b''):
   return decrypt_blob(blob)
 
 def users(s, host):
-  res = read_blob(s, getid(host, ''))
+  version, res = read_blob(s, getid(host, ''))
   if not res: return "no users found"
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
@@ -491,7 +493,7 @@ def delete(s, pwd, user, host):
   if blob == b'fail':
     s.close()
     return
-  blob = decrypt_blob(blob)
+  version, blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
   if user not in users:
     # this should not happen, but maybe it's a sign of corruption?

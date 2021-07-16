@@ -8,6 +8,7 @@ import pysodium
 import equihash
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
+from pwdsphinx.sphinx import RULE_SIZE
 cfg = getcfg('sphinx')
 
 verbose = cfg['server'].getboolean('verbose')
@@ -35,8 +36,6 @@ WRITE=0xcc
 CHALLENGE_CREATE = 0x5a
 CHALLENGE_VERIFY = 0xa5
 DELETE=0xff
-
-RULE_SIZE=78
 
 Difficulties = [
     # timeouts are based on benchmarking a raspberry pi 1b
