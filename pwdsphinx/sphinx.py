@@ -65,6 +65,8 @@ SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
 CHECK_CTX = b"sphinx check digit context"
 
+VERSION = b'\x00'
+
 RULE_SIZE = 79
 
 #### Helper fns ####
@@ -117,20 +119,20 @@ def encrypt_blob(blob):
   # todo implement padding
   sk = get_sealkey()
   nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
-  ct = pysodium.crypto_secretbox(blob,nonce,sk)
+  ct = pysodium.crypto_aead_xchacha20poly1305_ietf_encrypt(blob,VERSION,nonce,sk)
   clearmem(sk)
-  return b'\x00'+nonce+ct
+  return VERSION+nonce+ct
 
 def decrypt_blob(blob):
   # todo implement padding
   sk = get_sealkey()
-  version = blob[0]
+  version = blob[:1]
   blob = blob[1:]
   nonce = blob[:pysodium.crypto_secretbox_NONCEBYTES]
   blob = blob[pysodium.crypto_secretbox_NONCEBYTES:]
-  res = pysodium.crypto_secretbox_open(blob,nonce,sk)
+  res = pysodium.crypto_aead_xchacha20poly1305_ietf_decrypt(blob,version,nonce,sk)
   clearmem(sk)
-  return version, res
+  return VERSION, res
 
 def sign_blob(blob, id, rwd):
   sk, pk = get_signkey(id, rwd)
