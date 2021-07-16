@@ -56,7 +56,7 @@ class TestEndToEnd(unittest.TestCase):
         with sphinx.connect() as s:
             self.assertRaises(ValueError, sphinx.create,s, pwd, 'a'*(2**16 - 40), host, char_classes, syms, size)
         with sphinx.connect() as s:
-            rwd=sphinx.create(s, pwd, 'a'*(2**16 - 41), host, char_classes, syms, size)
+            rwd=sphinx.create(s, pwd, 'a'*(2**16 - 42), host, char_classes, syms, size)
             self.assertIsInstance(rwd, str)
         with sphinx.connect() as s:
             self.assertRaises(ValueError, sphinx.create, s, pwd, 'a', host, char_classes, syms, size)
