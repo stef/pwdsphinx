@@ -59,7 +59,7 @@ def main():
   size = 0
   raw = sys.stdin.buffer.read(32)
   syms = symbols
-  rule = 'uld'
+  rule = ''
 
   for arg in sys.argv[1:]:
     try:
@@ -78,7 +78,7 @@ def main():
     print("error size must be < 0")
     usage()
 
-  print(derive(raw,rule,size,syms).decode("utf8"))
+  print(derive(raw,rule,size,syms))
 
 if __name__ == '__main__':
   main()
