@@ -29,8 +29,8 @@ service. It is derived from the SPHINX key in a way that makes the
 output compatible with the password rules mandated by the service.
 *** rwd (Random word)
 High entropy 32 bytes derived from the SPHINX protocol by calculating:
-hash(pwd||hash2curve(pwd)*k), where k is a seed contributed by the
-password manager.
+hash(pwd||hash2curve(pwd)*k), where k is a server seed contributed by the
+sphinx server.
 *** Master Password
 The master password is the password which is used in SPHINX to query
 and derive the account password for a service. Unlike other password
@@ -65,7 +65,7 @@ protocol - the only exception being the READ operation.
 
 Let's recap how the SPHINX query works:
 
-1. The user hashes his password and then blinds it using the blinding
+1. The user hashes their password and then blinds it using the blinding
    factor `r`, the resulting alpha value is passed to the server.
 
 #+BEGIN_SRC
@@ -206,6 +206,10 @@ target-rwd with the rwd of the SPHINX query and store the result in the
 xor mask. It is important to notice, that the maximum length of such
 pre-definied output passwords is maximum 38 characters long.
 
+__Warning__ this mode generates passwords that violate the security guarantees
+of the sphinx protocol and should be avoided at all costs. This mode only
+exists as a convience function and a such a perfect example of convenience
+violating security.
 
 Converting a base-n number back into an rwd is as simple as the
 following example pseudo-code:
@@ -230,9 +234,13 @@ from the client master-key (see below) as follows:
    enc_key = blake2b("sphinx encryption key", masterkey)
 #+END_SRC
 
-Encryption/decryption of blobs is done using `crypto_secretbox()`.
+Encryption/decryption of blobs is done using
+`crypto_aead_xchacha20poly1305_ietf_encrypt()`.
 Thus all encrypted blobs are prefixed with a 24
 bytes nonce and extended with a 16 bytes authentication tag.
+
+Blobs are prepended with a version byte, that is authenticated
+but not encrypted.
 
 ** The client master-key
 
@@ -417,7 +425,7 @@ The following operations make up the extended protocol:
   - Delete: delete a record
   - Read: query the list of registered users with a host
 
-The user needs a client master-key and his master password to
+The user needs a client master-key and their master password to
 successfully address records and to authenticate management operations.
 
 ** Initial messages
@@ -769,7 +777,7 @@ The only obvious defense against this attack is ratelimiting and
 (b)locking bruteforce attackers in the enumeration phase and the
 master password recovery phase.
 
-** The Server user db is leaked
+** The Service user db is leaked
 
 Lacking the Client secret makes any online bruteforce attacks
 involving the Sphinx storage unfeasable since the user ids under
