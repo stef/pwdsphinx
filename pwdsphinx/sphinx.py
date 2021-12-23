@@ -159,7 +159,7 @@ def unpack_rule(ct):
   return rule, symbols, size, check_digit, xor_mask
 
 def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
-  # pack rules into 2 bytes, and encrypt them
+  # pack rules into and encrypt them
   if set(char_classes) - {'u','l','d'}:
     raise ValueError("error: rules can only contain any of 'uld'.")
   if set(syms) - set(bin2pass.symbols) != set():
