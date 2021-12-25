@@ -453,7 +453,7 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   s.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
-  ret = bin2pass.derive(rwd,classes,size)
+  ret = bin2pass.derive(rwd,classes,size,symbols)
   clearmem(rwd)
 
   return ret
