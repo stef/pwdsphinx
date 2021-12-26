@@ -485,12 +485,14 @@ def verify_challenge(conn):
   sig, tmp = pop(tmp,32)
 
   # read request
-  req = conn.read(65)
-  if req[0] == READ:
-    if len(req)!=33:
-      fail(conn)
-  elif len(req)!=65:
-    fail(conn)
+  req_type = conn.read(1)
+  if req_type == READ:
+    payload = conn.read(32)
+    if len(payload)!=32: fail(conn)
+  else:
+    payload = conn.read(64)
+    if len(payload)!=64: fail(conn)
+  req = req_type + payload
   # read mac key
   key = load_blob('', "key", 32)
   if not key:
