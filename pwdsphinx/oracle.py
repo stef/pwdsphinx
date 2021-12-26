@@ -486,7 +486,7 @@ def verify_challenge(conn):
 
   # read request
   req_type = conn.read(1)
-  if req_type == READ:
+  if req_type[0] == READ:
     payload = conn.read(32)
     if len(payload)!=32: fail(conn)
   else:
