@@ -127,12 +127,14 @@ def decrypt_blob(blob):
   # todo implement padding
   sk = get_sealkey()
   version = blob[:1]
+  if version > VERSION:
+    raise ValueError("Your client is too old to handle this response. Please update your client.")
   blob = blob[1:]
   nonce = blob[:pysodium.crypto_secretbox_NONCEBYTES]
   blob = blob[pysodium.crypto_secretbox_NONCEBYTES:]
   res = pysodium.crypto_aead_xchacha20poly1305_ietf_decrypt(blob,version,nonce,sk)
   clearmem(sk)
-  return VERSION, res
+  return version, res
 
 def sign_blob(blob, id, rwd):
   sk, pk = get_signkey(id, rwd)
