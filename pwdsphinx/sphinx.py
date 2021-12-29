@@ -407,8 +407,9 @@ def read_blob(s, id, rwd = b''):
   return decrypt_blob(blob)
 
 def users(s, host):
-  version, res = read_blob(s, getid(host, ''))
+  res = read_blob(s, getid(host, ''))
   if not res: return "no users found"
+  version, res = res
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
