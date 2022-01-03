@@ -23,7 +23,7 @@ datadir = ~/.sphinx/
 # address="127.0.0.1"
 
 # the port on which the server is listening, use 443 if available, so that
-# the oracle can be accessed from behind thight firewalls
+# the oracle can be accessed from behind tight firewalls
 port=2355
 
 # ssl key
