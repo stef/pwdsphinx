@@ -343,7 +343,7 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     char_classes = 'uld'
     symbols = bin2pass.symbols
   else:
-    xormask = b'\x00'*32
+    xormask = pysodium.randombytes(32)
 
   rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
   # send over new signed(pubkey, rule)
@@ -440,7 +440,7 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     classes = 'uld'
     symbols = bin2pass.symbols
   else:
-    xormask = b'\x00'*32
+    xormask = pysodium.randombytes(32)
 
   rule = pack_rule(classes, symbols, size, checkdigit, xormask)
 
