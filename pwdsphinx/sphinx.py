@@ -661,7 +661,6 @@ def main(params=sys.argv):
     return
 
   if cmd is not None:
-    s = connect()
     if cmd != users:
       pwd = sys.stdin.buffer.readline().rstrip(b'\n')
       if cmd == change:
@@ -673,6 +672,7 @@ def main(params=sys.argv):
       if cmd == create:
         test_pwd(pwd)
       try:
+        s = connect()
         ret = cmd(s, pwd, *args)
       except:
         ret = False
@@ -680,6 +680,7 @@ def main(params=sys.argv):
       clearmem(pwd)
     else:
       try:
+        s = connect()
         ret = cmd(s,  *args)
       except:
         ret = False
