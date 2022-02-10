@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+host=$(cat ~/.sphinx-hosts 2>/dev/null | dmenu -p hostname)
+tmp=$(mktemp)
+{ echo $host; cat ~/.sphinx-hosts 2>/dev/null ; } | sort -u >$tmp && mv $tmp ~/.sphinx-hosts
+users=$(sphinx list $host)
+[[ "$(echo "$users" | wc -l)" -gt 1 ]] && user=$(echo $users | dmenu -p username) || user=$users
+type-pwd.sh "$user" "$host"
+
