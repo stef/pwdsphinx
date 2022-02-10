@@ -274,3 +274,13 @@ code is displayed on your screen.
 
 If for whatever reason you want to display the QR code as an SVG, just append
 the `svg` keyword to the end of the `sphinx qr` command.
+
+## X11 frontend
+
+You can find a bunch of shell-scripts that are based on
+`pinentry-(gtk|qt)`, `xinput`, `xdotool` and `dmenu`, the top-level
+entry to these is the `dmenu-sphinx.sh` script, which stores its
+history of entered hostnames in `~/.sphinx-hosts` - if the hosts are
+in any way sensitive, you might want to link this file to
+`/dev/null`. The `contrib/README.md` should give you an idea of how
+else to combine these scripts.
