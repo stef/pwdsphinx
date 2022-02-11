@@ -28,6 +28,32 @@ echo -n "hello world" |  bin/exec-on-click.sh xdotool type --clearmodifiers '$(c
 
 Types `hello world` into the current window using xdotool.
 
+You need to configure this script by running
+
+```
+xinput --list --short | fgrep pointer
+```
+
+and select from this list your mouse device which you want to be
+monitored for clicking and then set the `MOUSEDEV` configuration
+variable to that value. For example on Thinkpads this might be a
+correct name:
+
+```
+MOUSEDEV='TPPS/2 IBM TrackPoint'
+```
+
+Writing this to one of the three config-files completes the setup:
+
+
+```
+echo MOUSEDEV='the name of your mouse device' >$config_file
+```
+
+where `$config_file` is one of `/etc/sphinx/mousedev`,
+`~/.config/sphinx/mousedev`, or `${0%%/*}/mousedev`
+
+
 ## type-pwd.sh (depends on xdotool, exec-on-click and getpwd)
 
 This script combines `getpwd.sh`, `exec-on-click.sh` and the pwdsphinx
