@@ -37,6 +37,7 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
 rwd_keys = not not cfg['client'].get('rwd_keys',False)
+validate_password = not not cfg['client'].get('validate_password',True)
 
 if verbose:
     print("hostname:", hostname, file=sys.stderr)
@@ -156,7 +157,10 @@ def unpack_rule(ct):
   size = v & ((1<<7) - 1)
   rule = {c for i,c in enumerate(('u','l','d')) if (v >> 7) & (1 << i)}
   symbols = [c for i,c in enumerate(bin2pass.symbols) if (v>>(7+3) & (1<<i))]
-  check_digit = (v>>(7+3+33))
+  if validate_password:
+      check_digit = (v>>(7+3+33))
+  else:
+      check_digit = 0
 
   return rule, symbols, size, check_digit, xor_mask
 
@@ -335,7 +339,10 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
 
-  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+  if validate_password:
+      checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+  else:
+      checkdigit = 0
 
   if target:
     xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
@@ -383,7 +390,7 @@ def get(s, pwd, user, host):
     return
   s.close()
 
-  if (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
+  if validate_password and (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
     raise ValueError("bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
@@ -432,7 +439,10 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     raise ValueError("error: sphinx protocol failure.")
   rwd = sphinxlib.finish(newpwd, r, beta, id)
 
-  checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+  if validate_password:
+      checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
+  else:
+      checkdigit = 0
 
   if target:
     xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
@@ -541,7 +551,7 @@ def print_qr(qrcode: QrCode) -> None:
 
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
-  data = (bytes([1*key+2*rwd_keys]) +
+  data = (bytes([1*key+2*rwd_keys + 4*validate_password]) +
           mk +
           struct.pack("!H", port) +
           hostname.encode("utf8"))

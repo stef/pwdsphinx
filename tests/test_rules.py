@@ -18,7 +18,10 @@ def equ(classes, syms, size, check, xor):
     assert set(classes) == unpacked[0]
     assert list(syms) == unpacked[1]
     assert size == unpacked[2]
-    assert check == unpacked[3]
+    if sphinx.validate_password:
+        assert check == unpacked[3]
+    else:
+        assert 0 == unpacked[3]
     assert xor == unpacked[4]
 
 from itertools import chain, combinations

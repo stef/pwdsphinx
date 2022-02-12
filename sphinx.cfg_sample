@@ -18,6 +18,10 @@ datadir = ~/.sphinx/
 # if the client masterkey is known
 # rwd_keys=False
 
+# stores a check digit of 5 bits in the rule blob, this helps to notice most
+# typos of the master password, while decreasing security slightly
+validate_password=True
+
 [server]
 # the ipv4 address the server is listening on
 # address="127.0.0.1"
