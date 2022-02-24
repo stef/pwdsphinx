@@ -23,7 +23,7 @@ import subprocess
 import sys, struct, json
 from zxcvbn import zxcvbn
 try:
-    from pwdsphinx import sphinx
+    from pwdsphinx import sphinx, bin2pass
     from pwdsphinx.config import getcfg
 except ImportError:
     import sphinx
@@ -127,18 +127,37 @@ def create(data):
             send_message({ 'results': 'fail' })
             return
         if not pwdq(pwd): pwd=None
-    handler(callback, sphinx.create, pwd, data['name'], data['site'], data['rules'], data['size'])
+
+    symbols = ''
+    if 's' in data['rules']:
+      symbols = bin2pass.symbols
+      data['rules'] = ''.join(set(data['rules']) - set(['s']))
+    handler(callback, sphinx.create, pwd, data['name'], data['site'], data['rules'], symbols, int(data['size']), None)
   except:
     send_message({ 'results': 'fail' })
-    raise
 
 def change(data):
   def callback(arg):
     res = { 'password': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'change', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("change password for user: \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
-    handler(callback, sphinx.change, pwd, data['name'], data['site'])
+    oldpwd=""
+    if cfg['client'].get('rwd_keys'):
+        oldpwd=getpwd("current password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
+    pwd=None
+    while not pwd:
+        pwd=getpwd("new password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        pwd2=getpwd("REPEAT: new for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        if pwd != pwd2:
+            send_message({ 'results': 'fail' })
+            return
+        if not pwdq(pwd): pwd=None
+
+    symbols = ''
+    if 's' in data['rules']:
+      symbols = bin2pass.symbols
+      data['rules'] = ''.join(set(data['rules']) - set(['s']))
+    handler(callback, sphinx.change, oldpwd, pwd, data['name'], data['site'], data['rules'], symbols, int(data['size']), None)
   except:
     send_message({ 'results': 'fail' })
 
@@ -147,7 +166,9 @@ def commit(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'commit', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("commit password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
+    pwd=""
+    if cfg['client'].get('rwd_keys'):
+      pwd=getpwd("commit password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
     handler(callback, sphinx.commit, pwd, data['name'], data['site'])
   except:
     send_message({ 'results': 'fail' })
@@ -157,8 +178,18 @@ def undo(data):
     res = { 'result': arg, 'name': data['name'], 'site': data['site'], 'cmd': 'undo', "mode": data['mode']}
     send_message({ 'results': res })
   try:
-    pwd=getpwd("undo password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
+    pwd=""
+    if cfg['client'].get('rwd_keys'):
+      pwd=getpwd("undo password for \"%s\" at host: \"%s\"%%0a" % (data['name'], data['site']))
     handler(callback, sphinx.undo, pwd, data['name'], data['site'])
+  except:
+    send_message({ 'results': 'fail' })
+
+def qrcode(data):
+  try:
+    sphinx.qrcode("svg", True)
+    res = { 'result': arg, 'cmd': 'qrcode', "mode": data['mode']}
+    send_message({ 'results': res })
   except:
     send_message({ 'results': 'fail' })
 
@@ -190,6 +221,8 @@ def main():
       commit(data)
     elif data['cmd'] == 'undo':
       undo(data)
+    elif data['cmd'] == 'qrcode':
+      qrcode(data)
 
 if __name__ == '__main__':
   main()
