@@ -11,7 +11,7 @@ if sys.argv[1] in ('create', 'get', 'change', 'commit', 'undo', 'delete'):
     msg['name']= sys.argv[2]
     msg['site']= sys.argv[3]
 
-if sys.argv[1] == 'create':
+if sys.argv[1] in {'create', 'change'}:
     msg['rules']= sys.argv[4]
     msg['size']= sys.argv[5]
 
@@ -28,7 +28,7 @@ out, err = proc.communicate(input=cmd)
 print("ret", proc.returncode)
 print("stdout")
 for line in out.split(b'\n'):
-    print(line.decode("utf8"))
+    print(line)
 print("stderr")
 for line in err.split(b'\n'):
-    print(line.decode("utf8"))
+    print(line)
