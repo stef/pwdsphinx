@@ -672,15 +672,17 @@ def main(params=sys.argv):
 
   if cmd is not None:
     if cmd != users:
-      pwd = sys.stdin.buffer.readline().rstrip(b'\n')
-      if cmd == change:
-        newpwd = sys.stdin.buffer.readline().rstrip(b'\n')
-        if not newpwd:
-          newpwd = pwd
-        test_pwd(newpwd)
-        args=(newpwd,) + args
-      if cmd == create:
-        test_pwd(pwd)
+      pwd = ''
+      if (rwd_keys or cmd in {create,change}):
+        pwd = sys.stdin.buffer.readline().rstrip(b'\n')
+        if cmd == change:
+          newpwd = sys.stdin.buffer.readline().rstrip(b'\n')
+          if not newpwd:
+            newpwd = pwd
+          test_pwd(newpwd)
+          args=(newpwd,) + args
+        if cmd == create:
+          test_pwd(pwd)
       try:
         s = connect()
         ret = cmd(s, pwd, *args)
