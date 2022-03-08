@@ -1,3 +1,4 @@
+# the client section is only needed if you use the client functionality
 [client]
 # whether to produce some output on the console
 verbose = False
@@ -22,6 +23,7 @@ datadir = ~/.sphinx/
 # typos of the master password, while decreasing security slightly
 validate_password=True
 
+# the server section is only needed if you run the oracle yourself.
 [server]
 # the ipv4 address the server is listening on
 # address="127.0.0.1"
@@ -60,6 +62,7 @@ rl_threshold= 1
 # gracetime in addition to the hardness max solution time
 rl_gracetime=10
 
+# the websphinx section is only needed if you use the browser webextensions
 [websphinx]
 # the path of your pinentry program
 pinentry=/usr/bin/pinentry
