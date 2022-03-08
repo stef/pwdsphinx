@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, os, socket, ssl, struct, platform
+import sys, os, socket, ssl, struct, platform, getpass
 from SecureString import clearmem
 import pysodium
 from qrcodegen import QrCode
@@ -302,6 +302,12 @@ def ratelimit(s,req):
   s.send(req)
   s.send(solution)
   return s
+
+def getpwd():
+  if sys.stdin.isatty():
+    return getpass.getpass("enter your password please: ").encode('utf8')
+  else:
+    return sys.stdin.buffer.readline().rstrip(b'\n')
 
 #### OPs ####
 
@@ -675,10 +681,10 @@ def main(params=sys.argv):
   if cmd is not None:
     if cmd != users:
       pwd = ''
-      if (rwd_keys or cmd in {create,change}):
-        pwd = sys.stdin.buffer.readline().rstrip(b'\n')
+      if (rwd_keys or cmd in {create,change,get}):
+        pwd = getpwd()
         if cmd == change:
-          newpwd = sys.stdin.buffer.readline().rstrip(b'\n')
+          newpwd = getpwd()
           if not newpwd:
             newpwd = pwd
           test_pwd(newpwd)
