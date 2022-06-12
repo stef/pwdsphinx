@@ -1,16 +1,16 @@
 """Wrapper for libsphinx library
 
-   SPDX-FileCopyrightText: 2018, Marsiske Stefan 
+   SPDX-FileCopyrightText: 2018-21, Marsiske Stefan 
    SPDX-License-Identifier: GPL-3.0-or-later  
 
-   This file is part of pitchforked sphinx.
+   This file is part of pwdsphinx.
    
-   pitchforked sphinx is free software: you can redistribute it and/or
+   pwdsphinx is free software: you can redistribute it and/or
    modify it under the terms of the GNU General Public License
    as published by the Free Software Foundation, either version 3 of
    the License, or (at your option) any later version.
 
-   pitchforked sphinx is distributed in the hope that it will be
+   pwdsphinx is distributed in the hope that it will be
    useful, but WITHOUT ANY WARRANTY; without even the implied
    warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
    See the GNU General Public License version 3 for more details.
