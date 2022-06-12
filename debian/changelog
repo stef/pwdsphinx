@@ -1,0 +1,6 @@
+pwdsphinx (1.0-1) unstable; urgency=low
+
+  * Initial release. Closes: #nnnn
+    <nnnn is the bug number of your ITP>
+
+ --  Stefan Marsiske <sphinx@ctrlc.hu>  Thu, 09 Jun 2022 00:35:39 +0200

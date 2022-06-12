@@ -1,0 +1,32 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: pwdsphinx
+Upstream-Contact: Stefan Marsiske <sphinx@ctrlc.hu>
+Source: https://github.com/stef/pwdsphinx/
+
+Files:     .github/workflows/hcodeql-analysis.yml
+           MANIFEST.in
+           contrib/dmenu-sphinx.sh
+           contrib/exec-on-click.sh
+           contrib/getpwd.sh
+           contrib/type-pwd.sh
+           pwdsphinx/__init__.py
+           pwdsphinx/bin2pass.py
+           pwdsphinx/config.py
+           pwdsphinx/oracle.py
+           pwdsphinx/sphinx.py
+           pwdsphinx/sphinxlib.py
+           pwdsphinx/websphinx.py
+           setup.py
+           sphinx.cfg_sample
+           tests/test.py
+           tests/test_pass2bin.py
+           tests/test_rules.py
+           tests/ws-test.py
+Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
+License:   GPL-3.0-or-later
+
+Files:     contrib/README.md
+           sphinx.cfg_sample
+           whitepaper.org
+Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
+License:   CC-BY-SA-4.0
