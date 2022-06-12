@@ -1,6 +1,6 @@
 clean:
 
-install: $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx $(DESTDIR)$(prefix)/usr/bin/exec-on-click $(DESTDIR)$(prefix)/usr/bin/getpwd $(DESTDIR)$(prefix)/usr/bin/type-pwd $(DESTDIR)$(prefix)/usr/share/doc/README.x11.md
+install: $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx $(DESTDIR)$(prefix)/usr/bin/exec-on-click $(DESTDIR)$(prefix)/usr/bin/getpwd $(DESTDIR)$(prefix)/usr/bin/type-pwd $(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx-tools/README.x11.md
 
 $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx: dmenu-sphinx.sh
 	install -D -m 0755 $< $@
