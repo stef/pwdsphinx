@@ -14,7 +14,7 @@ $(DESTDIR)$(prefix)/usr/bin/getpwd: getpwd.sh
 $(DESTDIR)$(prefix)/usr/bin/type-pwd: type-pwd.sh
 	install -D -m 0755 $< $@
 
-$(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx/README.x11.md: README.md
+$(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx-tools/README.x11.md: README.md
 	install -D -m 0644 $< $@
 
 .PHONY: clean
