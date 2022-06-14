@@ -26,16 +26,22 @@ Files:     .github/workflows/hcodeql-analysis.yml
            debian/*
 Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
 License:   GPL-3+
+ On Debian systems, the full text of the GNU General Public
+ License version 3 can be found in the file
+ `/usr/share/common-licenses/GPL-3'.
 
 Files:     contrib/README.md
            README.md
            whitepaper.org
 Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
 License:   CC-BY-SA
+ The full text of the Creative Commons BY-SA-4.0
+ License can be found at 
+ `https://spdx.org/licenses/CC-BY-SA-4.0'.
 
 Files:     configs/chrome/websphinx.json
            configs/config
            configs/firefox/websphinx.json
 Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
 License:   public-domain
-
+ These config files are in the public domain
