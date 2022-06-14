@@ -9,6 +9,7 @@ Files:     .github/workflows/hcodeql-analysis.yml
            contrib/exec-on-click.sh
            contrib/getpwd.sh
            contrib/type-pwd.sh
+           contrib/Makefile
            pwdsphinx/__init__.py
            pwdsphinx/bin2pass.py
            pwdsphinx/config.py
@@ -22,11 +23,19 @@ Files:     .github/workflows/hcodeql-analysis.yml
            tests/test_pass2bin.py
            tests/test_rules.py
            tests/ws-test.py
+           debian/*
 Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
-License:   GPL-3.0-or-later
+License:   GPL-3+
 
 Files:     contrib/README.md
-           sphinx.cfg_sample
+           README.md
            whitepaper.org
 Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
-License:   CC-BY-SA-4.0
+License:   CC-BY-SA
+
+Files:     configs/chrome/websphinx.json
+           configs/config
+           configs/firefox/websphinx.json
+Copyright: 2018-22 Stefan Marsiske <sphinx@ctrlc.hu>
+License:   public-domain
+

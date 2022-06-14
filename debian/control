@@ -26,3 +26,13 @@ Multi-Arch: foreign
 Depends: ${misc:Depends},
    pinentry, xdotool, xinput, dmenu
 Description: Tools to integrate pwdsphinx into an X11 desktop.
+ This package contains 4 simple scripts which
+   - wrap the client to query the master password securely using
+     pinentry,
+   - a tool which executes a command on mouse-click,
+   - a tool that combines the two previous tools to insert a
+     password without using the clipboard,
+   - and a dmenu wrapper that uses all of the above to retrieve
+     usernames and passwords for given hosts.
+   Some of these tools can also be used for other password managers,
+   that are using the clipboard to deliver passwords to the UI.
