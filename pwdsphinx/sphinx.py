@@ -351,10 +351,11 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
       checkdigit = 0
 
   if target:
-    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    trwd, char_classes, symbols = bin2pass.pass2bin(target, None)
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),trwd)
     size = len(target)
-    char_classes = 'uld'
-    symbols = bin2pass.symbols
+    #char_classes = 'uld'
+    #symbols = bin2pass.symbols
   else:
     xormask = pysodium.randombytes(32)
 

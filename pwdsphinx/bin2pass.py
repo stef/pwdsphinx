@@ -30,12 +30,30 @@ def bin2pass(raw, chars, size):
     return result
 
 def pass2bin(string, chars = allchars):
+    classes = {'u','l','d'}
+    sym = symbols
+    # reduce char classes to necessary minimum to
+    # accomodate longer passwords
+    if chars == None:
+        chars = []
+        for c in ('u','l','d'):
+            s = set(x.decode('utf8') for x in sets[c])
+            if s & set(string):
+                chars.append(''.join(sorted(s)))
+            else:
+                classes.remove(c)
+        if set(string) & set(symbols):
+            chars+=symbols
+        else:
+            sym = ''
+        chars=''.join(chars)
+
     le_str = string[::-1]
     logbase = int(math.log(1<<256, len(chars)))
     r = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
     # add padding
     r += sum(chars.find(random.choice(chars)) * len(chars)**i for i in range(len(le_str), logbase))
-    return int.to_bytes(r, 32, 'big')
+    return int.to_bytes(r, 32, 'big'), ''.join(classes), sym
 
 def derive(rwd, rule, size, syms=symbols):
     chars = tuple(c.decode('utf8') for x in (sets[c] for c in ('u','l','d') if c in rule) for c in x) + tuple(x for x in symbols if x in set(syms))
