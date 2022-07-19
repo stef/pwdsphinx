@@ -70,7 +70,7 @@ Let's recap how the SPHINX query works:
 
 #+BEGIN_SRC
  r = random(32)
- alpha = (hash(pwd)*r)
+ alpha = (r*hash(pwd))
 #+END_SRC
 
 The * operation denotes scalar multiplication over an elliptic curve
@@ -82,14 +82,14 @@ hash-to-curve operation.
 blinded hash of the users password:
 
 #+BEGIN_SRC
- beta = alfa*seed
+ beta = seed*alfa
 #+END_SRC
 
 The server returns the calculated beta value to the client.
 
 3. The user unblinds the servers output (beta)
 #+BEGIN_SRC
- pwd_k = beta * 1/r
+ pwd_k = 1/r * beta
 #+END_SRC
 
 and hashes it again with the master password, which results in
