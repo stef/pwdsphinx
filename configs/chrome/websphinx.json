@@ -1,9 +1,0 @@
-{
-  "name": "websphinx",
-  "description": "Host for communicating with Sphinx",
-  "path": "/usr/bin/websphinx",
-  "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://ojbhlhidchjkmjmpeonendekpoacahni/"
-  ]
-}

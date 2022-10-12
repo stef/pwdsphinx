@@ -1,9 +1,0 @@
-{
-  "name": "websphinx",
-  "description": "Host for communicating with pwdphinx",
-  "path": "/usr/bin/websphinx",
-  "type": "stdio",
-  "allowed_extensions": [
-    "sphinx@ctrlc.hu"
-  ]
-}
