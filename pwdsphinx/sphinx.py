@@ -25,7 +25,7 @@ if platform.system() == 'Windows':
 cfg = getcfg('sphinx')
 
 verbose = cfg['client'].getboolean('verbose', fallback=False)
-hostname = cfg['client']['address']
+hostname = cfg['client'].get('address','127.0.0.1')
 address = socket.gethostbyname(hostname)
 port = int(cfg['client'].get('port',2355))
 datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
@@ -36,8 +36,8 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
-rwd_keys = not not cfg['client'].get('rwd_keys',False)
-validate_password = not not cfg['client'].get('validate_password',True)
+rwd_keys = cfg['client'].getboolean('rwd_keys', fallback=False)
+validate_password = cfg['client'].getboolean('validate_password',True)
 
 if verbose:
     print("hostname:", hostname, file=sys.stderr)

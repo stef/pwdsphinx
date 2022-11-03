@@ -11,14 +11,22 @@ from pwdsphinx.config import getcfg
 from pwdsphinx.sphinx import RULE_SIZE
 cfg = getcfg('sphinx')
 
-verbose = cfg['server'].getboolean('verbose')
-address = cfg['server']['address']
-port = int(cfg['server']['port'])
+verbose = cfg['server'].getboolean('verbose', fallback=False)
+address = cfg['server'].get('address', '127.0.0.1')
+port = int(cfg['server'].get('port',2355))
 timeout = int(cfg['server'].get('timeout',"3"))
 max_kids = int(cfg['server'].get('max_kids',5))
-datadir = os.path.expanduser(cfg['server']['datadir'])
-ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
-ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
+datadir = os.path.expanduser(cfg['server'].get('datadir',"/var/lib/sphinx"))
+try:
+    ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
+except KeyError:
+    print("Error: ssl_key missing! must specify it in the config file")
+
+try:
+    ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
+except KeyError:
+    print("Error: ssl_cert missing! must specify it in the config file")
+
 rl_decay = int(cfg['server'].get('rl_decay',1800))
 rl_threshold = int(cfg['server'].get('rl_threshold',1))
 rl_gracetime = int(cfg['server'].get('rl_gracetime',10))
