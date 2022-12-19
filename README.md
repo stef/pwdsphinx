@@ -284,3 +284,10 @@ history of entered hostnames in `~/.sphinx-hosts` - if the hosts are
 in any way sensitive, you might want to link this file to
 `/dev/null`. The `contrib/README.md` should give you an idea of how
 else to combine these scripts.
+
+## Credits
+
+This project was funded through the NGI0 PET Fund, a fund established
+by NLnet with financial support from the European Commission's Next
+Generation Internet programme, under the aegis of DG Communications
+Networks, Content and Technology under grant agreement No 825310.
