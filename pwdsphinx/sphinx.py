@@ -452,10 +452,9 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
       checkdigit = 0
 
   if target:
-    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),bin2pass.pass2bin(target))
+    trwd, classes, symbols = bin2pass.pass2bin(target, None)
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),trwd)
     size = len(target)
-    classes = 'uld'
-    symbols = bin2pass.symbols
   else:
     xormask = pysodium.randombytes(32)
 
