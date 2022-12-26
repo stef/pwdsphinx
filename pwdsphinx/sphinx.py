@@ -595,6 +595,7 @@ def arg_rules(params):
         classes = ''.join(set(param) - set(['s']))
       else:
         classes = param
+        symbols = ''
       continue
     if not size:
       try:
@@ -611,7 +612,7 @@ def arg_rules(params):
   if target is not None and (symbols or classes or size):
     print(f"invalid args for {param[1]}: \"{params[4:]}\"", file=sys.stderr)
     usage(param)
-  return user, site, classes or 'uld', symbols or bin2pass.symbols, size or 0, target
+  return user, site, classes or 'uld', symbols if symbols is not None else bin2pass.symbols, size or 0, target
 
 def test_pwd(pwd):
   q = zxcvbn(pwd.decode('utf8'))
