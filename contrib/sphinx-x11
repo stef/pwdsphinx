@@ -1,0 +1,64 @@
+#!/bin/sh
+set -e
+set -x
+
+script="$1"
+user="$2"
+host="$3"
+
+MOUSEID=$(xinput --list --short | grep -F "Virtual core pointer" | sed 's/.*id=\([0-9]*\).*/\1/')
+
+x11_type() {
+   set -x
+   xdotool type --clearmodifiers "$1"
+}
+
+wait_for_click() {
+   # wait until left mouse click
+   THIS=$(exec sh -c 'echo "$PPID"')
+   xinput --test-xi2 --root $MOUSEID | while true; do
+      read -t 1 line || continue
+      echo "$line" | grep -qs '^EVENT type 16 (RawButtonRelease)$' && {
+          read -t 1 line
+          read -t 1 details;
+          echo "$details" | grep -qs '^\s*detail: 1$' && {
+              pkill -9 -e -P $THIS xinput
+              break
+          }
+      }
+   done 2>/dev/null
+}
+
+getpwd() {
+    prompt=${1:-sphinx}
+    echo -en "SETTITLE sphinx password prompt\nSETPROMPT ${prompt} password\nGETPIN\n" | pinentry | grep '^D' | cut -c3- | tr -d '\n'
+}
+
+pwd() {
+    getpwd "$user@$host" | { sphinx get "$user" "$host" || return ; } | xdotool type --clearmodifiers "$(head -1)"
+}
+
+otp() {
+    getpwd "$user@$host" | { sphinx get "otp://$user" "$host" || return ; } | xargs /usr/bin/oathtool -b --totp | xdotool type --clearmodifiers "$(head -1)"
+}
+
+tab() {
+    xdotool key --clearmodifiers Tab
+}
+
+enter() {
+    xdotool key --clearmodifiers enter
+}
+
+cat "$1" | while read -r line; do
+   case "$line" in
+      type\ *)          x11_type "${line##type }";;
+      wait-for-click)  wait_for_click;;
+      user)            x11_type "$user";;
+      host)            x11_type "$host";;
+      pwd)             pwd;;
+      otp)             otp;;
+      tab)             tab;;
+      enter)           enter;;
+   esac
+done

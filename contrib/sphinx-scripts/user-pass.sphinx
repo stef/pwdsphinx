@@ -1,0 +1,8 @@
+#!./sphinx-x11
+
+wait-for-click
+user
+tab
+pwd
+tab
+enter
