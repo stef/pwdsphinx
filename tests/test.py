@@ -33,6 +33,8 @@ class Input:
       self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
     else:
       self.buffer = BytesIO(pwd.encode())
+  def isatty(self):
+      return False
 
 def cleanup():
   for f in listdir(data_dir):
