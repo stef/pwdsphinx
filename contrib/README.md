@@ -55,3 +55,51 @@ hostname, then depending if only one username or more are known by the
 oracle - if only one then the next step is skipped: provides a choice
 which username to use. Then `type-pwd.sh` invoked using the selected
 user and hostname.
+
+## sphinx-x11
+
+This is a simple "script" language interpreter that integrates the
+SPHINX CLI with X11. In the `sphinx-scripts` directory you can find 3
+example scripts:
+
+ - pass.sphinx <user> <host>
+ - user-pass.sphinx <user> <host>
+ - user-pass-otp.sphinx <user> <host>
+
+each of these scripts waits for the user to click, then they retrieve
+the relevant password (and TOTP token) before inserting it into the
+form fields, navigating between them with `tab` and `enter`. You are
+welcome to contribute adapted sphinx-scripts for websites that have
+other login semantics. As an example the `user-pass-otp.sphinx` script
+is explained below:
+
+```
+#!./sphinx-x11
+
+wait-for-click
+user
+tab
+pwd
+tab
+enter
+wait-for-click
+otp
+enter
+```
+
+The first line specifies `sphinx-x11` as the interpreter. The script
+itself then waits for the user to click (line 3), then in line 4
+inserts the `user` - which is specified as the first parameter to this
+script. Line 5 injects a `tab` so the next form field is
+selected. Then pwdsphinx/getpwd is used to get the password for `user`
+and `host` - the host being the 2nd parameter to this script. `enter`
+is used to submit this form in line 8. Since this is a new form the
+script waits (line 9) for the user to click in the field where the
+TOTP value needs to be inserted. Then in line 10 the TOTP value is
+queried using pwdsphinx/getpwd, and finally in the last line the TOTP
+value is submitted by injecting `enter` into the application.
+
+A note on the OTP support, in this interpreter/implementation an TOTP
+value is assumed to be stored with a username prefixed with `otp://`,
+so the first `pwd` operation uses e.g. `joe` as a username and then
+for the TOTP value it uses `otp://joe` as the username.
