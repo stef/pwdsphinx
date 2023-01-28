@@ -285,6 +285,11 @@ def ratelimit(s,req):
   s.close()
   n = challenge[0]
   k = challenge[1]
+
+  try:
+    os.write(3,f"{n} {k}".encode('utf8'))
+  except OSError: pass
+
   if k==4:
     if n < 90:
       if verbose: print("got an easy puzzle: %d" % n, file=sys.stderr)
