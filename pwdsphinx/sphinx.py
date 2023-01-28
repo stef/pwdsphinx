@@ -116,7 +116,7 @@ def get_sealkey():
   return sk
 
 def encrypt_blob(blob):
-  # todo implement padding
+  # todo implement padding to hide length information
   sk = get_sealkey()
   nonce = pysodium.randombytes(pysodium.crypto_secretbox_NONCEBYTES)
   ct = pysodium.crypto_aead_xchacha20poly1305_ietf_encrypt(blob,VERSION,nonce,sk)
@@ -124,7 +124,7 @@ def encrypt_blob(blob):
   return VERSION+nonce+ct
 
 def decrypt_blob(blob):
-  # todo implement padding
+  # todo implement padding to hide length information
   sk = get_sealkey()
   version = blob[:1]
   if version > VERSION:
@@ -146,6 +146,7 @@ def getid(host, user):
   mk = get_masterkey()
   salt = pysodium.crypto_generichash(SALT_CTX, mk)
   clearmem(mk)
+  # todo change this to len(user)|user|len(host)|host
   return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
 
 def unpack_rule(ct):
@@ -516,7 +517,6 @@ def delete(s, pwd, user, host):
     raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
 
   blob = s.recv(bsize)
-  # todo handle this
   if blob == b'fail':
     s.close()
     raise ValueError("ERROR: invalid signature on list of users", file=sys.stderr)
@@ -711,7 +711,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      #raise # todo remove only for dbg
+      #raise # only for dbg
     clearmem(pwd)
   else:
     try:
@@ -720,7 +720,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      #raise # todo remove only for dbg
+      #raise # only for dbg
   if s and s.fileno() != -1: s.close()
 
   if not ret:
@@ -744,4 +744,4 @@ if __name__ == '__main__':
     main(sys.argv)
   except Exception:
     print("fail", file=sys.stderr)
-    raise # todo remove only for dbg
+    #raise # only for dbg
