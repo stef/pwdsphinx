@@ -78,8 +78,7 @@ def get_masterkey():
         mk = fd.read()
     return mk
   except FileNotFoundError:
-    print("Error: Could not find masterkey!\nIf sphinx was working previously it is now broken.\nIf this is a fresh install all is good, you just need to run `%s init`." % sys.argv[0])
-    sys.exit(1)
+    raise ValueError("ERROR: Could not find masterkey!\nIf sphinx was working previously it is now broken.\nIf this is a fresh install all is good, you just need to run `%s init`." % sys.argv[0])
 
 def connect():
   ctx = ssl.create_default_context()
@@ -167,17 +166,17 @@ def unpack_rule(ct):
 def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
   # pack rules into and encrypt them
   if set(char_classes) - {'u','l','d'}:
-    raise ValueError("error: rules can only contain any of 'uld'.")
+    raise ValueError("ERROR: rules can only contain any of 'uld'.")
   if set(syms) - set(bin2pass.symbols) != set():
-    raise ValueError("error: symbols can only contain any of '%s'." % bin2pass.symbols)
+    raise ValueError("ERROR: symbols can only contain any of '%s'." % bin2pass.symbols)
   if xor_mask is None and (char_classes == '' and len(syms)<2):
-    raise ValueError("error: no char classes and not enough symbols specified.")
+    raise ValueError("ERROR: no char classes and not enough symbols specified.")
   if xor_mask is None:
       xor_mask = b'\x00' * 32
   elif len(xor_mask)!=32:
-    raise ValueError("error: xor_mask must be 32bytes, is instead: %d." % len(xor_mask))
+    raise ValueError("ERROR: xor_mask must be 32bytes, is instead: %d." % len(xor_mask))
   if size<0 or size>127:
-    raise ValueError("error: invalid max password size: %d." % size)
+    raise ValueError("ERROR: invalid max password size: %d." % size)
 
   packed = size
   packed = packed + (sum(1<<i for i, c in enumerate(('u','l','d')) if c in char_classes) << 7)
@@ -196,11 +195,10 @@ def commit_undo(s, op, pwd, user, host):
   s = ratelimit(s, msg)
   if not auth(s,id,pwd,r):
     s.close()
-    raise ValueError("auth failed")
+    raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
   if s.recv(2)!=b'ok':
-    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
     s.close()
-    raise ValueError("Operation failed")
+    raise ValueError("Server failed to %s" % "Commit" if op == COMMIT else "UNDO")
   s.close()
   return True
 
@@ -229,7 +227,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       bsize = len(blob)
       if bsize >= 2**16:
         s.close()
-        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
+        raise ValueError("ERROR: list of usernames is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       # writes need to be signed, and sinces its a new blob, we need to attach the pubkey
       blob = b''.join([pk, blob])
@@ -239,7 +237,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = read_pkt(s, bsize)
       if blob == b'fail':
         s.close()
-        raise ValueError("reading user blob failed")
+        raise ValueError("reading list of user names failed")
       version, blob = decrypt_blob(blob)
       items = set(blob.decode().split('\x00'))
       # this should not happen, but maybe it's a sign of corruption?
@@ -252,7 +250,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       bsize = len(blob)
       if bsize >= 2**16:
         s.close()
-        raise ValueError("error: blob is bigger than 64KB. %d" % bsize)
+        raise ValueError("ERROR: list of user names is bigger than 64KB. %d" % bsize)
       blob = struct.pack("!H", bsize) + blob
       blob = sign_blob(blob, id, b'')
     s.send(blob)
@@ -282,8 +280,8 @@ def ratelimit(s,req):
   s.send(pkt0)
   challenge = s.recv(1+1+8+32) # n,k,ts,sig
   if len(challenge)!= 1+1+8+32:
-    print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
-    raise ValueError("failed to get ratelimit challenge")
+    if verbose: print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
+    raise ValueError("ERROR: failed to get ratelimit challenge")
   s.close()
   n = challenge[0]
   k = challenge[1]
@@ -323,6 +321,9 @@ def init_key():
     with open(kfile,'wb') as fd:
       if not win: os.fchmod(fd.fileno(),0o600)
       fd.write(mk)
+  except:
+    print("ERROR: failed to initialize master key", file=sys.stderr)
+    return 1
   finally:
     clearmem(mk)
   return 0
@@ -338,7 +339,10 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   beta = s.recv(32)
   if beta == b'\x00\x04fail':
     s.close()
-    raise ValueError("error: sphinx protocol failure.")
+    raise ValueError("ERROR: Creating new password, the record probably already exists or the first message to server was corrupted during transport.")
+    # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
+    # or (even? less probable) the value alpha received by the server is not a valid point
+    # both of these less probable causes point at corruption during transport
   rwd = sphinxlib.finish(pwd, r, beta, id)
 
   # second phase, derive new auth signing pubkey
@@ -385,7 +389,7 @@ def get(s, pwd, user, host):
   resp = s.recv(32+RULE_SIZE) # beta + sealed rules
   if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
       s.close()
-      raise ValueError("error: sphinx protocol failure.")
+      raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
   beta = resp[:32]
   rules = resp[32:]
   rwd = sphinxlib.finish(pwd, r, beta, id)
@@ -394,11 +398,11 @@ def get(s, pwd, user, host):
     classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
   except ValueError:
     s.close()
-    return
+    raise ValueError("ERROR: failed to unpack password rules from server")
   s.close()
 
   if validate_password and (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
-    raise ValueError("bad checkdigit")
+    raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
   ret = bin2pass.derive(rwd,classes,size,symbols)
@@ -434,16 +438,15 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   s = ratelimit(s, msg)
   # auth: do sphinx with current seed, use it to sign the nonce
   if not auth(s,id,oldpwd,r):
-    print('failed authentication', file=sys.stderr)
     s.close()
-    return
+    raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
   r, alpha = sphinxlib.challenge(newpwd)
   s.send(alpha)
   beta = s.recv(32) # beta
   if beta == b'\x00\x04fail' or len(beta)!=32:
     s.close()
-    raise ValueError("error: sphinx protocol failure.")
+    raise ValueError("ERROR: changing password failed due to corruption during transport.")
   rwd = sphinxlib.finish(newpwd, r, beta, id)
 
   if validate_password:
@@ -466,9 +469,8 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   s.send(sign_blob(b''.join([pk,rule]), id, rwd))
 
   if s.recv(2)!=b'ok':
-    print("ohoh, something is corrupt, and this is a bad, very bad error message in so many ways", file=sys.stderr)
     s.close()
-    return
+    raise ValueError("ERROR: failed to update password rules on the server during changing of password.")
 
   s.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
@@ -492,7 +494,7 @@ def delete(s, pwd, user, host):
   rwd = auth(s,id,pwd,r)
   if not rwd:
     s.close()
-    return
+    raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
 
   # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
@@ -505,20 +507,20 @@ def delete(s, pwd, user, host):
   bsize = struct.unpack('!H', bsize)[0]
   if bsize == 0:
     # this should not happen, it means something is corrupt
-    print("error: server has no associated user record for this host", file=sys.stderr)
     s.close()
-    return
+    raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
 
   blob = s.recv(bsize)
   # todo handle this
   if blob == b'fail':
     s.close()
-    return
+    raise ValueError("ERROR: invalid signature on list of users", file=sys.stderr)
   version, blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
   if user not in users:
     # this should not happen, but maybe it's a sign of corruption?
-    print(f'warning "{user}" is not in user record', file=sys.stderr)
+    s.close()
+    raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
@@ -526,7 +528,7 @@ def delete(s, pwd, user, host):
   bsize = len(blob)
   if bsize >= 2**16:
     s.close()
-    raise ValueError("error: blob is bigger than 64KB.")
+    raise ValueError("ERROR: blob is bigger than 64KB.")
   blob = struct.pack("!H", bsize) + blob
   blob = sign_blob(blob, id, b'')
 
@@ -571,7 +573,7 @@ def qrcode(output, key):
   else:
     print(qr.to_svg_str(2))
 
-def usage(params):
+def usage(params, help=False):
   print("usage: %s init" % params[0])
   print("usage: echo -n 'password' | %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
   print("usage: echo -n 'password' | %s get <user> <site>" % params[0])
@@ -579,7 +581,8 @@ def usage(params):
   print("usage: echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
   print("usage: %s list <site>" % params[0])
   print("usage: %s qr [svg] [key]" % params[0])
-  sys.exit(1)
+  if help: sys.exit(0)
+  sys.exit(100)
 
 def arg_rules(params):
   user = params[2]
@@ -627,10 +630,12 @@ def test_pwd(pwd):
 #### main ####
 
 def main(params=sys.argv):
-  if len(params) < 2: usage(params)
+  if len(params) < 2: usage(params, True)
   cmd = None
   args = []
-  if params[1] == 'create':
+  if params[1] == 'help':
+    usage(params, True)
+  elif params[1] == 'create':
     try:
       user,site,classes, syms, size, target = arg_rules(params)
     except: usage(params)
@@ -678,44 +683,55 @@ def main(params=sys.argv):
     if params[2:]: usage(params)
     qrcode(output, key)
     return
-
-  if cmd is not None:
-    if cmd != users:
-      pwd = ''
-      if (rwd_keys or cmd in {create,change,get}):
-        pwd = getpwd()
-        if cmd == change:
-          newpwd = getpwd()
-          if not newpwd:
-            newpwd = pwd
-          test_pwd(newpwd)
-          args=(newpwd,) + args
-        if cmd == create:
-          test_pwd(pwd)
-      try:
-        s = connect()
-        ret = cmd(s, pwd, *args)
-      except:
-        ret = False
-        raise # todo remove only for dbg
-      clearmem(pwd)
-    else:
-      try:
-        s = connect()
-        ret = cmd(s,  *args)
-      except:
-        ret = False
-        raise # todo remove only for dbg
-    s.close() # todo is still needed?
-    if not ret:
-      print("fail", file=sys.stderr)
-      sys.exit(1)
-    if cmd not in {delete, undo, commit}:
-      print(ret)
-      sys.stdout.flush()
-      clearmem(ret)
   else:
-    usage()
+    usage(params)
+
+  error = None
+  if cmd != users:
+    pwd = ''
+    if (rwd_keys or cmd in {create,change,get}):
+      pwd = getpwd()
+      if cmd == change:
+        newpwd = getpwd()
+        if not newpwd:
+          newpwd = pwd
+        test_pwd(newpwd)
+        args=(newpwd,) + args
+      if cmd == create:
+        test_pwd(pwd)
+    try:
+      s = connect()
+      ret = cmd(s, pwd, *args)
+    except Exception as exc:
+      error = exc
+      ret = False
+      #raise # todo remove only for dbg
+    clearmem(pwd)
+  else:
+    try:
+      s = connect()
+      ret = cmd(s,  *args)
+    except Exception as exc:
+      error = exc
+      ret = False
+      #raise # todo remove only for dbg
+  if s.fileno() != -1: s.close()
+
+  if not ret:
+    if not error:
+        print("fail", file=sys.stderr)
+        sys.exit(3) # error not handled by exception
+    print(error, file=sys.stderr)
+    if str(error) == "ERROR: bad checkdigit":
+      sys.exit(2) # bad check digit
+    sys.exit(1) # generic errors
+
+  if cmd not in {delete, undo, commit}:
+    print(ret)
+    sys.stdout.flush()
+    clearmem(ret)
+  else:
+    print("reached code that should not be reachable")
 
 if __name__ == '__main__':
   try:
