@@ -239,7 +239,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
         s.close()
         raise ValueError("reading list of user names failed")
       version, blob = decrypt_blob(blob)
-      items = set(blob.decode().split('\x00'))
+      items = {x for x in blob.decode().split('\x00') if x}
       # this should not happen, but maybe it's a sign of corruption?
       if item in items:
         print(f'warning: "{item}" is already in the user record', file=sys.stderr)
@@ -541,7 +541,7 @@ def delete(s, pwd, user, host):
 
   if b'ok' != s.recv(2):
     s.close()
-    return
+    raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
 
   s.close()
   clearmem(rwd)
@@ -692,6 +692,7 @@ def main(params=sys.argv):
     usage(params)
 
   error = None
+  s = None
   if cmd != users:
     pwd = ''
     if (rwd_keys or cmd in {create,change,get}):
@@ -720,7 +721,7 @@ def main(params=sys.argv):
       error = exc
       ret = False
       #raise # todo remove only for dbg
-  if s.fileno() != -1: s.close()
+  if s and s.fileno() != -1: s.close()
 
   if not ret:
     if not error:
@@ -735,8 +736,8 @@ def main(params=sys.argv):
     print(ret)
     sys.stdout.flush()
     clearmem(ret)
-  else:
-    print("reached code that should not be reachable")
+  elif ret != True:
+    print("reached code that should not be reachable: ", ret)
 
 if __name__ == '__main__':
   try:
