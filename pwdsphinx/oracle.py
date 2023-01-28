@@ -160,7 +160,7 @@ def update_blob(s):
 def create(s, msg):
     if len(msg)!=65:
       fail(s)
-    print('Data received:',msg.hex())
+    if verbose: print('Data received:',msg.hex())
     op,   msg = pop(msg,1)
     id,   msg = pop(msg,32)
     alpha,msg = pop(msg,32)
