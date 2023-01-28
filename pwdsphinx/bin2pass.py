@@ -69,7 +69,7 @@ def main():
   if len(sys.argv)>4 or 'h' in sys.argv or '--help' in sys.argv:
     usage()
 
-  if len(sys.argv)==2: # figure out if set or size
+  if len(sys.argv)==2:
     if sys.argv[1]=='s':
       print("all symbols:", symbols)
       return
