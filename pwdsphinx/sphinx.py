@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, os, socket, ssl, struct, platform, getpass
+import sys, os, socket, ssl, struct, platform, getpass, time
 from SecureString import clearmem
 import pysodium
 from qrcodegen import QrCode
@@ -288,7 +288,7 @@ def ratelimit(s,req):
   k = challenge[1]
 
   try:
-    os.write(3,f"{n} {k}".encode('utf8'))
+    os.write(3,f"{n} {k}\n".encode('utf8'))
   except OSError: pass
 
   if k==4:
@@ -299,7 +299,14 @@ def ratelimit(s,req):
     else:
       if verbose: print("got a moderate puzzle: %d" % n, file=sys.stderr)
   seed = challenge + req
+
+  delta = time.time()
   solution = solve(n, k, seed)
+  delta = time.time() - delta
+  try:
+    os.write(3,f"{delta}".encode('utf8'))
+  except OSError: pass
+
   s = connect()
   pkt1 = b''.join([CHALLENGE_VERIFY, challenge])
   s.send(pkt1)
