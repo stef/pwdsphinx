@@ -638,7 +638,7 @@ def main(params=sys.argv):
   if len(params) < 2: usage(params, True)
   cmd = None
   args = []
-  if params[1] == 'help':
+  if params[1] in ('help', '-h', '--help'):
     usage(params, True)
   elif params[1] == 'create':
     try:
