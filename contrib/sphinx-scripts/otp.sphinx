@@ -1,0 +1,5 @@
+#!./sphinx-x11
+
+wait-for-click
+otp
+enter
