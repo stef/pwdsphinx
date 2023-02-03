@@ -23,10 +23,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-
-# test with 
-# dd if=/dev/random bs=1 count=32 2>/dev/null | python3 ./bech32.py test
-
 import sys, base64, pysodium
 from enum import Enum
 
