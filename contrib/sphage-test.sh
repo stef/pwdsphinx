@@ -2,9 +2,18 @@
 
 set -e
 
-pubkey=$(echo "asdf" | sha256sum | cut -d' ' -f 1 | rax2 -s | python3 sphage.py pubkey)
+# simulate output from sphinx
+rwd=$(echo "asdf" | sha256sum | cut -d' ' -f 1 | rax2 -s)
+
+# convert rwd to age "identity" (privkey)
 privkey=$(mktemp)
-echo "asdf" | sha256sum | cut -d' ' -f 1 | rax2 -s | python3 sphage.py privkey >"$privkey"
+echo "$rwd" | python3 sphage.py privkey >"$privkey"
+
+# convert rwd to age "recipient" (pubkey)
+pubkey=$(echo -n "$rwd" | python3 sphage.py pubkey)
+
+# encrypt and decrypt hello world using the above key pair derived from rwd
 echo "hello world" | age -r $pubkey | age --decrypt -i "$privkey"
 
+# clean up
 rm -rf "$privkey"
