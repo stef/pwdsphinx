@@ -1,0 +1,97 @@
+% oracle(1) | server for the SPHINX password manager
+
+# SYNOPSIS
+
+`oracle`
+
+# DESCRIPTION
+
+The SPHINX protocol only makes sense if the server (called oracle) is
+somewhere else than where you type your password, pwdsphinx comes with
+a server implemented in python3 which you can host off-site from your
+usual desktop/smartphone.
+
+The server can be started simply by running `oracle` it does not take
+any parameters.
+
+# CONFIGURATION
+
+The server can be configured by any of the following files:
+
+ - `/etc/sphinx/config`
+ - `~/.sphinxrc`
+ - `~/.config/sphinx/config`
+ - `./sphinx.cfg`
+
+Files are parsed in this order, this means global settings can be
+overridden by per-user and per-directory settings.
+
+The server can be configured by changing the variables in the
+`[server]` section of the config file.
+
+The `address` is the IP address on which the server is listening,
+default is `localhost` - you might want to change that.
+
+The `port` where the server is listening is by default 2355. Another
+recommended values is to use port 433 which is allowed by most
+firewalls while 2355 is not.
+
+`datadir` specifies the data directory where all the device "secrets"
+are stored, this defaults to "data/" in the current directory. You
+might want to back up this directory from time to time to an encrypted
+medium.
+
+`verbose` enables logging to standard output.
+
+`timeout` sets the timeout for any connection the server keeps open.
+
+`max_kids` sets the number maximum requests handled in parallel. The
+`timeout` config variable makes sure that all handlers are recycled in
+predictable time.
+
+`rl_decay` specifies the number of seconds after which a ratelimit level
+decays to an easier difficulty.
+
+`rl_threshold` increase the difficulty of ratelimit puzzles if not
+decaying.
+
+`rl_gracetime` gracetime in seconds added to the expcted time to solve
+a rate-limiting puzzle.
+
+# SECURITY CONSIDERATIONS
+
+The configuration values `max_kids` and `timeout` can be used to tune
+how many requests are served in parallel and how long each request is
+allowed to take before it gets killed. An attacker might be able to
+run a denial-of-service attack against your server, by keeping all
+`max_kids` connections "occupied".
+
+Since the server does only know about failed authorizations for
+management operations, but not about correctness of master passwords
+for get requests, there is no way to mitigate master password
+bruteforce attempts aside from ratelimiting. By tuning the
+configuration variables starting with `rl_` it is possible to
+configure this. If you have clients that have less than 1G RAM, it
+might be possible to increase the difficulty to the maximum level
+where those devices will not be able to solve the ratelimting
+puzzles. Rate-limiting in general should not be noticable, only if
+dozens of get requests are served to the same record. At the highest
+level the solution should take about 20-40 seconds (depending on your
+cpu).
+
+# REPORTING BUGS
+
+https://github.com/stef/pwdsphinx/issues/
+
+# AUTHOR
+
+Written by Stefan Marsiske.
+
+## COPYRIGHT
+
+Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
+
+## SEE ALSO
+
+`sphinx(1)`, `sphinx.cfg(7)`, `getpwd(1)`
