@@ -7,6 +7,9 @@ it oracle), or you want to use someone elses oracle. It's ok to use
 someone elses server, as we say the oracle can be hosted by your worst
 nightmare enemy, they will not learn anything about your passwords[1].
 
+It is important to note, that if you want to use sphinx, your client
+needs to be able to connect to the oracle.
+
 ## Installing the sphinx CLI client
 
 If you are on debian or derivates a simple
