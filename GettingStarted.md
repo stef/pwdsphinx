@@ -87,26 +87,38 @@ config as you have setup here.
 You should be ready to go:
 
 ```
-echo "password" | sphinx create testuser testhost
+echo -n "password" | sphinx create testuser testhost
 ```
 
 This should give you a long very random password as output. You can
-now check if you get the same password back:
+now check if you get the same password back, but since echoing
+passwords on the command line is not very smart, let's try with a tool
+that comes with pwdsphinx: `getpwd`:
 
 ```
-echo "password" | sphinx get testuser testhost
+getpwd | sphinx get testuser testhost
 ```
 
-and you can now also try to delete this test password, as you don't
-want to litter around:
+This should pop up a password query window, where you should enter
+'password' as the password, the response should be the long random
+password that was returned when you used the create command.
+
+And you can now also try to delete this test password, as you surely
+don't want to litter around:
 
 ```
 sphinx delete testuser testhost
 ```
-Now if you do again:
+
+You might wonder, why you don't need a password for deletion - that
+actually depends on the `rwd_keys` setting, read about that in the man
+page. However deletion does require that the masterkey in `~/.sphinx/`
+is actually correct.
+
+Now if you do again (being lazy and not using `getpwd`):
 
 ```
-echo "password" | sphinx get testuser testhost
+echo -n "password" | sphinx get testuser testhost
 ```
 You should get an error.
 
