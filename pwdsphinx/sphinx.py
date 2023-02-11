@@ -587,12 +587,12 @@ def qrcode(output, key):
 
 def usage(params, help=False):
   print("usage: %s init" % params[0])
-  print("usage: echo -n 'password' | %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
-  print("usage: echo -n 'password' | %s get <user> <site>" % params[0])
-  print("usage: %s <commit|undo|delete> <user> <site> # if rwd_keys is false in your config" % params[0])
-  print("usage: echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
-  print("usage: %s list <site>" % params[0])
-  print("usage: %s qr [svg] [key]" % params[0])
+  print("       echo -n 'password' | %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
+  print("       echo -n 'password' | %s get <user> <site>" % params[0])
+  print("       %s <commit|undo|delete> <user> <site> # if rwd_keys is false in your config" % params[0])
+  print("       echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
+  print("       %s list <site>" % params[0])
+  print("       %s qr [svg] [key]" % params[0])
   if help: sys.exit(0)
   sys.exit(100)
 
