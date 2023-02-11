@@ -423,6 +423,11 @@ simply run `oracle`, this will start the server in the foreground.
 Use whatever your distro provides to daemonize and log the output of
 servers to have the server automatically started at reboot.
 
+Congratulations! Now invite your friends (and enemies!) to use your
+instance :) You might also want to setup the whole thing as a tor
+hidden service, so you can protect the privacy of your users even
+better, but how to do so is left as an exercise to the dear reader.
+
 
 [1] The only thing they can learn is the frequency how often you
 interact with a certain password, and which passwords belong to the
