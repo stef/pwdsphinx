@@ -36,6 +36,11 @@ The `port` where the server is listening is by default 2355. Another
 recommended values is to use port 433 which is allowed by most
 firewalls while 2355 is not.
 
+`ssl_key` and `ssl_cert` must be specified, they point at a traditional TLS
+certificate and secret key file. It is recommended to not use self-signed
+certs, but to use certs that signed by CAs that are recognised widely by
+browsers and other TLS clients.
+
 `datadir` specifies the data directory where all the device "secrets"
 are stored, this defaults to "data/" in the current directory. You
 might want to back up this directory from time to time to an encrypted
