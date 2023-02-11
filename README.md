@@ -233,7 +233,7 @@ returned on standard output.
 
 #### Change password
 
-You might want to (be forced to regularly) change your password, this
+You might want to (or are forced to regularly) change your password, this
 is easy while you can keep your master password the unchanged (or you
 can change it too, if you want). The command is this:
 
