@@ -15,8 +15,17 @@ from setuptools import setup
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+
+from setuptools.command.sdist import sdist as SetuptoolsSdist
+class BuildMakefiles(SetuptoolsSdist):
+    def run(self):
+        os.chdir('man')
+        os.system('make')
+        os.chdir('..')
+        SetuptoolsSdist.run(self)
+
 setup(name = 'pwdsphinx',
-       version = '1.0.12',
+       version = '1.0.13',
        description = 'SPHINX password protocol',
        license = "GPLv3",
        author = 'Stefan Marsiske',
@@ -39,5 +48,6 @@ setup(name = 'pwdsphinx',
                'bin2pass = pwdsphinx.bin2pass:main',
            ],
        },
+       cmdclass={'sdist': BuildMakefiles},
        #ext_modules = [libsphinx],
 )
