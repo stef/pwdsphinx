@@ -11,7 +11,7 @@ echo "32 byte high-entropy string....." | sphage pubkey >/tmp/pubkey
 
 This is a converter that is meant to convert the raw output of
 `sphinx(1)` into a key-pair that can be used by `age(1)` allowing for
-more sophisticate secrets manager setups.
+more sophisticated secrets manager setups.
 
 # REPORTING BUGS
 
