@@ -1,2 +1,3 @@
 include README.md
 include *.py
+include man/*.1
