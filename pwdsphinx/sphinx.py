@@ -12,9 +12,11 @@ from equihash import solve
 try:
   from pwdsphinx import bin2pass, sphinxlib
   from pwdsphinx.config import getcfg
+  from pwdsphinx.consts import *
 except ImportError:
   import bin2pass, sphinxlib
   from config import getcfg
+  from consts import *
 
 win=False
 if platform.system() == 'Windows':
@@ -49,26 +51,11 @@ if verbose:
 
 #### consts ####
 
-CREATE   =b'\x00' # sphinx
-READ     =b'\x33' # blob
-UNDO     =b'\x55' # change sphinx
-GET      =b'\x66' # sphinx
-COMMIT   =b'\x99' # change sphinx
-CHANGE   =b'\xaa' # sphinx
-DELETE   =b'\xff' # sphinx+blobs
-
-CHALLENGE_CREATE = b'\x5a'
-CHALLENGE_VERIFY = b'\xa5'
-
 ENC_CTX = b"sphinx encryption key"
 SIGN_CTX = b"sphinx signing key"
 SALT_CTX = b"sphinx host salt"
 PASS_CTX = b"sphinx password context"
 CHECK_CTX = b"sphinx check digit context"
-
-VERSION = b'\x00'
-
-RULE_SIZE = 79
 
 #### Helper fns ####
 

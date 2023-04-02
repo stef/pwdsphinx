@@ -8,7 +8,7 @@ import pysodium
 import equihash
 from pwdsphinx import sphinxlib
 from pwdsphinx.config import getcfg
-from pwdsphinx.sphinx import RULE_SIZE
+from pwdsphinx.consts import *
 cfg = getcfg('sphinx')
 
 verbose = cfg['server'].getboolean('verbose', fallback=False)
@@ -33,17 +33,6 @@ rl_gracetime = int(cfg['server'].get('rl_gracetime',10))
 
 if(verbose):
   cfg.write(sys.stdout)
-
-CREATE=0x00
-READ=0x33
-UNDO=0x55
-GET=0x66
-COMMIT=0x99
-CHANGE=0xaa
-WRITE=0xcc
-CHALLENGE_CREATE = 0x5a
-CHALLENGE_VERIFY = 0xa5
-DELETE=0xff
 
 Difficulties = [
     # timeouts are based on benchmarking a raspberry pi 1b
