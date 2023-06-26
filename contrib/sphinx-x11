@@ -9,7 +9,6 @@ host="$3"
 MOUSEID=$(xinput --list --short | grep -F "Virtual core pointer" | sed 's/.*id=\([0-9]*\).*/\1/')
 
 x11_type() {
-   set -x
    xdotool type --clearmodifiers "$1"
 }
 
@@ -22,7 +21,7 @@ wait_for_click() {
           read -t 1 line
           read -t 1 details;
           echo "$details" | grep -qs '^\s*detail: 1$' && {
-              pkill -9 -e -P $THIS xinput
+              pkill -9 -e -P $THIS xinput >/dev/null
               break
           }
       }
