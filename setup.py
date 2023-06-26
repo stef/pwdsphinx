@@ -15,14 +15,20 @@ from setuptools import setup
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
-
 from setuptools.command.sdist import sdist as SetuptoolsSdist
-class BuildMakefiles(SetuptoolsSdist):
+class BuildMakefilesSdist(SetuptoolsSdist):
     def run(self):
         os.chdir('man')
         os.system('make')
         os.chdir('..')
         SetuptoolsSdist.run(self)
+from setuptools.command.build import build as SetuptoolsBuild
+class BuildMakefilesBuild(SetuptoolsBuild):
+    def run(self):
+        os.chdir('man')
+        os.system('make')
+        os.chdir('..')
+        SetuptoolsBuild.run(self)
 
 setup(name = 'pwdsphinx',
        version = '1.0.13',
@@ -48,6 +54,7 @@ setup(name = 'pwdsphinx',
                'bin2pass = pwdsphinx.bin2pass:main',
            ],
        },
-       cmdclass={'sdist': BuildMakefiles},
+       cmdclass={'sdist': BuildMakefilesSdist,
+                 'build': BuildMakefilesBuild},
        #ext_modules = [libsphinx],
 )
