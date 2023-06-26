@@ -1,5 +1,9 @@
 % dmenu-sphinx(1) | dmenu-frontend for retrieving and inserting passwords from sphinx(1) into X11 applications
 
+# NAME
+
+dmenu-sphinx - dmenu-frontend for retrieving and inserting passwords from sphinx(1) into X11 applications
+
 # SYNOPSIS
 
 ```

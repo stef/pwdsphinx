@@ -1,5 +1,9 @@
 % sphinx-x11(1) | simple script interpreter for integrating password managers with X11
 
+# NAME
+
+sphinx-x11 - simple script interpreter for integrating password managers with X11
+
 # DESCRIPTION
 
 `sphinx-x11(1)` is a simple "script" language interpreter that

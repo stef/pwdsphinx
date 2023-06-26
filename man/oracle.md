@@ -1,5 +1,9 @@
 % oracle(1) | server for the SPHINX password manager
 
+# NAME
+
+oracle - server for the SPHINX password manager
+
 # SYNOPSIS
 
 `oracle`

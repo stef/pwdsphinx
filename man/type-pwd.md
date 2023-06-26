@@ -1,5 +1,9 @@
 % type-pwd(1) | tool which wraps sphinx(1) to get and type a password to an X11 application
 
+# NAME
+
+type-pwd - tool which wraps sphinx(1) to get and type a password to an X11 application
+
 # SYNOPSIS
 
 ```

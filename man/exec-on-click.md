@@ -1,5 +1,9 @@
 % exec-on-click(1) | simple tool that executes command when a left mouse-click is detected
 
+# NAME
+
+exec-on-click - simple tool that executes command when a left mouse-click is detected
+
 # SYNOPSIS
 
 ```

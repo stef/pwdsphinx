@@ -1,5 +1,9 @@
 % sphage(1) | converts 32 bytes binary data into an age(1) keypair
 
+# NAME
+
+sphage - converts 32 bytes binary data into an age(1) keypair
+
 # SYNOPSIS
 
 ```

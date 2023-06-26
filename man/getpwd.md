@@ -1,5 +1,9 @@
 % getpwd(1) | simple tool that queries a password from a user and writes it to standard output
 
+# NAME
+
+getpwd - simple tool that queries a password from a user and writes it to standard output
+
 # SYNOPSIS
 
 ```

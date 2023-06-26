@@ -1,5 +1,9 @@
 % sphinx(1) | command-line client for the SPHINX password manager
 
+# NAME
+
+sphinx - command-line client for the SPHINX password manager
+
 # SYNOPSIS
 
 `sphinx` init
