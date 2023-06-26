@@ -1,3 +1,4 @@
 include README.md
 include *.py
 include man/*.1
+include GettingStarted.md
