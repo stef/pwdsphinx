@@ -1,4 +1,4 @@
-#!sphinx-x11
+#!/usr/bin/sphinx-x11
 
 wait-for-click
 pwd
