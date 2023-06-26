@@ -1,4 +1,4 @@
-#!./sphinx-x11
+#!sphinx-x11
 
 wait-for-click
 user
