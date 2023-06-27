@@ -513,7 +513,7 @@ def delete(s, pwd, user, host):
   blob = s.recv(bsize)
   if blob == b'fail':
     s.close()
-    raise ValueError("ERROR: invalid signature on list of users", file=sys.stderr)
+    raise ValueError("ERROR: invalid signature on list of users")
   version, blob = decrypt_blob(blob)
   users = set(blob.decode().split('\x00'))
   if user not in users:
