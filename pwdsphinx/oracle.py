@@ -381,17 +381,17 @@ def handler(conn, data):
    if verbose:
      print('Data received:',data.hex())
 
-   if data[0] == GET:
+   if data[0:1] == GET:
      get(conn, data)
-   elif data[0] == CHANGE:
+   elif data[0:1] == CHANGE:
      change(conn, data)
-   elif data[0] == DELETE:
+   elif data[0:1] == DELETE:
      delete(conn, data)
-   elif data[0] == COMMIT:
+   elif data[0:1] == COMMIT:
      commit_undo(conn, data, 'new', 'old')
-   elif data[0] == UNDO:
+   elif data[0:1] == UNDO:
      commit_undo(conn, data, 'old', 'new')
-   elif data[0] == READ:
+   elif data[0:1] == READ:
      read(conn, data)
    elif verbose:
      print("unknown op: 0x%02x" % data[0])
@@ -401,7 +401,7 @@ def handler(conn, data):
 
 def create_challenge(conn):
   req = conn.read(65)
-  if req[0] == READ:
+  if req[0:1] == READ:
     if len(req)!=33:
       fail(conn)
   elif len(req)!=65:
@@ -483,7 +483,7 @@ def verify_challenge(conn):
 
   # read request
   req_type = conn.read(1)
-  if req_type[0] == READ:
+  if req_type[0:1] == READ:
     payload = conn.read(32)
     if len(payload)!=32: fail(conn)
   else:
@@ -523,12 +523,12 @@ def verify_challenge(conn):
 
 def ratelimit(conn):
    op = conn.recv(1)
-   if op[0] == CREATE:
-     data = b'0'+conn.recv(64)
+   if op == CREATE:
+     data = CREATE+conn.recv(64)
      create(conn, data)
-   elif op[0] == CHALLENGE_CREATE:
+   elif op == CHALLENGE_CREATE:
      create_challenge(conn)
-   elif op[0] == CHALLENGE_VERIFY:
+   elif op == CHALLENGE_VERIFY:
      verify_challenge(conn)
 
 def main():
