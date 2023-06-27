@@ -147,7 +147,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
 
         with sphinx.connect() as s:
-            self.assertIsNone(sphinx.delete(s, 'zxcv', user, host))
+            self.assertRaises(ValueError, sphinx.delete, s, 'zxcv', user, host)
 
     def test_change(self):
         with sphinx.connect() as s:
