@@ -25,7 +25,7 @@ $(DESTDIR)$(prefix)/usr/bin/sphinx-x11: sphinx-x11
 $(DESTDIR)$(prefix)/usr/bin/sphage: sphage
 	install -D -m 0755 $< $@
 
-$(DESTDIR)$(prefix)/usr/bin/otp.sphinx: sphinx-scripts/otp.sphinx 
+$(DESTDIR)$(prefix)/usr/bin/otp.sphinx: sphinx-scripts/otp.sphinx
 	install -D -m 0755 $< $@
 
 $(DESTDIR)$(prefix)/usr/bin/pass.sphinx: sphinx-scripts/pass.sphinx
