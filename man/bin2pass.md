@@ -6,8 +6,6 @@ bin2pass - converts binary input to passwords
 
 # SYNOPSIS
 
-`bin2pass` init
-
 ```
 bin2pass [d|u|l] [<max size>] [<symbols>] <binary
 ```
