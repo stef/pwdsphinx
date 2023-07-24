@@ -26,6 +26,12 @@ echo -e "oldpassword\nnewpassword" | `sphinx` change \<user> \<site> [\<u\>\<l\>
 
 # DESCRIPTION
 
+SPHINX -- password Store that Perfectly Hides from Itself (No Xaggeration) --
+is an information-theoretically secure cryptographic password storage
+protocol with strong security guarantees, as described in the 2015 paper
+"Device-Enhanced Password Protocols with Optimal Online-Offline Protection" by
+Jarecki, Krawczyk, Shirvanian, and Saxena (https://ia.cr/2015/1099).
+
 `sphinx` is the command-line client for the SPHINX protocol, it
 provides access to all operations over the life-cycle of a password:
 init, create, get, change, undo, commit, delete. Additionally it
@@ -324,5 +330,9 @@ Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO
+
+https://www.ctrlc.hu/~stef/blog/posts/sphinx.html
+
+https://www.ctrlc.hu/~stef/blog/posts/oprf.html
 
 `oracle(1)`, `sphinx.cfg(7)`, `getpwd(1)`
