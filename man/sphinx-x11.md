@@ -46,7 +46,8 @@ e.g. `joe` as a username and then for the TOTP value it uses
 
 # DEFAULT SCRIPTS
 
-`sphinx-x11(1)` comes with 4 default sphinx-scripts:
+`sphinx-x11(1)` comes with 4 default sphinx-scripts (note on debian and
+derivates instead of a `.sphinx` extension they have a `sx11-` prefix):
 
  - pass.sphinx <user> <host>: gets a password using `sphinx(1)`, types
    it and submits it.
