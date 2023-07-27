@@ -103,4 +103,4 @@ This is free software: you are free to change and redistribute it.  There is NO 
 
 # SEE ALSO
 
-`sphinx(1)`, `sphinx.cfg(7)`, `getpwd(1)`
+`sphinx(1)`, `getpwd(1)`

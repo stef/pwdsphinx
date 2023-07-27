@@ -335,4 +335,4 @@ https://www.ctrlc.hu/~stef/blog/posts/sphinx.html
 
 https://www.ctrlc.hu/~stef/blog/posts/oprf.html
 
-`oracle(1)`, `sphinx.cfg(7)`, `getpwd(1)`
+`oracle(1)`, `getpwd(1)`
