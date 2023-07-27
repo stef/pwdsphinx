@@ -59,13 +59,15 @@ def respond(chal, secret):
     return resp.raw
 
 # int finish(const uint8_t *pwd, const size_t p_len, const uint8_t *bfac, const uint8_t *resp, uint8_t *rwd)
-def finish(pwd, bfac, resp, salt):
+def finish(pwd, bfac, chal, resp, salt):
     if None in (pwd, bfac, resp, salt):
         raise ValueError("invalid parameter")
     if len(resp) != DECAF_255_SER_BYTES: raise ValueError("truncated point")
+    if len(chal) != DECAF_255_SER_BYTES: raise ValueError("truncated point")
     if len(bfac) != DECAF_255_SCALAR_BYTES: raise ValueError("truncated secret")
     if len(salt) < crypto_pwhash_SALTBYTES: raise ValueError("truncated salt")
+    if(chal==resp): raise ValueError("alpha == beta")
 
     rwd = ctypes.create_string_buffer(DECAF_255_SER_BYTES)
-    __check(sphinxlib.sphinx_finish(pwd, len(pwd), bfac, resp, salt, rwd))
+    __check(sphinxlib.sphinx_finish(pwd, len(pwd), bfac, chal, resp, salt, rwd))
     return rwd.raw

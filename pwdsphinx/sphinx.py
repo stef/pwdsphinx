@@ -181,7 +181,7 @@ def commit_undo(s, op, pwd, user, host):
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([op, id, alpha])
   s = ratelimit(s, msg)
-  if not auth(s,id,pwd,r):
+  if not auth(s,id,alpha,pwd,r):
     s.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
   if s.recv(2)!=b'ok':
@@ -243,7 +243,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(s,id,pwd=None,r=None):
+def auth(s,id,alpha=None,pwd=None,r=None):
   if r is None:
     nonce = s.recv(32)
     if len(nonce)!=32:
@@ -255,7 +255,7 @@ def auth(s,id,pwd=None,r=None):
        return False
     beta = msg[:32]
     nonce = msg[32:]
-    rwd = sphinxlib.finish(pwd, r, beta, id)
+    rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
 
   sk, pk = get_signkey(id, rwd)
   sig = pysodium.crypto_sign_detached(nonce,sk)
@@ -343,7 +343,7 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
     # or (even? less probable) the value alpha received by the server is not a valid point
     # both of these less probable causes point at corruption during transport
-  rwd = sphinxlib.finish(pwd, r, beta, id)
+  rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
 
   # second phase, derive new auth signing pubkey
   sk, pk = get_signkey(id, rwd)
@@ -392,7 +392,7 @@ def get(s, pwd, user, host):
       raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
   beta = resp[:32]
   rules = resp[32:]
-  rwd = sphinxlib.finish(pwd, r, beta, id)
+  rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
 
   try:
     classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
@@ -437,7 +437,7 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   msg = b''.join([CHANGE, id, alpha])
   s = ratelimit(s, msg)
   # auth: do sphinx with current seed, use it to sign the nonce
-  if not auth(s,id,oldpwd,r):
+  if not auth(s,id,alpha,oldpwd,r):
     s.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
@@ -447,7 +447,7 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   if beta == b'\x00\x04fail' or len(beta)!=32:
     s.close()
     raise ValueError("ERROR: changing password failed due to corruption during transport.")
-  rwd = sphinxlib.finish(newpwd, r, beta, id)
+  rwd = sphinxlib.finish(newpwd, r, alpha, beta, id)
 
   if validate_password:
       checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
@@ -491,7 +491,7 @@ def delete(s, pwd, user, host):
   r, alpha = sphinxlib.challenge(pwd)
   msg = b''.join([DELETE, id, alpha])
   s = ratelimit(s, msg)
-  rwd = auth(s,id,pwd,r)
+  rwd = auth(s,id,alpha,pwd,r)
   if not rwd:
     s.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
