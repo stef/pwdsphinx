@@ -12,25 +12,31 @@ x11_type() {
    xdotool type --clearmodifiers "$1"
 }
 
-wait_for_click() {
+wfc() {
    # wait until left mouse click
    THIS=$(exec sh -c 'echo "$PPID"')
-   xinput --test-xi2 --root $MOUSEID | while true; do
+   xinput --test-xi2 --root "$MOUSEID" | while true; do
       read -t 1 line || continue
-      echo "$line" | grep -qs '^EVENT type 16 (RawButtonRelease)$' && {
+      echo "$line" | /bin/grep -qs '^EVENT type 16 (RawButtonRelease)$' && {
+          read -t 1 line
           read -t 1 line
           read -t 1 details;
-          echo "$details" | grep -qs '^\s*detail: 1$' && {
-              pkill -9 -e -P $THIS xinput >/dev/null
+          echo "$details" | /bin/grep -qs '^\s*detail: 1$' && {
+              pkill -9 -e -P "$THIS" xinput >/dev/null
               break
           }
       }
    done 2>/dev/null
 }
 
+wait_for_click() {
+   # wrapping wfc so that when xinput is killed the message "KILLED" is suppressed
+   wfc >/dev/null 2>&1
+}
+
 getpwd() {
     prompt=${1:-sphinx}
-    echo -en "SETTITLE sphinx password prompt\nSETPROMPT ${prompt} password\nGETPIN\n" | pinentry | grep '^D' | cut -c3- | tr -d '\n'
+    printf "SETTITLE sphinx password prompt\nSETPROMPT %s password\nGETPIN\n" "${prompt}" | pinentry | grep '^D' | cut -c3- | tr -d '\n'
 }
 
 pwd() {
@@ -49,7 +55,47 @@ enter() {
     xdotool key --clearmodifiers enter
 }
 
-cat "$1" | while read -r line; do
+xdoget() {
+    title="$1"
+    shift 1
+    printf '' | /usr/bin/xclip -i
+    sleep 0.2
+    /usr/bin/xdotool key --window "$windowid" "$@"
+    retries=0
+    while [ $retries -lt 3 ]; do
+        sleep 0.2
+        x=$(/usr/bin/xclip -o)
+        printf "%s" "$x" | /bin/grep -Eqs '^https?:.*' && {
+            echo "$x" | cut -d'/' -f3
+            break
+        }
+        retries=$((retries+1))
+    done
+    #[ $retries -ge 3 ] && { echo "failed to get host" >&2 ; false; }
+}
+
+gethost() {
+   wait_for_click
+   windowid=$(/usr/bin/xdotool getactivewindow)
+   title=$(/usr/bin/xdotool getwindowname "$windowid" | /bin/sed -e 's/^ *//g;s/ *$//g')
+   case "$title" in
+       #*Pentadactyl|*Vimperator) host="$(xdoget "$title" Escape y)";;
+       *Iceweasel|*Firefox) host="$(xdoget "$title" Escape ctrl+l ctrl+a ctrl+c Escape Tab)";;
+       *Chromium) host="$(xdoget "$title" Escape ctrl+l ctrl+a ctrl+c Escape Tab)";;
+       #*Uzbl\ browser*) host="$(xdoget "title" Escape y u)";;
+       #luakit*) host="$(xdoget "title" shift+o Home ctrl+Right Right ctrl+shift+End ctrl+c Escape)";;
+   esac
+   #echo "$host"
+}
+
+getuser() {
+   [ -z "$host" ] && { echo "no host" >&2; false; }
+   users=$(sphinx list "$host")
+   [ "$(echo "$users" | wc -l)" -gt 1 ] && user=$(echo $users | dmenu -p username) || user=$users
+   #echo "$user"
+}
+
+cat "$script" | while read -r line; do
    case "$line" in
       type\ *)          x11_type "${line##type }";;
       wait-for-click)  wait_for_click;;
@@ -59,5 +105,7 @@ cat "$1" | while read -r line; do
       otp)             otp;;
       tab)             tab;;
       enter)           enter;;
+      gethost)         gethost;;
+      getuser)         getuser;;
    esac
 done
