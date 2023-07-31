@@ -4,6 +4,7 @@ install: $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx $(DESTDIR)$(prefix)/usr/bin/ex
 	$(DESTDIR)$(prefix)/usr/bin/getpwd $(DESTDIR)$(prefix)/usr/bin/type-pwd \
 	$(DESTDIR)$(prefix)/usr/bin/otp.sphinx $(DESTDIR)$(prefix)/usr/bin/pass.sphinx \
 	$(DESTDIR)$(prefix)/usr/bin/user-pass-otp.sphinx $(DESTDIR)$(prefix)/usr/bin/user-pass.sphinx \
+   $(DESTDIR)$(prefix)/usr/bin/getacc-user-pass.sphinx \
 	$(DESTDIR)$(prefix)/usr/bin/sphinx-x11 $(DESTDIR)$(prefix)/usr/bin/sphage \
 	$(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx-tools/README.x11.md
 
@@ -35,6 +36,9 @@ $(DESTDIR)$(prefix)/usr/bin/user-pass-otp.sphinx: sphinx-scripts/user-pass-otp.s
 	install -D -m 0755 $< $@
 
 $(DESTDIR)$(prefix)/usr/bin/user-pass.sphinx: sphinx-scripts/user-pass.sphinx
+	install -D -m 0755 $< $@
+
+$(DESTDIR)$(prefix)/usr/bin/getacc-user-pass.sphinx: sphinx-scripts/getacc-user-pass.sphinx
 	install -D -m 0755 $< $@
 
 $(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx-tools/README.x11.md: README.md
