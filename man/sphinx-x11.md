@@ -31,6 +31,14 @@ first and second parameter respectively.
     advancing between form-fields.
   - `enter`: sends an enter key press to the currently focused X11
     window, possibly submitting a form.
+  - `gethost`: waits for a left mouse-click on a browser window, and
+    then copies the URL from the urlbar into the clipboard, and then
+    strips it down to the hostname and sets an internal "$host"
+    variable that can then be used with `host` or `pwd`.
+  - `getuser` dispatches a `sphinx list $host` and if more than one
+    user is returned, offers them in a dmenu widget, if/when one user
+    is found/selected it is set as an internal `$user` variable which
+    can then used for verbs like `user` or `pwd`.
 
 Any lines not consisting of these tokens are simply ignored.
 
@@ -46,7 +54,7 @@ e.g. `joe` as a username and then for the TOTP value it uses
 
 # DEFAULT SCRIPTS
 
-`sphinx-x11(1)` comes with 4 default sphinx-scripts (note on debian and
+`sphinx-x11(1)` comes with 5 default sphinx-scripts (note on debian and
 derivates instead of a `.sphinx` extension they have a `sx11-` prefix):
 
  - pass.sphinx <user> <host>: gets a password using `sphinx(1)`, types
@@ -59,6 +67,12 @@ derivates instead of a `.sphinx` extension they have a `sx11-` prefix):
    and submits that as well.
  - otp.sphinx <user> <host>: gets a TOTP pin code using `sphinx(1)`
    and types and submits it.
+ - getacc-user-pass.sphinx: waits for a click on a browser window,
+   from with it gets the target `host` value, then using that uses
+   `sphinx list` to get the users associated with this host, and if
+   one is selected, waits for another click in the user input field of
+   a login form, then gets a password using `sphinx(1)`, types the user,
+   then the password and submits it.
 
 Each of these scripts waits for the user to click, then they retrieve
 the relevant password (and/or TOTP token) before inserting it into the
