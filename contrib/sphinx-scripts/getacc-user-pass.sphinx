@@ -1,0 +1,10 @@
+#!/usr/bin/sphinx-x11
+
+gethost
+getuser
+wait-for-click
+user
+tab
+pwd
+tab
+enter
