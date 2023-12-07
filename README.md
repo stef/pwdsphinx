@@ -30,29 +30,6 @@ install also an X11 variant of pinentry from the gnupg project:
 
 `pip3 install pwdsphinx` should get you started.
 
-## API
-
-`sphinxlib` is a `ctypes`-based python wrapper around [libsphinx](https://github.com/stef/libsphinx), so
-you can build whatever you fancy immediately in python. The interface
-exposed wraps the 3 sphinx functions from the library like this:
-
-```
-def challenge(pwd)
-```
-
-returns bfac and chal
-
-```
-def respond(chal, secret)
-```
-return the response
-
-```
-def finish(pwd, bfac, resp)
-```
-
-returns the raw 32 byte password.
-
 ## Server/Client
 
 Since the sphinx protocol only makes sense if the "device" is

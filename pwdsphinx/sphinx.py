@@ -5,16 +5,16 @@
 
 import sys, os, socket, ssl, struct, platform, getpass, time
 from SecureString import clearmem
-import pysodium
+import pysodium, pyoprf
 from qrcodegen import QrCode
 from zxcvbn import zxcvbn
 from equihash import solve
 try:
-  from pwdsphinx import bin2pass, sphinxlib
+  from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
 except ImportError:
-  import bin2pass, sphinxlib
+  import bin2pass
   from config import getcfg
   from consts import *
 
@@ -178,7 +178,7 @@ def xor(x,y):
 
 def commit_undo(s, op, pwd, user, host):
   id = getid(host, user)
-  r, alpha = sphinxlib.challenge(pwd)
+  r, alpha = pyoprf.blind(pwd)
   msg = b''.join([op, id, alpha])
   s = ratelimit(s, msg)
   if not auth(s,id,alpha,pwd,r):
@@ -255,7 +255,7 @@ def auth(s,id,alpha=None,pwd=None,r=None):
        return False
     beta = msg[:32]
     nonce = msg[32:]
-    rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
+    rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   sk, pk = get_signkey(id, rwd)
   sig = pysodium.crypto_sign_detached(nonce,sk)
@@ -331,7 +331,7 @@ def init_key():
 def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   # 1st step OPRF on the new seed
   id = getid(host, user)
-  r, alpha = sphinxlib.challenge(pwd)
+  r, alpha = pyoprf.blind(pwd)
   msg = b''.join([CREATE, id, alpha])
   s.send(msg)
 
@@ -343,7 +343,7 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
     # or (even? less probable) the value alpha received by the server is not a valid point
     # both of these less probable causes point at corruption during transport
-  rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
+  rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   # second phase, derive new auth signing pubkey
   sk, pk = get_signkey(id, rwd)
@@ -382,7 +382,7 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
 def get(s, pwd, user, host):
   id = getid(host, user)
-  r, alpha = sphinxlib.challenge(pwd)
+  r, alpha = pyoprf.blind(pwd)
   msg = b''.join([GET, id, alpha])
   s = ratelimit(s, msg)
 
@@ -392,7 +392,7 @@ def get(s, pwd, user, host):
       raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
   beta = resp[:32]
   rules = resp[32:]
-  rwd = sphinxlib.finish(pwd, r, alpha, beta, id)
+  rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   try:
     classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
@@ -433,7 +433,7 @@ def users(s, host):
 
 def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   id = getid(host, user)
-  r, alpha = sphinxlib.challenge(oldpwd)
+  r, alpha = pyoprf.blind(oldpwd)
   msg = b''.join([CHANGE, id, alpha])
   s = ratelimit(s, msg)
   # auth: do sphinx with current seed, use it to sign the nonce
@@ -441,13 +441,13 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     s.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
-  r, alpha = sphinxlib.challenge(newpwd)
+  r, alpha = pyoprf.blind(newpwd)
   s.send(alpha)
   beta = s.recv(32) # beta
   if beta == b'\x00\x04fail' or len(beta)!=32:
     s.close()
     raise ValueError("ERROR: changing password failed due to corruption during transport.")
-  rwd = sphinxlib.finish(newpwd, r, alpha, beta, id)
+  rwd = pyoprf.unblind_finalize(r, beta, newpwd)
 
   if validate_password:
       checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
@@ -488,7 +488,7 @@ def undo(s, pwd, user, host):
 def delete(s, pwd, user, host):
   # run sphinx to recover rwd for authentication
   id = getid(host, user)
-  r, alpha = sphinxlib.challenge(pwd)
+  r, alpha = pyoprf.blind(pwd)
   msg = b''.join([DELETE, id, alpha])
   s = ratelimit(s, msg)
   rwd = auth(s,id,alpha,pwd,r)

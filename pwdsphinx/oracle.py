@@ -6,7 +6,7 @@
 import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct
 import pysodium
 import equihash
-from pwdsphinx import sphinxlib
+import pyoprf
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 cfg = getcfg('sphinx')
@@ -163,7 +163,7 @@ def create(s, msg):
     # 1st step OPRF with a new seed
     k=pysodium.randombytes(32)
     try:
-      beta = sphinxlib.respond(alpha, k)
+      beta = pyoprf.evaluate(k, alpha)
     except:
       fail(s)
 
@@ -227,7 +227,7 @@ def get(conn, msg):
         fail(conn)
 
     try:
-        beta = sphinxlib.respond(alpha, k)
+        beta = pyoprf.evaluate(k, alpha)
     except:
       fail(conn)
 
@@ -242,7 +242,7 @@ def auth(s,id,alpha):
   k = load_blob(id,'key')
   if k is not None:
     try:
-       beta = sphinxlib.respond(alpha, k)
+       beta = pyoprf.evaluate(k, alpha)
     except:
        fail(s)
   else:
@@ -278,7 +278,7 @@ def change(conn, msg):
   k=pysodium.randombytes(32)
 
   try:
-      beta = sphinxlib.respond(alpha, k)
+      beta = pyoprf.evaluate(k, alpha)
   except:
     fail(conn)
 
