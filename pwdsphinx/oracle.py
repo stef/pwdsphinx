@@ -9,9 +9,10 @@ import equihash
 import pyoprf
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
+from pwdsphinx.utils import split_by_n
 cfg = getcfg('sphinx')
 
-verbose = cfg['server'].getboolean('verbose', fallback=False)
+verbose = cfg['server'].get('verbose', False)
 address = cfg['server'].get('address', '127.0.0.1')
 port = int(cfg['server'].get('port',2355))
 timeout = int(cfg['server'].get('timeout',"3"))
@@ -32,7 +33,16 @@ rl_threshold = int(cfg['server'].get('rl_threshold',1))
 rl_gracetime = int(cfg['server'].get('rl_gracetime',10))
 
 if(verbose):
-  cfg.write(sys.stdout)
+  print(f"address:      {address}:{port}")
+  print(f"timeout:      {timeout}s")
+  print(f"max kids:     {max_kids}")
+  print(f"datadir:      {datadir}")
+  print(f"ssl_key:      {ssl_key}")
+  if 'ssl_cert' in globals():
+      print(f"ssl_cert:     {ssl_cert}")
+  print(f"rl decay:     {rl_decay}")
+  print(f"rl threshold: {rl_threshold}")
+  print(f"rl gracetime: {rl_gracetime}")
 
 Difficulties = [
     # timeouts are based on benchmarking a raspberry pi 1b
@@ -65,7 +75,9 @@ def fail(s):
     s.close()
     os._exit(0)
 
-def pop(obj, cnt):
+def pop(obj, cnt, astype=None):
+  if astype is not None:
+      return astype(obj[:cnt]), obj[cnt:]
   return obj[:cnt], obj[cnt:]
 
 def verify_blob(msg, pk):
@@ -111,7 +123,7 @@ def update_blob(s):
         print("user blob authkey fund, but no blob for id:", id)
         fail(s)
       new = False
-    s.send(blob)
+    s.sendall(blob)
     if new:
       pk = s.recv(32)
       prefix = s.recv(2)
@@ -195,6 +207,82 @@ def create(s, msg):
 
     s.send(b'ok')
 
+# msg format: 0xf0|index|threshold|n|id[32]|alpha[32]|pubkeys[(n-1)*32]
+def create_dkg(s, msg):
+    if len(msg)!=68:
+      fail(s)
+    if verbose: print('Data received:',msg.hex())
+    op,    msg = pop(msg,1)
+    index, msg = pop(msg,1,lambda x: x[0])
+    t,     msg = pop(msg,1,lambda x: x[0])
+    n,     msg = pop(msg,1,lambda x: x[0])
+    id,    msg = pop(msg,32)
+    alpha, msg = pop(msg,32)
+
+    pubkeys = s.recv(n*32)
+    if len(pubkeys) != n*32:
+        fail(s)
+    pubkeys = split_by_n(pubkeys,32)
+
+    # check if id is unique
+    id = binascii.hexlify(id).decode()
+    tdir = os.path.join(datadir,id)
+    if(os.path.exists(tdir)):
+      fail(s)
+
+    ## 1st step OPRF with a new seed
+    # perform dkg to collectively generate new seed
+    shares, c = pyoprf.dkg_start(n,t)
+    s.send(b''.join(c)+b''.join(b''.join(share) for share in shares))
+
+    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*2*33)
+    commitments, shares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
+    commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
+                   for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
+    shares = [(bytes(x[:33]),bytes(x[33:])) for x in split_by_n(shares,66)]
+
+    complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
+    # todo handle complaints
+    qual = [j+1 for j in range(n)] + [0]
+
+    xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
+    #print(index, xi.hex(), x_i.hex())
+    shares = (xi, x_i)
+
+    #k=pysodium.randombytes(32)
+    try:
+      beta = pyoprf.evaluate(xi[1:], alpha)
+    except:
+      fail(s)
+
+    s.send(bytes([xi[0]])+beta)
+
+    # wait for auth signing pubkey and rules
+    msg = s.recv(32+RULE_SIZE+64) # pubkey, rule, signature
+    if len(msg)!=32+RULE_SIZE+64:
+      fail(s)
+    # verify auth sig on packet
+    pk = msg[:32]
+    try:
+      msg = verify_blob(msg,pk)
+    except ValueError:
+      fail(s)
+
+    rules = msg[32:]
+
+    # 3rd phase
+    update_blob(s) # add user to host record
+
+    if not os.path.exists(datadir):
+        os.mkdir(datadir,0o700)
+    os.mkdir(tdir,0o700)
+
+    save_blob(id,'key',xi)
+    save_blob(id,'pub',pk)
+    save_blob(id,'rules',rules)
+
+    s.send(b'ok')
+
 def load_blob(path,fname,size=None):
     f = os.path.join(datadir,path,fname)
     if not os.path.exists(f):
@@ -217,7 +305,7 @@ def get(conn, msg):
       fail(conn)
 
     id = binascii.hexlify(id).decode()
-    k = load_blob(id,'key',32)
+    k = load_blob(id,'key',33)
     if k is None:
       # maybe execute protocol with static but random value to not leak which host ids exist?
       fail(conn)
@@ -227,11 +315,11 @@ def get(conn, msg):
         fail(conn)
 
     try:
-        beta = pyoprf.evaluate(k, alpha)
+        beta = pyoprf.evaluate(k[1:], alpha)
     except:
       fail(conn)
 
-    conn.send(beta+rules)
+    conn.send(k[:1]+beta+rules)
 
 def auth(s,id,alpha):
   pk = load_blob(id,'pub',32)
@@ -242,7 +330,7 @@ def auth(s,id,alpha):
   k = load_blob(id,'key')
   if k is not None:
     try:
-       beta = pyoprf.evaluate(k, alpha)
+       beta = bytes([k[0]])+pyoprf.evaluate(k[1:], alpha)
     except:
        fail(s)
   else:
@@ -299,6 +387,72 @@ def change(conn, msg):
   save_blob(id,"pub.new", pk)
   conn.send(b'ok')
 
+def change_dkg(s, msg):
+  op,   msg = pop(msg,1)
+  id,   msg = pop(msg,32)
+  alpha,msg = pop(msg,32)
+  if msg!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % msg)
+    fail(s)
+
+  id = binascii.hexlify(id).decode()
+  tdir = os.path.join(datadir,id)
+  if not os.path.exists(tdir):
+    if verbose: print("%s doesn't exist" % tdir)
+    fail(s)
+
+  auth(s, id, alpha)
+
+  msg = s.recv(35)
+  t,      msg = pop(msg,1,lambda x: x[0])
+  n,      msg = pop(msg,1,lambda x: x[0])
+  index,alpha = pop(msg,1,lambda x: x[0])
+
+  pubkeys = s.recv(n*32)
+  if len(pubkeys) != n*32:
+      fail(s)
+  pubkeys = split_by_n(pubkeys,32)
+
+  shares, c = pyoprf.dkg_start(n,t)
+  s.send(b''.join(c)+b''.join(b''.join(share) for share in shares))
+
+  msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*2*33)
+  commitments, shares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
+  commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
+                 for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
+  shares = [(bytes(x[:33]),bytes(x[33:])) for x in split_by_n(shares,66)]
+
+  complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
+  # todo handle complaints
+  qual = [j+1 for j in range(n)] + [0]
+
+  xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
+  #print(index, xi.hex(), x_i.hex())
+  shares = (xi, x_i)
+
+  #k=pysodium.randombytes(32)
+  try:
+      beta = pyoprf.evaluate(xi[1:], alpha)
+  except:
+    fail(s)
+
+  s.send(bytes([xi[0]])+beta)
+
+  blob = s.recv(32+RULE_SIZE+64)
+  if len(blob)!=32+RULE_SIZE+64:
+    fail(s)
+
+  pk = blob[:32]
+  try:
+    rules = verify_blob(blob,pk)[32:]
+  except ValueError:
+    fail(s)
+
+  save_blob(id,'new',xi)
+  save_blob(id,"rules.new", rules)
+  save_blob(id,"pub.new", pk)
+  s.send(b'ok')
+
 def delete(conn, msg):
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
@@ -344,9 +498,9 @@ def commit_undo(conn, msg, new, old):
     fail(conn)
   if (cur_pub:=load_blob(id,'pub', 32) )is None:
     fail(conn)
-  if (new_key:= load_blob(id, new, 32)) is None:
+  if (new_key:= load_blob(id, new, 33)) is None:
     fail(conn)
-  if (cur_key:= load_blob(id, 'key', 32)) is None:
+  if (cur_key:= load_blob(id, 'key', 33)) is None:
     fail(conn)
 
   save_blob(id,old,cur_key)
@@ -385,6 +539,8 @@ def handler(conn, data):
      get(conn, data)
    elif data[0:1] == CHANGE:
      change(conn, data)
+   elif data[0:1] == CHANGE_DKG:
+     change_dkg(conn, data)
    elif data[0:1] == DELETE:
      delete(conn, data)
    elif data[0:1] == COMMIT:
@@ -526,6 +682,9 @@ def ratelimit(conn):
    if op == CREATE:
      data = CREATE+conn.recv(64)
      create(conn, data)
+   elif op == CREATE_DKG:
+     data = CREATE_DKG+conn.recv(67)
+     create_dkg(conn, data)
    elif op == CHALLENGE_CREATE:
      create_challenge(conn)
    elif op == CHALLENGE_VERIFY:

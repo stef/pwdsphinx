@@ -1,25 +1,33 @@
 #!/usr/bin/env python3
-
-# SPDX-FileCopyrightText: 2018,2021, Marsiske Stefan
+# SPDX-FileCopyrightText: 2023, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import os, configparser
+import os, tomllib
+from utils import split_by_n
 
-class StrippingQuotesConfigParser(configparser.ConfigParser):
-    def get(self, section, option, **kwargs):
-        val = configparser.ConfigParser.get(self, section, option, **kwargs)
-        return val.strip('"') if hasattr(val,'strip') else val
-
-def getcfg(app):
-  config = StrippingQuotesConfigParser()
-  # read global cfg
-  config.read('/etc/sphinx/config')
-  # update with per-user configs
-  config.read(os.path.expanduser("~/.sphinxrc"))
-  config.read(os.path.expanduser("~/.config/sphinx/config"))
-  # over-ride with local directory config
-  config.read(os.path.expanduser("sphinx.cfg"))
+def getcfg(name):
+  paths=[
+      # read global cfg
+      f'/etc/{name}/config',
+      # update with per-user configs
+      os.path.expanduser(f"~/.{name}rc"),
+      # over-ride with local directory config
+      os.path.expanduser(f"~/.config/{name}/config"),
+      os.path.expanduser(f"{name}.cfg")
+  ]
+  config = dict()
+  for path in paths:
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except FileNotFoundError:
+        continue
+    except tomllib.TOMLDecodeError as ex:
+        print(f"error in {path} at {ex}")
+        continue
+    config.update(data)
   return config
+
 
 if __name__ == '__main__':
   import sys

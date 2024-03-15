@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import sys, os, socket, ssl, struct, platform, getpass, time
+import concurrent.futures
 from SecureString import clearmem
 import pysodium, pyoprf
 from qrcodegen import QrCode
@@ -13,10 +14,14 @@ try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
+  from pwdsphinx.utils import split_by_n
+  from pwdsphinx.multiplexer import Multiplexer
 except ImportError:
   import bin2pass
   from config import getcfg
   from consts import *
+  from utils import split_by_n
+  from multiplexer import Multiplexer
 
 win=False
 if platform.system() == 'Windows':
@@ -26,7 +31,7 @@ if platform.system() == 'Windows':
 
 cfg = getcfg('sphinx')
 
-verbose = cfg['client'].getboolean('verbose', fallback=False)
+verbose = cfg['client'].get('verbose', False)
 hostname = cfg['client'].get('address','127.0.0.1')
 address = socket.gethostbyname(hostname)
 port = int(cfg['client'].get('port',2355))
@@ -38,8 +43,21 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
-rwd_keys = cfg['client'].getboolean('rwd_keys', fallback=False)
-validate_password = cfg['client'].getboolean('validate_password',True)
+rwd_keys = cfg['client'].get('rwd_keys', False)
+validate_password = cfg['client'].get('validate_password',True)
+threshold = int(cfg['client'].get('threshold') or "1")
+servers = cfg.get('servers',{})
+
+if len(servers)>1:
+    if threshold < 2:
+        print('if you have multiple servers in your config, you must specify a threshold >1 also')
+        exit(1)
+    if len(servers)<threshold:
+        print(f'threshold({threshold}) must be less or equal than the number of servers({len(servers)}) in your config')
+        exit(1)
+elif threshold > 1:
+    print(f'threshold({threshold}) must be less or equal than the number of servers({len(servers)}) in your config')
+    exit(1)
 
 if verbose:
     print("hostname:", hostname, file=sys.stderr)
@@ -48,6 +66,9 @@ if verbose:
     print("datadir:", datadir, file=sys.stderr)
     print("ssl_cert:", ssl_cert, file=sys.stderr)
     print("rwd_keys:", rwd_keys, file=sys.stderr)
+    print("threshold:", threshold, file=sys.stderr)
+    for name, server in servers.items():
+      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)} pk: {server['pubkey']}")
 
 #### consts ####
 
@@ -66,23 +87,6 @@ def get_masterkey():
     return mk
   except FileNotFoundError:
     raise ValueError("ERROR: Could not find masterkey!\nIf sphinx was working previously it is now broken.\nIf this is a fresh install all is good, you just need to run `%s init`." % sys.argv[0])
-
-def connect():
-  ctx = ssl.create_default_context()
-  if(ssl_cert):
-      ctx.load_verify_locations(ssl_cert) # only for dev, production system should use proper certs!
-      ctx.check_hostname=False            # only for dev, production system should use proper certs!
-      ctx.verify_mode=ssl.CERT_NONE       # only for dev, production system should use proper certs!
-  else:
-      ctx.load_default_certs()
-      ctx.verify_mode = ssl.CERT_REQUIRED
-      ctx.check_hostname = True
-
-  s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  s.settimeout(5)
-  s = ctx.wrap_socket(s, server_hostname=hostname)
-  s.connect((address, port))
-  return s
 
 def get_signkey(id, rwd):
   mk = get_masterkey()
@@ -130,6 +134,9 @@ def sign_blob(blob, id, rwd):
   return b''.join((blob,res))
 
 def getid(host, user):
+  # todo also inlude the server in the hash, so that the id is
+  # different for each server in the threshold setting, and also the
+  # signing key is different
   mk = get_masterkey()
   salt = pysodium.crypto_generichash(SALT_CTX, mk)
   clearmem(mk)
@@ -176,18 +183,18 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
 def xor(x,y):
   return bytes(a ^ b for (a, b) in zip(x, y))
 
-def commit_undo(s, op, pwd, user, host):
+def commit_undo(m, op, pwd, user, host):
   id = getid(host, user)
   r, alpha = pyoprf.blind(pwd)
   msg = b''.join([op, id, alpha])
-  s = ratelimit(s, msg)
-  if not auth(s,id,alpha,pwd,r):
-    s.close()
+  m = ratelimit(m, msg)
+  if not auth(m,id,alpha,pwd,r):
+    m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
-  if s.recv(2)!=b'ok':
-    s.close()
+  if set(m.gather(2).values())!={b'ok'}:
+    m.close()
     raise ValueError("Server failed to %s" % "Commit" if op == COMMIT else "UNDO")
-  s.close()
+  m.close()
   return True
 
 def read_pkt(s,size):
@@ -243,69 +250,124 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(s,id,alpha=None,pwd=None,r=None):
+def auth(m,id,alpha=None,pwd=None,r=None):
   if r is None:
-    nonce = s.recv(32)
-    if len(nonce)!=32:
-       return False
+    nonces = m.gather(32)
+    if nonces is None:
+      m.close()
+      return False
+    nonces = list(nonces.items())
     rwd = b''
   else:
-    msg = s.recv(64)
-    if len(msg)!=64:
-       return False
-    beta = msg[:32]
-    nonce = msg[32:]
+    msgs = m.gather(65,proc=lambda x: (x[:33],x[33:]))
+    if msgs is None:
+      m.close()
+      return False
+    nonces = [(idx,resp[1]) for idx, resp in msgs.items()]
+    beta = pyoprf.thresholdmult([resp[0] for resp in msgs.values()][:threshold])
     rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   sk, pk = get_signkey(id, rwd)
-  sig = pysodium.crypto_sign_detached(nonce,sk)
+  for idx, nonce in nonces:
+    sig = pysodium.crypto_sign_detached(nonce,sk)
+    m.send(idx, sig)
   clearmem(sk)
-  s.send(sig)
   return rwd
 
-def ratelimit(s,req):
+def ratelimit(m,req):
   pkt0 = b''.join([CHALLENGE_CREATE, req])
-  s.send(pkt0)
-  challenge = s.recv(1+1+8+32) # n,k,ts,sig
-  if len(challenge)!= 1+1+8+32:
-    if verbose: print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
-    raise ValueError("ERROR: failed to get ratelimit challenge")
-  s.close()
-  n = challenge[0]
-  k = challenge[1]
+  m.broadcast(pkt0)
+  #challenge = s.recv(1+1+8+32) # n,k,ts,sig
+  challenges = m.gather(1+1+8+32, threshold)
+  if challenges is None:
+    m.close()
+    return False
+  #if len(challenge)!= 1+1+8+32:
+  #  if verbose: print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
+  #  raise ValueError("ERROR: failed to get ratelimit challenge")
+  m.close()
 
-  try:
-    os.write(3,f"{n} {k}\n".encode('utf8'))
-  except OSError: pass
+  puzzles = []
+  with concurrent.futures.ProcessPoolExecutor() as executor:
+    for idx, challenge in challenges.items():
+        n = challenge[0]
+        k = challenge[1]
 
-  if k==4:
-    if n < 90:
-      if verbose: print("got an easy puzzle: %d" % n, file=sys.stderr)
-    elif n > 100:
-      if verbose: print("got a hard puzzle: %d" % n, file=sys.stderr)
-    else:
-      if verbose: print("got a moderate puzzle: %d" % n, file=sys.stderr)
-  seed = challenge + req
+        try:
+            os.write(3,f"{idx} {n} {k}\n".encode('utf8'))
+        except OSError: pass
 
-  delta = time.time()
-  solution = solve(n, k, seed)
-  delta = time.time() - delta
-  try:
-    os.write(3,f"{delta}".encode('utf8'))
-  except OSError: pass
+        if k==4:
+            if n < 90:
+              if verbose: print(f"{m[idx].name} sent an easy puzzle: %d" % n, file=sys.stderr)
+            elif n > 100:
+              if verbose: print(f"{m[idx].name} sent a hard puzzle: %d" % n, file=sys.stderr)
+            else:
+              if verbose: print(f"{m[idx].name} sent a moderate puzzle: %d" % n, file=sys.stderr)
+        seed = challenge + req
 
-  s = connect()
-  pkt1 = b''.join([CHALLENGE_VERIFY, challenge])
-  s.send(pkt1)
-  s.send(req)
-  s.send(solution)
-  return s
+        def timed_solve(n,k,seed):
+            delta = time.time()
+            solution = solve(n,k,seed)
+            delta = time.time() - delta
+            try:
+              os.write(3,f"{idx} {delta}".encode('utf8'))
+            except OSError: pass
+            return solution
+        solution = executor.submit(solve,n,k,seed)
+        puzzles.append((challenge, solution, idx))
+
+  for puzzle in puzzles:
+    m[puzzle[2]].connect()
+    pkt1 = b''.join([CHALLENGE_VERIFY, puzzle[0]])
+    m.send(puzzle[2], pkt1)
+    m.send(puzzle[2], req)
+    m.send(puzzle[2], puzzle[1].result())
+  return m
 
 def getpwd():
   if sys.stdin.isatty():
     return getpass.getpass("enter your password please: ").encode('utf8')
   else:
     return sys.stdin.buffer.readline().rstrip(b'\n')
+
+def dkg(m, op, threshold, keyid, alpha):
+   n = len(m)
+   pubkeys = b''.join(p.pubkey for p in m)
+
+   if op == CREATE_DKG:
+     for index in range(n):
+        msg = b"%c%c%c%c%s%s%s" % (CREATE_DKG, index+1, threshold, n, keyid, alpha, pubkeys)
+        m.send(index,msg)
+   else:
+     for index in range(n):
+       msg = b"%c%c%c%s%s" % (threshold, n, index+1, alpha, pubkeys)
+       m.send(index,msg)
+
+   responders=m.gather((pysodium.crypto_core_ristretto255_BYTES * threshold) + (33*n*2), n, lambda x: (x[:threshold*pysodium.crypto_core_ristretto255_BYTES], tuple(bytes(x) for x in split_by_n(x[threshold*pysodium.crypto_core_ristretto255_BYTES:], 2*33))) )
+   if responders is None:
+     raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
+
+   commitments = b''.join(responders[i][0] for i in range(n))
+   for i in range(n):
+     shares = b''.join([bytes(responders[j][1][i]) for j in range(n)])
+     msg = commitments + shares
+     m.send(i, msg)
+
+   # todo handle complaints!
+
+   betas = m.gather(33, n)
+   if betas is None:
+     raise ValueError(f"failed to get oprf responses from shareholders in final step of dkg")
+
+   # todo remove this test
+   from itertools import permutations
+   rwds = set(pyoprf.thresholdmult([betas[i] for i in order])
+              for order in permutations(range(n),threshold))
+   assert len(rwds) == 1
+   # end of test
+
+   return list(rwds)[0]
 
 #### OPs ####
 
@@ -328,21 +390,26 @@ def init_key():
     clearmem(mk)
   return 0
 
-def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
+def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   # 1st step OPRF on the new seed
   id = getid(host, user)
   r, alpha = pyoprf.blind(pwd)
-  msg = b''.join([CREATE, id, alpha])
-  s.send(msg)
+  if threshold > 1:
+    beta = dkg(m, CREATE_DKG, threshold, id, alpha)
+  else:
+    msg = b''.join([CREATE, id, alpha])
+    m.broadcast(msg)
 
-  # wait for response from sphinx server
-  beta = s.recv(32)
-  if beta == b'\x00\x04fail':
-    s.close()
-    raise ValueError("ERROR: Creating new password, the record probably already exists or the first message to server was corrupted during transport.")
-    # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
-    # or (even? less probable) the value alpha received by the server is not a valid point
-    # both of these less probable causes point at corruption during transport
+    # wait for response from sphinx server
+    beta = m.gather(32)
+    if beta is None:
+      m.close()
+      raise ValueError("ERROR: Creating new password, the record probably already exists or the first message to server was corrupted during transport.")
+      # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
+      # or (even? less probable) the value alpha received by the server is not a valid point
+      # both of these less probable causes point at corruption during transport
+    beta = beta[0]
+
   rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   # second phase, derive new auth signing pubkey
@@ -367,12 +434,13 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   # send over new signed(pubkey, rule)
   msg = b''.join([pk, rule])
   msg = sign_blob(msg, id, rwd)
-  s.send(msg)
+  m.broadcast(msg)
 
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
-  update_rec(s, host, user)
-  s.close()
+  for p in m:
+     update_rec(p.fd, host, user)
+     p.close()
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
 
@@ -380,26 +448,38 @@ def create(s, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   clearmem(rwd)
   return ret
 
-def get(s, pwd, user, host):
+def get(m, pwd, user, host):
   id = getid(host, user)
   r, alpha = pyoprf.blind(pwd)
   msg = b''.join([GET, id, alpha])
-  s = ratelimit(s, msg)
+  m = ratelimit(m, msg)
 
-  resp = s.recv(32+RULE_SIZE) # beta + sealed rules
-  if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
-      s.close()
-      raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
-  beta = resp[:32]
-  rules = resp[32:]
+  if len(servers) > 1:
+    resps = m.gather(33+RULE_SIZE, threshold, lambda x: (x[:33], x[33:]))
+    if resps is None:
+      raise ValueError("Failed to get answers from shareholders")
+    if len({resp[1] for resp in resps.values()}) != 1:
+      m.close()
+      raise ValueError("ERROR: servers disagree on rules")
+    rules = resps[0][1]
+    beta = pyoprf.thresholdmult([resp[0] for resp in resps.values()])
+  else:
+    resp = m.gather(32+RULE_SIZE, 1)[0] # beta + sealed rules
+    if resps is None:
+      raise ValueError("Failed to get answers from sphinx server")
+    if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+        m.close()
+        raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
+    beta = resp[:32]
+    rules = resp[32:]
+
   rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
+  m.close()
   try:
     classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
   except ValueError:
-    s.close()
     raise ValueError("ERROR: failed to unpack password rules from server")
-  s.close()
 
   if validate_password and (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
     raise ValueError("ERROR: bad checkdigit")
@@ -410,19 +490,44 @@ def get(s, pwd, user, host):
 
   return ret
 
-def read_blob(s, id, rwd = b''):
+def read_blob(m, id, rwd = b''):
   msg = b''.join([READ, id])
-  s = ratelimit(s, msg)
-  if auth(s,id) is False:
+  m = ratelimit(m, msg)
+  if auth(m,id) is False:
     s.close()
     return
-  bsize = s.recv(2)
-  bsize = struct.unpack('!H', bsize)[0]
-  blob = s.recv(bsize)
-  s.close()
-  if blob == b'fail':
-    return
-  return decrypt_blob(blob)
+
+  bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
+  if bsizes is None:
+    m.close()
+    raise ValueError("failed to get sizes for user blobs from threshold servers")
+  if len(bsizes) != 1:
+    m.close()
+    raise ValueError(f"ERROR: inconsistent user list blob sizes: {bsizes}")
+  bsize = list(bsizes)[0]
+  #print('got all blobsizes')
+  if bsize == 0:
+    # this should not happen, it means something is corrupt
+    m.close()
+    raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
+
+  blobs = m.gather(bsize)
+  if blobs is None:
+    m.close()
+    raise ValueError("failed to read user blobs from sphinx servers")
+  #print('got all blobs')
+  ptblobs = set()
+  for blob in blobs.values():
+    if blob == b'fail':
+      m.close()
+      raise ValueError("ERROR: invalid signature on list of users")
+    ptblobs.add(decrypt_blob(blob))
+
+  if len(ptblobs)!=1:
+    raise ValueError(f"ERROR: inconsistent user list blobs")
+  blob = list(ptblobs)[0]
+
+  return blob
 
 def users(s, host):
   res = read_blob(s, getid(host, ''))
@@ -431,22 +536,29 @@ def users(s, host):
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
-def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
+def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   id = getid(host, user)
   r, alpha = pyoprf.blind(oldpwd)
-  msg = b''.join([CHANGE, id, alpha])
-  s = ratelimit(s, msg)
+  if threshold > 1:
+    msg = b''.join([CHANGE_DKG, id, alpha])
+  else:
+    msg = b''.join([CHANGE, id, alpha])
+  m = ratelimit(m, msg)
   # auth: do sphinx with current seed, use it to sign the nonce
-  if not auth(s,id,alpha,oldpwd,r):
-    s.close()
+  if not auth(m,id,alpha,oldpwd,r):
+    m.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
   r, alpha = pyoprf.blind(newpwd)
-  s.send(alpha)
-  beta = s.recv(32) # beta
-  if beta == b'\x00\x04fail' or len(beta)!=32:
-    s.close()
-    raise ValueError("ERROR: changing password failed due to corruption during transport.")
+  if threshold > 1:
+    beta = dkg(m, CHANGE_DKG, threshold, id, alpha)
+  else:
+    m.broadcast(alpha)
+    beta = m.gather(32,1) # beta
+    if beta is None or len(beta[0])!=32:
+      m.close()
+      raise ValueError("ERROR: changing password failed due to corruption during transport.")
+    beta = beta[0]
   rwd = pyoprf.unblind_finalize(r, beta, newpwd)
 
   if validate_password:
@@ -466,13 +578,13 @@ def change(s, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   sk, pk = get_signkey(id, rwd)
   clearmem(sk)
   # send over new signed(pubkey)
-  s.send(sign_blob(b''.join([pk,rule]), id, rwd))
+  m.broadcast(sign_blob(b''.join([pk,rule]), id, rwd))
 
-  if s.recv(2)!=b'ok':
-    s.close()
+  if set(m.gather(2).values())!={b'ok'}:
+    m.close()
     raise ValueError("ERROR: failed to update password rules on the server during changing of password.")
 
-  s.close()
+  m.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
   ret = bin2pass.derive(rwd,classes,size,symbols)
   clearmem(rwd)
@@ -485,59 +597,81 @@ def commit(s, pwd, user, host):
 def undo(s, pwd, user, host):
   return commit_undo(s, UNDO, pwd, user, host)
 
-def delete(s, pwd, user, host):
+def delete(m, pwd, user, host):
   # run sphinx to recover rwd for authentication
   id = getid(host, user)
   r, alpha = pyoprf.blind(pwd)
   msg = b''.join([DELETE, id, alpha])
-  s = ratelimit(s, msg)
-  rwd = auth(s,id,alpha,pwd,r)
+  m = ratelimit(m, msg)
+  #print("solved ratelimit puzzles")
+  rwd = auth(m,id,alpha,pwd,r)
   if not rwd:
-    s.close()
+    m.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
+  #print("authenticated")
 
   # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
   id = getid(host, '')
   signed_id = sign_blob(id, id, b'')
-  s.send(signed_id)
+  m.broadcast(signed_id)
+  #print('broadcast signed id')
   # wait for user blob
-  bsize = s.recv(2)
-  bsize = struct.unpack('!H', bsize)[0]
+  bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
+  if bsizes is None:
+    m.close()
+    raise ValueError("failed to get sizes for user blobs from threshold servers")
+  if len(bsizes) != 1:
+    m.close()
+    raise ValueError(f"ERROR: inconsistent user list blob sizes: {bsizes}")
+  bsize = list(bsizes)[0]
+  #print('got all blobsizes')
   if bsize == 0:
     # this should not happen, it means something is corrupt
-    s.close()
+    m.close()
     raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
 
-  blob = s.recv(bsize)
-  if blob == b'fail':
-    s.close()
-    raise ValueError("ERROR: invalid signature on list of users")
-  version, blob = decrypt_blob(blob)
+  blobs = m.gather(bsize)
+  if blobs is None:
+    m.close()
+    raise ValueError("failed to read user blobs from sphinx servers")
+  #print('got all blobs')
+  ptblobs = set()
+  for blob in blobs.values():
+    if blob == b'fail':
+      m.close()
+      raise ValueError("ERROR: invalid signature on list of users")
+    ptblobs.add(decrypt_blob(blob))
+
+  if len(ptblobs)!=1:
+    raise ValueError(f"ERROR: inconsistent user list blobs")
+  version, blob = list(ptblobs)[0]
+
   users = set(blob.decode().split('\x00'))
   if user not in users:
     # this should not happen, but maybe it's a sign of corruption?
-    s.close()
+    m.close()
     raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
   users.remove(user)
   blob = ('\x00'.join(sorted(users))).encode()
   # notice we do not add rwd to encryption of user blobs
-  blob = encrypt_blob(blob)
-  bsize = len(blob)
-  if bsize >= 2**16:
-    s.close()
-    raise ValueError("ERROR: blob is bigger than 64KB.")
-  blob = struct.pack("!H", bsize) + blob
-  blob = sign_blob(blob, id, b'')
+  for p in m:
+    xblob = encrypt_blob(blob)
+    bsize = len(xblob)
+    if bsize >= 2**16:
+        m.close()
+        raise ValueError("ERROR: blob is bigger than 64KB.")
+    xblob = struct.pack("!H", bsize) + xblob
+    xblob = sign_blob(xblob, id, b'')
+    #print(f'updating {p.name}\t{xblob.hex()}')
+    p.send(xblob)
 
-  s.send(blob)
-
-  if b'ok' != s.recv(2):
-    s.close()
+  if set(m.gather(2).values())!={b'ok'}:
+    m.close()
     raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
 
-  s.close()
+  m.close()
   clearmem(rwd)
   return True
 
@@ -630,6 +764,7 @@ def test_pwd(pwd):
 
 def main(params=sys.argv):
   if len(params) < 2: usage(params, True)
+  m = Multiplexer(servers)
   cmd = None
   args = []
   if params[1] in ('help', '-h', '--help'):
@@ -700,22 +835,22 @@ def main(params=sys.argv):
       if cmd == create:
         test_pwd(pwd)
     try:
-      s = connect()
-      ret = cmd(s, pwd, *args)
+      m.connect()
+      ret = cmd(m, pwd, *args)
     except Exception as exc:
       error = exc
       ret = False
-      #raise # only for dbg
+      raise # only for dbg
     clearmem(pwd)
   else:
     try:
-      s = connect()
-      ret = cmd(s,  *args)
+      m.connect()
+      ret = cmd(m,  *args)
     except Exception as exc:
       error = exc
       ret = False
-      #raise # only for dbg
-  if s and s.fileno() != -1: s.close()
+      raise # only for dbg
+  m.close()
 
   if not ret:
     if not error:
@@ -738,4 +873,4 @@ if __name__ == '__main__':
     main(sys.argv)
   except Exception:
     print("fail", file=sys.stderr)
-    #raise # only for dbg
+    raise # only for dbg
