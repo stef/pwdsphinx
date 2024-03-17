@@ -10,6 +10,10 @@ import pyoprf
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 from pwdsphinx.utils import split_by_n
+try:
+    from pwdsphinx import noisexk
+except:
+    import noisexk
 cfg = getcfg('sphinx')
 
 verbose = cfg['server'].get('verbose', False)
@@ -99,6 +103,49 @@ def read_pkt(s,size):
       res.append(s.recv(size-read))
       read+=len(res[-1])
     return b''.join(res)
+
+def setup_noise_sessions(s, n):
+    # todo take path from config
+    with open('noise.key', 'rb') as fd:
+        privkey = fd.read()
+    if len(privkey) != 32:
+        print("Invalid noisekey")
+        fail(s)
+
+    # send own pubkey
+    pk = noisexk.pubkey(privkey)
+    s.sendall(pk)
+
+    # get all peers pubkeys
+    pubkeys = split_by_n(read_pkt(s,32*n),32)
+
+    sender_sessions = []
+    msgs = []
+
+    # initiate sessions with all peers
+    for pubkey in pubkeys:
+        session, msg = noisexk.initiator_session(privkey, bytes(pubkey))
+        sender_sessions.append(session)
+        msgs.append(msg)
+    s.sendall(b''.join(msgs))
+
+    # respond to all session requests from peers
+    receiver_sessions = []
+    msg1s = read_pkt(s,48*n)
+    msgs = []
+    for msg in split_by_n(msg1s, 48):
+        session, msg = noisexk.responder_session(privkey, 'authorized_keys', msg)
+        receiver_sessions.append(session)
+        msgs.append(msg)
+    s.sendall(b''.join(msgs))
+
+    # receive final handshake message from responder
+    msg2s = read_pkt(s,48*n)
+    msgs = []
+    for msg, session in zip(split_by_n(msg2s, 48), sender_sessions):
+        noisexk.initiator_session_complete(session, msg)
+
+    return sender_sessions, receiver_sessions
 
 def update_blob(s):
     signed_id = s.recv(32+64)
@@ -207,7 +254,36 @@ def create(s, msg):
 
     s.send(b'ok')
 
-# msg format: 0xf0|index|threshold|n|id[32]|alpha[32]|pubkeys[(n-1)*32]
+def dkg(s, n, t, index):
+    tx, rx = setup_noise_sessions(s, n)
+
+    ## 1st step OPRF with a new seed
+    # perform dkg to collectively generate new seed
+    shares, c = pyoprf.dkg_start(n,t)
+    s.send(b''.join(c)+b''.join(noisexk.send_msg(session, b''.join(share)) for share,session in zip(shares,tx)))
+
+    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*(2*33+64))
+
+    commitments, xshares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
+    commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
+                   for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
+
+    shares = []
+    for ct,session in zip(split_by_n(xshares,66+64), rx):
+        pt = noisexk.read_msg(session, ct)
+        shares.append((bytes(pt[:33]),bytes(pt[33:])))
+
+    complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
+    # todo handle complaints
+    qual = [j+1 for j in range(n)] + [0]
+
+    xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
+    #print(index, xi.hex(), x_i.hex())
+    shares = (xi, x_i)
+
+    return xi
+
+# msg format: 0xf0|index|threshold|n|id[32]|alpha[32]]
 def create_dkg(s, msg):
     if len(msg)!=68:
       fail(s)
@@ -219,35 +295,13 @@ def create_dkg(s, msg):
     id,    msg = pop(msg,32)
     alpha, msg = pop(msg,32)
 
-    pubkeys = s.recv(n*32)
-    if len(pubkeys) != n*32:
-        fail(s)
-    pubkeys = split_by_n(pubkeys,32)
-
     # check if id is unique
     id = binascii.hexlify(id).decode()
     tdir = os.path.join(datadir,id)
     if(os.path.exists(tdir)):
       fail(s)
 
-    ## 1st step OPRF with a new seed
-    # perform dkg to collectively generate new seed
-    shares, c = pyoprf.dkg_start(n,t)
-    s.send(b''.join(c)+b''.join(b''.join(share) for share in shares))
-
-    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*2*33)
-    commitments, shares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
-    commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
-                   for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
-    shares = [(bytes(x[:33]),bytes(x[33:])) for x in split_by_n(shares,66)]
-
-    complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
-    # todo handle complaints
-    qual = [j+1 for j in range(n)] + [0]
-
-    xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
-    #print(index, xi.hex(), x_i.hex())
-    shares = (xi, x_i)
+    xi = dkg(s,n,t,index)
 
     #k=pysodium.randombytes(32)
     try:
@@ -408,27 +462,7 @@ def change_dkg(s, msg):
   n,      msg = pop(msg,1,lambda x: x[0])
   index,alpha = pop(msg,1,lambda x: x[0])
 
-  pubkeys = s.recv(n*32)
-  if len(pubkeys) != n*32:
-      fail(s)
-  pubkeys = split_by_n(pubkeys,32)
-
-  shares, c = pyoprf.dkg_start(n,t)
-  s.send(b''.join(c)+b''.join(b''.join(share) for share in shares))
-
-  msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*2*33)
-  commitments, shares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
-  commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
-                 for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
-  shares = [(bytes(x[:33]),bytes(x[33:])) for x in split_by_n(shares,66)]
-
-  complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
-  # todo handle complaints
-  qual = [j+1 for j in range(n)] + [0]
-
-  xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
-  #print(index, xi.hex(), x_i.hex())
-  shares = (xi, x_i)
+  xi = dkg(s,n,t, index)
 
   #k=pysodium.randombytes(32)
   try:

@@ -331,20 +331,50 @@ def getpwd():
   else:
     return sys.stdin.buffer.readline().rstrip(b'\n')
 
+def dispatch_peer_session_setup(m, n):
+  pubkeys=m.gather(32, n)
+  m.broadcast(b''.join(pubkeys[i] for i in range(n)))
+
+  # dispatch 1st message in noise xk handshake
+  responders=m.gather(48*n, n, lambda x: [bytes(l) for l in split_by_n(x,48)])
+  if responders is None:
+    raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
+
+  for i in range(n):
+    msg = b''.join([bytes(responders[j][i]) for j in range(n)])
+    m.send(i, msg)
+
+  # dispatch 2nd message in noise xk handshake
+  responders=m.gather(48*n, n, lambda x: [bytes(l) for l in split_by_n(x,48)])
+  if responders is None:
+    raise ValueError(f"failed to get stage 2 input from shareholders for dkg")
+
+  for i in range(n):
+    msg = b''.join([bytes(responders[j][i]) for j in range(n)])
+    m.send(i, msg)
+
 def dkg(m, op, threshold, keyid, alpha):
    n = len(m)
-   pubkeys = b''.join(p.pubkey for p in m)
 
    if op == CREATE_DKG:
      for index in range(n):
-        msg = b"%c%c%c%c%s%s%s" % (CREATE_DKG, index+1, threshold, n, keyid, alpha, pubkeys)
+        msg = b"%c%c%c%c%s%s" % (CREATE_DKG, index+1, threshold, n, keyid, alpha)
         m.send(index,msg)
    else:
      for index in range(n):
-       msg = b"%c%c%c%s%s" % (threshold, n, index+1, alpha, pubkeys)
+       msg = b"%c%c%c%s" % (threshold, n, index+1, alpha)
        m.send(index,msg)
 
-   responders=m.gather((pysodium.crypto_core_ristretto255_BYTES * threshold) + (33*n*2), n, lambda x: (x[:threshold*pysodium.crypto_core_ristretto255_BYTES], tuple(bytes(x) for x in split_by_n(x[threshold*pysodium.crypto_core_ristretto255_BYTES:], 2*33))) )
+   dispatch_peer_session_setup(m, n)
+
+   # expected response size is
+   # the commitments:  (pysodium.crypto_core_ristretto255_BYTES * threshold)
+   # the n shares (2*33) + final noisexk handshake packet (65): + ((33*2+64)*n)
+   responders=m.gather((pysodium.crypto_core_ristretto255_BYTES * threshold) + ((33*2+64)*n), n,
+                       lambda x: (x[:threshold*pysodium.crypto_core_ristretto255_BYTES], # commitents
+                                  tuple(bytes(x) # shares
+                                        for x in split_by_n(x[threshold*pysodium.crypto_core_ristretto255_BYTES:],
+                                                            2*33+64))) )
    if responders is None:
      raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
 
