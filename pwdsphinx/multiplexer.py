@@ -98,13 +98,16 @@ class Multiplexer:
            n=len(self.peers)
        responses={}
        for idx, peer in enumerate(self.peers):
-           if peer.fd.pending() == expectedmsglen:
+           pending = peer.fd.pending()
+           if pending == expectedmsglen:
                pkt = peer.read(expectedmsglen)
                if debug: print(f"{idx} got pending {len(pkt)}")
                if pkt == b'\x00\x04fail':
                    responses[idx]=None
                    continue
                responses[idx]=pkt if not proc else proc(pkt)
+           #elif pending != 0:
+           #    print(f"wtf peer {peer.name} has {peer.fd.pending()} bytes pending, which is not equ {expectedmsglen}")
        while len(responses)<n:
           fds={x.fd.fileno(): (i, x) for i,x in enumerate(self.peers) if i not in responses}
           #print("select")
