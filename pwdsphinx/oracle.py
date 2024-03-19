@@ -274,7 +274,11 @@ def dkg(s, n, t, index):
         shares.append((bytes(pt[:33]),bytes(pt[33:])))
 
     complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
-    # todo handle complaints
+
+    s.send(bytes([c_len])+complaints)
+    # todo handle complaints by recovering from recoverable
+    # inconsistencies.
+
     qual = [j+1 for j in range(n)] + [0]
 
     xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)

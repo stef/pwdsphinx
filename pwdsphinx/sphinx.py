@@ -10,6 +10,7 @@ import pysodium, pyoprf
 from qrcodegen import QrCode
 from zxcvbn import zxcvbn
 from equihash import solve
+from itertools import permutations
 try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
@@ -385,17 +386,23 @@ def dkg(m, op, threshold, keyid, alpha):
      m.send(i, msg)
 
    # todo handle complaints!
+   complaints = m.gather(n+1,n, lambda x: None if x[0] == 0 else [e for e in x[1:x[0]+1] ])
+   fail = False
+   for k,v in complaints.items():
+     if v is None: continue
+     print(f"{m[k].name} complains about {', '.join(m[i-1].name for i in v)}")
+     fail = True
+   if fail:
+     raise ValueError("peers detected inconsistencies during DKG, aborting.")
 
    betas = m.gather(33, n)
    if betas is None:
      raise ValueError(f"failed to get oprf responses from shareholders in final step of dkg")
 
-   # todo remove this test
-   from itertools import permutations
    rwds = set(pyoprf.thresholdmult([betas[i] for i in order])
               for order in permutations(range(n),threshold))
-   assert len(rwds) == 1
-   # end of test
+   if len(rwds) != 1:
+     raise ValueError("DKG shares are inconsistent, aborting operation.")
 
    return list(rwds)[0]
 
