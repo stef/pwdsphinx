@@ -134,15 +134,26 @@ def sign_blob(blob, id, rwd):
   clearmem(sk)
   return b''.join((blob,res))
 
-def getid(host, user):
-  # todo also inlude the server in the hash, so that the id is
-  # different for each server in the threshold setting, and also the
-  # signing key is different
+def getsalt():
   mk = get_masterkey()
   salt = pysodium.crypto_generichash(SALT_CTX, mk)
   clearmem(mk)
-  # todo change this to len(user)|user|len(host)|host
-  return pysodium.crypto_generichash(b'|'.join((user.encode(),host.encode())), salt, 32)
+  return salt
+
+def getid1(host,user,peer,salt=None):
+  if salt is None: salt = getsalt()
+  user_len = struct.pack('!H', len(user))
+  host_len = struct.pack('!H', len(host))
+  peer_len = struct.pack('!H', len(peer))
+  return pysodium.crypto_generichash(b''.join((user_len,user.encode(),
+                                               host_len,host.encode(),
+                                               peer_len,peer.encode())), salt, 32)
+def getid(host, user, m):
+  salt = getsalt()
+  ids = []
+  for peer in m:
+    ids.append(getid1(host,user,peer.name,salt))
+  return ids
 
 def unpack_rule(ct):
   version, packed = decrypt_blob(ct)
@@ -185,11 +196,11 @@ def xor(x,y):
   return bytes(a ^ b for (a, b) in zip(x, y))
 
 def commit_undo(m, op, pwd, user, host):
-  id = getid(host, user)
+  ids = getid(host, user,m)
   r, alpha = pyoprf.blind(pwd)
-  msg = b''.join([op, id, alpha])
-  m = ratelimit(m, msg)
-  if not auth(m,id,alpha,pwd,r):
+  msgs = [b''.join([op, id, alpha]) for id in ids]
+  m = ratelimit(m, msgs)
+  if not auth(m,ids,alpha,pwd,r):
     m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
   if set(m.gather(2).values())!={b'ok'}:
@@ -207,8 +218,7 @@ def read_pkt(s,size):
 
     return b''.join(res)
 
-def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
-    id = getid(host, '')
+def update_rec(s, id, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
     signed_id = sign_blob(id, id, b'')
     s.send(signed_id)
     # wait for user blob
@@ -251,7 +261,7 @@ def update_rec(s, host, item): # this is only for user blobs. a UI feature offer
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(m,id,alpha=None,pwd=None,r=None):
+def auth(m,ids,alpha=None,pwd=None,r=None):
   if r is None:
     nonces = m.gather(32)
     if nonces is None:
@@ -268,16 +278,19 @@ def auth(m,id,alpha=None,pwd=None,r=None):
     beta = pyoprf.thresholdmult([resp[0] for resp in msgs.values()][:threshold])
     rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
-  sk, pk = get_signkey(id, rwd)
   for idx, nonce in nonces:
+    sk, pk = get_signkey(ids[idx], rwd)
     sig = pysodium.crypto_sign_detached(nonce,sk)
+    clearmem(sk)
     m.send(idx, sig)
-  clearmem(sk)
+
   return rwd
 
-def ratelimit(m,req):
-  pkt0 = b''.join([CHALLENGE_CREATE, req])
-  m.broadcast(pkt0)
+def ratelimit(m,reqs):
+  for i, req in enumerate(reqs):
+    pkt0 = b''.join([CHALLENGE_CREATE, req])
+    m[i].send(pkt0)
+
   #challenge = s.recv(1+1+8+32) # n,k,ts,sig
   challenges = m.gather(1+1+8+32, threshold)
   if challenges is None:
@@ -305,7 +318,7 @@ def ratelimit(m,req):
               if verbose: print(f"{m[idx].name} sent a hard puzzle: %d" % n, file=sys.stderr)
             else:
               if verbose: print(f"{m[idx].name} sent a moderate puzzle: %d" % n, file=sys.stderr)
-        seed = challenge + req
+        seed = challenge + reqs[idx]
 
         def timed_solve(n,k,seed):
             delta = time.time()
@@ -322,7 +335,7 @@ def ratelimit(m,req):
     m[puzzle[2]].connect()
     pkt1 = b''.join([CHALLENGE_VERIFY, puzzle[0]])
     m.send(puzzle[2], pkt1)
-    m.send(puzzle[2], req)
+    m.send(puzzle[2], reqs[puzzle[2]])
     m.send(puzzle[2], puzzle[1].result())
   return m
 
@@ -334,6 +347,10 @@ def getpwd():
 
 def dispatch_peer_session_setup(m, n):
   pubkeys=m.gather(32, n)
+  if None in pubkeys.values():
+    peers=[m[i].name for i in pubkeys if pubkeys[i] is None]
+    raise ValueError(f"peer(s) did not provide a pubkey for DKG privacy: {', '.join(peers)}")
+
   m.broadcast(b''.join(pubkeys[i] for i in range(n)))
 
   # dispatch 1st message in noise xk handshake
@@ -354,12 +371,12 @@ def dispatch_peer_session_setup(m, n):
     msg = b''.join([bytes(responders[j][i]) for j in range(n)])
     m.send(i, msg)
 
-def dkg(m, op, threshold, keyid, alpha):
+def dkg(m, op, threshold, keyids, alpha):
    n = len(m)
 
    if op == CREATE_DKG:
-     for index in range(n):
-        msg = b"%c%c%c%c%s%s" % (CREATE_DKG, index+1, threshold, n, keyid, alpha)
+     for index, id in enumerate(keyids):
+        msg = b"%c%c%c%c%s%s" % (CREATE_DKG, index+1, threshold, n, id, alpha)
         m.send(index,msg)
    else:
      for index in range(n):
@@ -388,7 +405,7 @@ def dkg(m, op, threshold, keyid, alpha):
    # todo handle complaints!
    complaints = m.gather(n+1,n, lambda x: None if x[0] == 0 else [e for e in x[1:x[0]+1] ])
    fail = False
-   for k,v in complaints.items():
+   for k,v in (complaints or {}).items():
      if v is None: continue
      print(f"{m[k].name} complains about {', '.join(m[i-1].name for i in v)}")
      fail = True
@@ -429,12 +446,12 @@ def init_key():
 
 def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   # 1st step OPRF on the new seed
-  id = getid(host, user)
+  ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
   if threshold > 1:
-    beta = dkg(m, CREATE_DKG, threshold, id, alpha)
+    beta = dkg(m, CREATE_DKG, threshold, ids, alpha)
   else:
-    msg = b''.join([CREATE, id, alpha])
+    msg = b''.join([CREATE, id[0], alpha])
     m.broadcast(msg)
 
     # wait for response from sphinx server
@@ -450,8 +467,11 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   # second phase, derive new auth signing pubkey
-  sk, pk = get_signkey(id, rwd)
-  clearmem(sk)
+  sign_keys=[]
+  for id in ids:
+    sk, pk = get_signkey(id, rwd)
+    clearmem(sk)
+    sign_keys.append(pk)
 
   if validate_password:
       checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
@@ -469,14 +489,16 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
   rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
   # send over new signed(pubkey, rule)
-  msg = b''.join([pk, rule])
-  msg = sign_blob(msg, id, rwd)
-  m.broadcast(msg)
+  for i,(id,pk) in enumerate(zip(ids, sign_keys)):
+    msg = b''.join([pk, rule])
+    msg = sign_blob(msg, id, rwd)
+    m[i].send(msg)
 
   # add user to user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   for p in m:
-     update_rec(p.fd, host, user)
+     id = getid1(host, '', p.name)
+     update_rec(p.fd, id, user)
      p.close()
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
@@ -486,10 +508,11 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   return ret
 
 def get(m, pwd, user, host):
-  id = getid(host, user)
+  ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
-  msg = b''.join([GET, id, alpha])
-  m = ratelimit(m, msg)
+  
+  msgs = [b''.join([GET, id, alpha]) for id in ids]
+  m = ratelimit(m, msgs)
 
   if len(servers) > 1:
     resps = m.gather(33+RULE_SIZE, threshold, lambda x: (x[:33], x[33:]))
@@ -527,11 +550,12 @@ def get(m, pwd, user, host):
 
   return ret
 
-def read_blob(m, id, rwd = b''):
-  msg = b''.join([READ, id])
-  m = ratelimit(m, msg)
-  if auth(m,id) is False:
-    s.close()
+def read_blob(m, ids, rwd = b''):
+  msgs = [b''.join([READ, id]) for id in ids]
+  m = ratelimit(m, msgs)
+
+  if auth(m,ids) is False:
+    m.close()
     return
 
   bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
@@ -566,29 +590,30 @@ def read_blob(m, id, rwd = b''):
 
   return blob
 
-def users(s, host):
-  res = read_blob(s, getid(host, ''))
+def users(m, host):
+  res = read_blob(m, getid(host, '', m))
   if not res: return "no users found"
   version, res = res
   users = set(res.decode().split('\x00'))
   return '\n'.join(sorted(users))
 
 def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
-  id = getid(host, user)
+  ids = getid(host, user, m)
   r, alpha = pyoprf.blind(oldpwd)
+
   if threshold > 1:
-    msg = b''.join([CHANGE_DKG, id, alpha])
+    msgs = [b''.join([CHANGE_DKG, id, alpha]) for id in ids]
   else:
-    msg = b''.join([CHANGE, id, alpha])
-  m = ratelimit(m, msg)
+    msgs = [b''.join([CHANGE, id, alpha]) for id in ids]
+  m = ratelimit(m, msgs)
   # auth: do sphinx with current seed, use it to sign the nonce
-  if not auth(m,id,alpha,oldpwd,r):
+  if not auth(m,ids,alpha,oldpwd,r):
     m.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
   r, alpha = pyoprf.blind(newpwd)
   if threshold > 1:
-    beta = dkg(m, CHANGE_DKG, threshold, id, alpha)
+    beta = dkg(m, CHANGE_DKG, threshold, None, alpha)
   else:
     m.broadcast(alpha)
     beta = m.gather(32,1) # beta
@@ -612,10 +637,11 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   rule = pack_rule(classes, symbols, size, checkdigit, xormask)
 
-  sk, pk = get_signkey(id, rwd)
-  clearmem(sk)
-  # send over new signed(pubkey)
-  m.broadcast(sign_blob(b''.join([pk,rule]), id, rwd))
+  for i, id in enumerate(ids):
+    sk, pk = get_signkey(id, rwd)
+    clearmem(sk)
+    # send over new signed(pubkey)
+    m[i].send(sign_blob(b''.join([pk,rule]), id, rwd))
 
   if set(m.gather(2).values())!={b'ok'}:
     m.close()
@@ -636,12 +662,12 @@ def undo(s, pwd, user, host):
 
 def delete(m, pwd, user, host):
   # run sphinx to recover rwd for authentication
-  id = getid(host, user)
+  ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
-  msg = b''.join([DELETE, id, alpha])
-  m = ratelimit(m, msg)
+  msgs = [b''.join([DELETE, id, alpha]) for id in ids]
+  m = ratelimit(m, msgs)
   #print("solved ratelimit puzzles")
-  rwd = auth(m,id,alpha,pwd,r)
+  rwd = auth(m,ids,alpha,pwd,r)
   if not rwd:
     m.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
@@ -650,10 +676,11 @@ def delete(m, pwd, user, host):
   # delete user from user list for this host
   # a malicous server could correlate all accounts on this services to this users here
   # first query user record for this host
-  id = getid(host, '')
-  signed_id = sign_blob(id, id, b'')
-  m.broadcast(signed_id)
-  #print('broadcast signed id')
+  for p in m:
+     id = getid1(host, '', p.name)
+     signed_id = sign_blob(id, id, b'')
+     p.send(signed_id)
+
   # wait for user blob
   bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
   if bsizes is None:
@@ -700,6 +727,7 @@ def delete(m, pwd, user, host):
         m.close()
         raise ValueError("ERROR: blob is bigger than 64KB.")
     xblob = struct.pack("!H", bsize) + xblob
+    id = getid1(host, '', p.name)
     xblob = sign_blob(xblob, id, b'')
     #print(f'updating {p.name}\t{xblob.hex()}')
     p.send(xblob)
