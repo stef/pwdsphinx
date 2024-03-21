@@ -1,11 +1,13 @@
 import unittest
-from os import listdir
-from shutil import rmtree
+from os import listdir, makedirs
+from shutil import rmtree, copyfile
+from tempfile import mkdtemp
 from unittest.mock import Mock
 from io import BytesIO
-import sys, pysodium
-
+import sys, pysodium, subprocess, time
+import tracemalloc
 from pwdsphinx import sphinx, bin2pass, multiplexer
+from binascii import b2a_base64
 
 # to get coverage, run
 # PYTHONPATH=.. coverage run ../tests/test.py
@@ -17,7 +19,6 @@ from pwdsphinx import sphinx, bin2pass, multiplexer
 sphinx.print = Mock()
 
 data_dir = 'data/'
-orig_data_files = tuple(set(listdir(f'servers/{id}/data')) for id in range(5))
 char_classes = 'uld'
 syms = bin2pass.symbols
 size = 0
@@ -25,11 +26,11 @@ pwd = 'asdf'
 user = 'user1'
 user2 = 'user2'
 host = 'example.com'
-servers = {'zero': {'host': 'localhost', 'port': 10000, 'ssl_cert': 'cert.pem', 'pubkey': 'auL719iakN0Uh9X1XSjsNgmMSYrbLUQHRJmjKuuqRHc='},
-           'one': {'host': 'localhost', 'port': 10001, 'ssl_cert': 'cert.pem', 'pubkey': 'LvujMt01+k/1YQ19tIyLXdnqZlabtyPQv8+EZLKeBVA='},
-           'two': {'host': 'localhost', 'port': 10002, 'ssl_cert': 'cert.pem', 'pubkey': 'kQH8j5UPJLcQfDEDGYS3NavVobgiov9dHVZ2v5JMGgo='},
-           'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem', 'pubkey': 'NHBPri2k+EhTY+RKaKAlTXpxuQ7mKSxeRZ1stVeDLy0='},
-           'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem', 'pubkey': 'pN7KA3MPHU4Y9tmMcgsWjhYUuz1Kalk6KtAasr17+2w='}}
+servers = {'zero': {'host': 'localhost', 'port': 10000, 'ssl_cert': 'cert.pem'},
+           'one': {'host': 'localhost', 'port': 10001, 'ssl_cert': 'cert.pem'},
+           'two': {'host': 'localhost', 'port': 10002, 'ssl_cert': 'cert.pem'},
+           'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem'},
+           'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}}
 
 class Input:
   def __init__(self, txt = None):
@@ -42,17 +43,6 @@ class Input:
   def close(self):
     return
 
-def cleanup():
-  for id, odf in enumerate(orig_data_files):
-    ddir = f"servers/{id}/data/"
-    #print(f'cleaning id:{id} datadir: {ddir}')
-    for f in listdir(ddir):
-      #print(f"\tfound {f}", end="")
-      if f not in odf:
-        #print(" deleting", end="")
-        rmtree(ddir+f)
-      #print()
-
 def connect():
   m = multiplexer.Multiplexer(servers)
   m.connect()
@@ -64,8 +54,59 @@ def bad_signkey(_, __):
 get_signkey = sphinx.get_signkey
 
 class TestEndToEnd(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+      cls._root = mkdtemp(prefix='sphinx-oracle-root.')
+      root = cls._root
+      #print(f"created oracle root {cls._root}")
+      pks = []
+      for idx in range(5):
+        makedirs(f"{root}/servers/{idx}")
+        copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
+        copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
+        pk, sk = pysodium.crypto_box_keypair()
+        with open(f"{root}/servers/{idx}/noise.key", 'wb') as fd:
+          fd.write(sk)
+        pks.append(b2a_base64(pk).decode("utf8")[:-1])
+        with open(f"{root}/servers/{idx}/sphinx.cfg", 'w') as fd:
+          fd.write(f'[server]\n'
+                   f'verbose = true\n'
+                   f'address = "127.0.0.1"\n'
+                   f'port={10000+idx}\n'
+                   f'timeout = 5\n'
+                   f'max_kids = 5\n'
+                   f'ssl_key= "key.pem"\n'
+                   f'ssl_cert= "cert.pem"\n'
+                   f'datadir = "data"\n'
+                   f'rl_decay=1800\n'
+                   f'rl_threshold=1\n')
+      # authorized_keys
+      for idx in range(5):
+        with open(f"{root}/servers/{idx}/authorized_keys",'w') as fd:
+          for pk, name in zip(pks, servers.keys()):
+            fd.write(f"{pk} {name}\n")
+      cls._oracles = []
+      for idx in range(5):
+        log = open(f"{root}/servers/{idx}/log", "w")
+        cls._oracles.append(
+          (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()]), log))
+      time.sleep(0.4)
+
+    @classmethod
+    def tearDownClass(cls):
+      for p, log in cls._oracles:
+        p.kill()
+        log.close()
+      rmtree(cls._root)
+      time.sleep(0.2)
+
     def tearDown(self):
-        cleanup()
+        #cleanup()
+        for idx in range(5):
+          ddir = f"{self._root}/servers/{idx}/data/"
+          for f in listdir(ddir):
+            if f == 'key': continue
+            rmtree(ddir+f)
 
     def test_create_user(self):
         with connect() as s:
@@ -126,6 +167,7 @@ class TestEndToEnd(unittest.TestCase):
 
         with connect() as s:
             self.assertRaises(ValueError, sphinx.create,s, pwd, user, host, char_classes, syms, size)
+            s.close()
 
     def test_get(self):
         with connect() as s:
@@ -381,4 +423,5 @@ class TestEndToEnd(unittest.TestCase):
             self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', cmd))
 
 if __name__ == '__main__':
-    unittest.main()
+  unittest.main()
+
