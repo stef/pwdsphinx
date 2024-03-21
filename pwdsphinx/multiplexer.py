@@ -64,7 +64,8 @@ class Peer:
             self.fd.close()
             self.state = "closed"
         else:
-            raise ValueError(f"{self.name} is in inconsistent state, fd: {self.fd} fileno: {self.fd.fileno()}")
+            # closed by other end.
+            self.state = "closed"
 
 class Multiplexer:
     def __init__(self, peers):
@@ -80,6 +81,14 @@ class Multiplexer:
 
     def __len__(self):
         return len(self.peers)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        if exception_type is not None:
+            print("exception caught", exception_type, exception_value, exception_traceback)
+        self.close()
 
     def connect(self):
        for p in self.peers:
@@ -127,7 +136,7 @@ class Multiplexer:
              if debug: print(f"{idx} got response of {len(pkt)}")
              responses[idx]=pkt if not proc else proc(pkt)
        if set((tuple(e) if isinstance(e,list) else e) for e in responses.values())=={None}:
-           return
+           raise ValueError("oracles failed")
        if None in responses:
            print(f"some reponses failed")
            return {k:v for k,v in responses.items() if v is not None}

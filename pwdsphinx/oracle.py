@@ -400,6 +400,8 @@ def auth(s,id,alpha):
   except:
     print('bad sig')
     fail(s)
+  else:
+    s.send(b'\x00\x04auth') # plaintext :/
 
 def change(conn, msg):
   op,   msg = pop(msg,1)

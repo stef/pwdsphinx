@@ -284,6 +284,21 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
     clearmem(sk)
     m.send(idx, sig)
 
+  responses = m.gather(6)
+  if responses is None:
+    m.close()
+    return False
+
+  fails = 0
+  for idx, resp in responses.items():
+    if resp==b'\x00\x04auth': continue
+    if resp==b'\x00\x04fail':
+      print(f'authentication failed for {m[idx].name}')
+      m[idx].close()
+      fails+=1
+    else:
+      raise ValueError("unexpected auth result")
+
   return rwd
 
 def ratelimit(m,reqs):
@@ -403,10 +418,10 @@ def dkg(m, op, threshold, keyids, alpha):
      m.send(i, msg)
 
    # todo handle complaints!
-   complaints = m.gather(n+1,n, lambda x: None if x[0] == 0 else [e for e in x[1:x[0]+1] ])
+   complaints = m.gather(n+1,n, lambda x: 0 if x[0] == 0 else [e for e in x[1:x[0]+1] ])
    fail = False
    for k,v in (complaints or {}).items():
-     if v is None: continue
+     if v == 0: continue
      print(f"{m[k].name} complains about {', '.join(m[i-1].name for i in v)}")
      fail = True
    if fail:
