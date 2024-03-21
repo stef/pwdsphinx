@@ -69,7 +69,7 @@ if verbose:
     print("rwd_keys:", rwd_keys, file=sys.stderr)
     print("threshold:", threshold, file=sys.stderr)
     for name, server in servers.items():
-      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)} pk: {server['pubkey']}")
+      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)}")
 
 #### consts ####
 
@@ -532,6 +532,7 @@ def get(m, pwd, user, host):
   if len(servers) > 1:
     resps = m.gather(33+RULE_SIZE, threshold, lambda x: (x[:33], x[33:]))
     if resps is None:
+      m.close()
       raise ValueError("Failed to get answers from shareholders")
     if len({resp[1] for resp in resps.values()}) != 1:
       m.close()
@@ -541,10 +542,11 @@ def get(m, pwd, user, host):
   else:
     resp = m.gather(32+RULE_SIZE, 1)[0] # beta + sealed rules
     if resps is None:
+      m.close()
       raise ValueError("Failed to get answers from sphinx server")
     if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
-        m.close()
-        raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
+      m.close()
+      raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
     beta = resp[:32]
     rules = resp[32:]
 
@@ -554,9 +556,11 @@ def get(m, pwd, user, host):
   try:
     classes, symbols, size, checkdigit, xormask = unpack_rule(rules)
   except ValueError:
+    m.close()
     raise ValueError("ERROR: failed to unpack password rules from server")
 
   if validate_password and (checkdigit != (pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0] & ((1<<5)-1))):
+    m.close()
     raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
