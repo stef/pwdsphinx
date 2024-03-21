@@ -4,14 +4,13 @@ import ssl, socket, select
 from binascii import a2b_base64
 
 class Peer:
-    def __init__(self, name, addr, pubkey, type = "SSL", ssl_cert=None, timeout=5):
+    def __init__(self, name, addr, type = "SSL", ssl_cert=None, timeout=5):
         self.name = name
         self.type = type    # currently only SSL over TCP, but could
                             # be others like dedicated NOISE_XK, or
                             # hybrid mceliece+x25519 over USB or even
                             # UART
         self.address = addr # Currently only TCP host:port as a tuple
-        self.pubkey = pubkey
         self.ssl_cert = ssl_cert
         self.timeout = timeout
         self.state = "new"
@@ -59,7 +58,7 @@ class Peer:
         self.fd.sendall(msg)
 
     def close(self):
-        if self.state != "connected": return
+        if self.state == "closed": return
         if self.fd and self.fd.fileno() != -1:
             self.fd.close()
             self.state = "closed"
@@ -69,7 +68,7 @@ class Peer:
 
 class Multiplexer:
     def __init__(self, peers):
-        self.peers = [Peer(name, (p['host'],p['port']), a2b_base64(p['pubkey']), ssl_cert = p.get('ssl_cert'))
+        self.peers = [Peer(name, (p['host'],p['port']), ssl_cert = p.get('ssl_cert'))
                       for name, p in peers.items()]
 
     def __getitem__(self, idx):
