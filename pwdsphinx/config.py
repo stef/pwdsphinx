@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import os, tomllib
-from utils import split_by_n
+from pwdsphinx.utils import split_by_n
 
 def getcfg(name):
   paths=[
