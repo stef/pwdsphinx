@@ -77,6 +77,7 @@ class TestEndToEnd(unittest.TestCase):
                    f'max_kids = 5\n'
                    f'ssl_key= "key.pem"\n'
                    f'ssl_cert= "cert.pem"\n'
+                   f'noisekey = "noise.key"\n'
                    f'datadir = "data"\n'
                    f'rl_decay=1800\n'
                    f'rl_threshold=1\n')

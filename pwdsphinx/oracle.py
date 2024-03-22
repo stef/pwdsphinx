@@ -22,6 +22,7 @@ port = int(cfg['server'].get('port',2355))
 timeout = int(cfg['server'].get('timeout',"3"))
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server'].get('datadir',"/var/lib/sphinx"))
+noisekey = os.path.expanduser(cfg['server']['noisekey'])
 try:
     ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 except KeyError:
@@ -41,6 +42,7 @@ if(verbose):
   print(f"timeout:      {timeout}s")
   print(f"max kids:     {max_kids}")
   print(f"datadir:      {datadir}")
+  print(f"noisekey:     {noisekey}")
   print(f"ssl_key:      {ssl_key}")
   if 'ssl_cert' in globals():
       print(f"ssl_cert:     {ssl_cert}")
@@ -105,8 +107,7 @@ def read_pkt(s,size):
     return b''.join(res)
 
 def setup_noise_sessions(s, n):
-    # todo take path from config
-    with open('noise.key', 'rb') as fd:
+    with open(noisekey, 'rb') as fd:
         privkey = fd.read()
     if len(privkey) != 32:
         print("Invalid noisekey")
