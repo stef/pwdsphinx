@@ -6,10 +6,10 @@ from binascii import a2b_base64
 class Peer:
     def __init__(self, name, addr, type = "SSL", ssl_cert=None, timeout=5):
         self.name = name
-        self.type = type    # currently only SSL over TCP, but could
-                            # be others like dedicated NOISE_XK, or
-                            # hybrid mceliece+x25519 over USB or even
-                            # UART
+        self.type = type    # currently only TCP or SSL over TCP, but
+                            # could be others like dedicated NOISE_XK,
+                            # or hybrid mceliece+x25519 over USB or
+                            # even UART
         self.address = addr # Currently only TCP host:port as a tuple
         self.ssl_cert = ssl_cert
         self.timeout = timeout
@@ -20,22 +20,24 @@ class Peer:
         if self.state == "connected":
             raise ValueError(f"{self.name} is already connected")
 
-        if self.type != "SSL":
+        if self.type not in {"SSL", "TCP"}:
             raise ValueError(f"Unsupported peer type: {self.type}")
 
-        ctx = ssl.create_default_context()
-        if(self.ssl_cert):
-            ctx.load_verify_locations(self.ssl_cert) # only for dev, production system should use proper certs!
-            ctx.check_hostname=False                 # only for dev, production system should use proper certs!
-            ctx.verify_mode=ssl.CERT_NONE            # only for dev, production system should use proper certs!
-        else:
-            ctx.load_default_certs()
-            ctx.verify_mode = ssl.CERT_REQUIRED
-            ctx.check_hostname = True
+        if self.type == "SSL":
+           ctx = ssl.create_default_context()
+           if(self.ssl_cert):
+               ctx.load_verify_locations(self.ssl_cert) # only for dev, production system should use proper certs!
+               ctx.check_hostname=False                 # only for dev, production system should use proper certs!
+               ctx.verify_mode=ssl.CERT_NONE            # only for dev, production system should use proper certs!
+           else:
+               ctx.load_default_certs()
+               ctx.verify_mode = ssl.CERT_REQUIRED
+               ctx.check_hostname = True
 
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(self.timeout)
-        self.fd = ctx.wrap_socket(s, server_hostname=self.name)
+        if self.type == "SSL":
+            self.fd = ctx.wrap_socket(s, server_hostname=self.name)
         self.fd.connect(self.address)
         self.state="connected"
 
@@ -67,8 +69,8 @@ class Peer:
             self.state = "closed"
 
 class Multiplexer:
-    def __init__(self, peers):
-        self.peers = [Peer(name, (p['host'],p['port']), ssl_cert = p.get('ssl_cert'))
+    def __init__(self, peers, type="SSL", ssl_cert=None):
+        self.peers = [Peer(name, (p['host'],p['port']), type=p.get("type", "SSL"), ssl_cert = p.get('ssl_cert'))
                       for name, p in peers.items()]
 
     def __getitem__(self, idx):
