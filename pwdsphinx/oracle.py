@@ -119,6 +119,9 @@ def setup_noise_sessions(s, n):
 
     # get all peers pubkeys
     pubkeys = split_by_n(read_pkt(s,32*n),32)
+    if len(pubkeys) != len(set(pubkeys)):
+        print(f"invalid number of distinct noisekeys ({len(set(pubkeys))} != {n}(n)) ")
+        fail(s)
 
     sender_sessions = []
     msgs = []
