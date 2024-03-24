@@ -7,13 +7,11 @@ import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, str
 import pysodium
 import equihash
 import pyoprf
+from pyoprf import noisexk
+from binascii import a2b_base64
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 from pwdsphinx.utils import split_by_n
-try:
-    from pwdsphinx import noisexk
-except:
-    import noisexk
 cfg = getcfg('sphinx')
 
 verbose = cfg['server'].get('verbose', False)

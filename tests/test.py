@@ -6,7 +6,8 @@ from unittest.mock import Mock
 from io import BytesIO
 import sys, pysodium, subprocess, time
 import tracemalloc
-from pwdsphinx import sphinx, bin2pass, multiplexer
+from pyoprf import multiplexer
+from pwdsphinx import sphinx, bin2pass
 from binascii import b2a_base64
 
 # to get coverage, run
@@ -64,6 +65,7 @@ class TestEndToEnd(unittest.TestCase):
         makedirs(f"{root}/servers/{idx}")
         copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
         copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
+        copyfile("authorized_keys", f"{root}/servers/{idx}/authorized_keys")
         pk, sk = pysodium.crypto_box_keypair()
         with open(f"{root}/servers/{idx}/noise.key", 'wb') as fd:
           fd.write(sk)
@@ -78,6 +80,7 @@ class TestEndToEnd(unittest.TestCase):
                    f'ssl_key= "key.pem"\n'
                    f'ssl_cert= "cert.pem"\n'
                    f'noisekey = "noise.key"\n'
+                   f'authorized_keys = "authorized_keys"\n'
                    f'datadir = "data"\n'
                    f'rl_decay=1800\n'
                    f'rl_threshold=1\n')

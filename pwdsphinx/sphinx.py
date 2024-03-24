@@ -11,18 +11,17 @@ from qrcodegen import QrCode
 from zxcvbn import zxcvbn
 from equihash import solve
 from itertools import permutations
+from pyoprf.multiplexer import Multiplexer
 try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
   from pwdsphinx.utils import split_by_n
-  from pwdsphinx.multiplexer import Multiplexer
 except ImportError:
   import bin2pass
   from config import getcfg
   from consts import *
   from utils import split_by_n
-  from multiplexer import Multiplexer
 
 win=False
 if platform.system() == 'Windows':
