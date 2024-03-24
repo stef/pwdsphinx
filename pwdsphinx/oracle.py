@@ -21,6 +21,7 @@ timeout = int(cfg['server'].get('timeout',"3"))
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server'].get('datadir',"/var/lib/sphinx"))
 noisekey = os.path.expanduser(cfg['server']['noisekey'])
+authorized_keys = os.path.expanduser(cfg['server']['authorized_keys'])
 try:
     ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 except KeyError:
@@ -104,6 +105,16 @@ def read_pkt(s,size):
       read+=len(res[-1])
     return b''.join(res)
 
+def load_authkeys(path):
+    res = []
+    with open(path, 'r') as fd:
+        for line in fd:
+            b64key, name = line.split(' ', 1)
+            name = name.strip()
+            key = a2b_base64(b64key)
+            res.append((key,name))
+    return res
+
 def setup_noise_sessions(s, n):
     with open(noisekey, 'rb') as fd:
         privkey = fd.read()
@@ -135,8 +146,9 @@ def setup_noise_sessions(s, n):
     receiver_sessions = []
     msg1s = read_pkt(s,48*n)
     msgs = []
+    auth_keys = load_authkeys(authorized_keys)
     for msg in split_by_n(msg1s, 48):
-        session, msg = noisexk.responder_session(privkey, 'authorized_keys', msg)
+        session, msg = noisexk.responder_session(privkey, auth_keys, msg)
         receiver_sessions.append(session)
         msgs.append(msg)
     s.sendall(b''.join(msgs))
