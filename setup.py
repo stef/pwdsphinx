@@ -117,7 +117,8 @@ setup(name = 'pwdsphinx',
                    "deps/liboprf/src/noise_xk/include",
                    "deps/liboprf/src/noise_xk/include/karmel/",
                    "deps/liboprf/src/noise_xk/include/karmel/minimal/",
-                   "deps/equihash/"
+                   "deps/equihash/",
+                   "/opt/homebrew/include"
                ],
                extra_compile_args=[
                    "-O2",
