@@ -5,7 +5,7 @@
 
 import os
 #from distutils.core import setup, Extension
-from setuptools import setup
+from setuptools import Extension, setup
 
 
 # Utility function to read the README file.
@@ -30,8 +30,51 @@ class BuildMakefilesBuild(SetuptoolsBuild):
         os.chdir('..')
         SetuptoolsBuild.run(self)
 
+import distutils.ccompiler
+def spawn(self, cmd, **kwargs):
+    filename = 'equihash'
+    if self.compiler_type == "unix":
+        # filenames are closer to the end of command line
+        for argument in reversed(cmd):
+            # Check if argument contains a filename. We must check for all
+            # possible extensions; checking for target extension is faster.
+            if not argument.endswith(self.obj_extension):
+                continue
+
+            # check for a filename only to avoid building a new string
+            # with variable extension
+            off_end = -len(self.obj_extension)
+            off_start = -len(filename) + off_end
+            if argument.endswith(filename, off_start, off_end):
+                if self.compiler_type == 'bcpp':
+                    # Borland accepts a source file name at the end,
+                    # insert the options before it
+                    cmd[-1:-1] = ("-std=c++17",)
+                else:
+                    cmd += ("-std=c++17",)
+
+                # we're done, restore the original method
+                #self.spawn = self.__spawn
+
+            # filename is found, no need to search any further
+            break
+        else:
+            if self.compiler_type == 'bcpp':
+                # Borland accepts a source file name at the end,
+                # insert the options before it
+                cmd[-1:-1] = ("-std=c11",
+                              "-Werror=implicit-function-declaration",)
+            else:
+                cmd += ("-std=c11",
+                        "-Werror=implicit-function-declaration",)
+
+    distutils.ccompiler.spawn(cmd, dry_run=self.dry_run, **kwargs)
+
+distutils.ccompiler.CCompiler.__spawn = distutils.ccompiler.CCompiler.spawn
+distutils.ccompiler.CCompiler.spawn = spawn
+
 setup(name = 'pwdsphinx',
-       version = '1.0.16',
+       version = '2.0.0',
        description = 'SPHINX password protocol',
        license = "GPLv3",
        author = 'Stefan Marsiske',
@@ -57,5 +100,59 @@ setup(name = 'pwdsphinx',
        },
        cmdclass={'sdist': BuildMakefilesSdist,
                  'build': BuildMakefilesBuild},
-       #ext_modules = [libsphinx],
+       ext_modules=[
+           Extension(
+               name="pwdsphinx._lib",  # as it would be imported
+               sources=[
+                   "deps/liboprf/src/dkg.c",
+                   "deps/liboprf/src/oprf.c",
+                   "deps/liboprf/src/toprf.c",
+                   "deps/liboprf/src/utils.c",
+                   "deps/liboprf/src/noise_xk/src/Noise_XK.c",
+                   "deps/liboprf/src/noise_xk/src/XK.c",
+                   "deps/equihash/equihash.cc"
+               ],
+               include_dirs=[
+                   "deps/liboprf/src/",
+                   "deps/liboprf/src/noise_xk/include",
+                   "deps/liboprf/src/noise_xk/include/karmel/",
+                   "deps/liboprf/src/noise_xk/include/karmel/minimal/",
+                   "deps/equihash/"
+               ],
+               extra_compile_args=[
+                   "-O2",
+                   "-Wall",
+                   "-Werror",
+                   "-Werror=format-security",
+                   "-Wextra",
+                   "-Wl,-z,defs",
+                   "-Wl,-z,noexecstack",
+                   "-Wl,-z,relro",
+                   "-Wno-infinite-recursion",
+                   "-Wno-unknown-warning-option",
+                   "-Wno-unused-but-set-variable",
+                   "-Wno-unused-parameter",
+                   "-Wno-unused-variable",
+                   "-fasynchronous-unwind-tables",
+                   "-fcf-protection=full",
+                   "-fpic",
+                   "-fstack-clash-protection",
+                   "-fstack-protector-strong",
+                   "-fstrict-flex-arrays=3",
+                   "-fwrapv",
+                   "-g",
+                   #"-mbranch-protection=standard",
+                   "-march=native",
+                   #"-std=c11",
+                   #"-std=c++17",
+                   ],
+               libraries=["sodium"],
+               define_macros=[("_BSD_SOURCE", None),
+                              ("_DEFAULT_SOURCE", None),
+                              ("WITH_SODIUM", None),
+                              ("_GLIBCXX_ASSERTIONS", None),
+                              ("_FORTIFY_SOURCE=2", None),
+                              ],
+        ),
+    ]
 )

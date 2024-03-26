@@ -1,0 +1,6 @@
+[submodule "deps/equihash"]
+	path = deps/equihash
+	url = https://github.com/stef/equihash/
+[submodule "deps/liboprf"]
+	path = deps/liboprf
+	url = https://github.com/stef/liboprf/
