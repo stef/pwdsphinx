@@ -67,6 +67,28 @@ def spawn(self, cmd, **kwargs):
             else:
                 cmd += ("-std=c11",
                         "-Werror=implicit-function-declaration",)
+    if self.compiler_type == "windows":
+        for argument in reversed(cmd):
+            # Check if argument contains a filename. We must check for all
+            # possible extensions; checking for target extension is faster.
+            if not argument.endswith(self.obj_extension):
+                continue
+
+            # check for a filename only to avoid building a new string
+            # with variable extension
+            off_end = -len(self.obj_extension)
+            off_start = -len(filename) + off_end
+            if argument.endswith(filename, off_start, off_end):
+                if self.compiler_type == 'bcpp':
+                    # Borland accepts a source file name at the end,
+                    # insert the options before it
+                    cmd[-1:-1] = ("/EHsc",)
+                else:
+                    cmd += ("/EHsc",)
+                # we're done, restore the original method
+                #self.spawn = self.__spawn
+            # filename is found, no need to search any further
+            break
 
     distutils.ccompiler.spawn(cmd, dry_run=self.dry_run, **kwargs)
 
