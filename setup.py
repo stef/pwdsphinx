@@ -121,6 +121,10 @@ setup(name = 'pwdsphinx',
                    "/opt/homebrew/include",
                    "/usr/local/include"
                ],
+               library_dirs=[
+                   "/opt/homebrew/lib",
+                   "/usr/local/lib"
+               ],
                extra_compile_args=[
                    "-O2",
                    "-Wall",
