@@ -27,7 +27,7 @@ jobs:
         run: python -m cibuildwheel --output-dir wheelhouse
         # to supply options, put them in 'env', like:
         env:
-           CIBW_SKIP: cp36-*
+           CIBW_SKIP: cp36-* *_i686
            CIBW_BEFORE_ALL_LINUX: yum install -y libsodium-devel || apk add --upgrade libsodium-dev || apt-get install -U libsodium-dev
            CIBW_BEFORE_ALL_MACOS: brew install libsodium
 #          CIBW_BEFORE_ALL_WINDOWS: ??
