@@ -28,7 +28,7 @@ jobs:
         # to supply options, put them in 'env', like:
         env:
            CIBW_SKIP: cp36-*
-           CIBW_BEFORE_BUILD_LINUX: sudo apt update && sudo apt install libsodium-dev
+           CIBW_BEFORE_BUILD_LINUX: apt update && apt install libsodium-dev
            CIBW_BEFORE_BUILD_MACOS: brew install libsodium
 #          CIBW_BEFORE_BUILD_WINDOWS: 
 
