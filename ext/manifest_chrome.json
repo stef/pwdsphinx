@@ -1,0 +1,29 @@
+{
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiIpLogUg/aqfPydJjvRyxwUYME3LdoG6tHItPEYPPtquG60U1mFopkN2epr9HoyDEX334AsBkyxY6qxbQZZZVY+8xSPnJZhE/g7Cpo/eLvbX68avgavWp2/RCXjaW4BW06v4IcCKlI09jdWR7Oo33RGcsZer/FJTLiunoUl+6W5ap3KAry1JrLg5FwHYicaghwNrxM9zCDUbr0n7g7C7p/oHC/iCSmJgMZo5qA6sXfxxZgy2lTtB0M5y/NihbgeTvoF+GgJ9iFwfwIP4nyK6JPThRqCFguTQCMcvaqhMey9MjUC5aIZ2fRbuEV4XuyV+48jK5Dun/pDgXlzhmzjowwIDAQAB",
+  "manifest_version": 3,
+
+  "name": "WebSphinx",
+  "description": "__MSG_extDescription__",
+  "version": "0.1",
+  "default_locale": "en",
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_icon": "icon.png",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L"
+      }
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "nativeMessaging"
+  ]
+}

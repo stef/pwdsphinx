@@ -31,7 +31,7 @@ except ImportError:
 
 cfg = getcfg('sphinx')
 pinentry = cfg['websphinx']['pinentry']
-log = cfg['websphinx']['log']
+log = cfg['websphinx'].get('log')
 
 def handler(cb, cmd, *args):
     s = sphinx.connect()

@@ -17,11 +17,13 @@ try:
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
   from pwdsphinx.utils import split_by_n
+  from pwdsphinx.ext import init_browser_ext
 except ImportError:
   import bin2pass
   from config import getcfg
   from consts import *
   from utils import split_by_n
+  from ext import init_browser_ext
 
 win=False
 if platform.system() == 'Windows':
@@ -439,7 +441,8 @@ def dkg(m, op, threshold, keyids, alpha):
 
 #### OPs ####
 
-def init_key():
+def init():
+  init_browser_ext()
   kfile = os.path.join(datadir,'masterkey')
   if os.path.exists(kfile):
     print("Already initialized.", file=sys.stderr)
@@ -524,7 +527,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 def get(m, pwd, user, host):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
-  
+
   msgs = [b''.join([GET, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
 
@@ -860,7 +863,7 @@ def main(params=sys.argv):
     args = (user, site, classes, syms, size, target)
   elif params[1] == 'init':
     if len(params) != 2: usage(params)
-    sys.exit(init_key())
+    sys.exit(init())
   elif params[1] == 'get':
     if len(params) != 4: usage(params)
     cmd = get
