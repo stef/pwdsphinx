@@ -524,7 +524,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   clearmem(rwd)
   return ret
 
-def get(m, pwd, user, host):
+def get(m, pwd, user, host, raw=False):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
 
@@ -566,6 +566,8 @@ def get(m, pwd, user, host):
     raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  if raw == True: return rwd
+
   ret = bin2pass.derive(rwd,classes,size,symbols)
   clearmem(rwd)
 
