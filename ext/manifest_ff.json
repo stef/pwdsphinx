@@ -13,8 +13,8 @@
   },
 
   "background": {
-    "persistent": true,
-    "scripts": ["background.js"]
+    "scripts": ["background.js"],
+    "persistent": true
   },
   "browser_action": {
     "default_icon": "icon.png",
@@ -27,8 +27,17 @@
       }
     }
   },
+  "content_scripts": [
+	  {
+		  "matches": ["http://*/*", "https://*/*"],
+		  "js": ["content_script.js"],
+		  "run_at":"document_start"
+	  }
+  ],
   "permissions": [
+    "scripting",
     "activeTab",
-    "nativeMessaging"
+    "nativeMessaging",
+    "<all_urls>"
   ]
 }

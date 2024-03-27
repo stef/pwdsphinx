@@ -22,6 +22,22 @@
       }
     }
   },
+  "host_permissions": [
+	  "*://*/*"
+  ],
+  "content_scripts": [
+	  {
+		  "matches": ["http://*/*", "https://*/*"],
+		  "js": ["content_script.js"],
+		  "run_at":"document_start"
+	  }
+  ],
+  "web_accessible_resources": [
+      {
+          "resources": ["webauthn.js"],
+          "matches": ["http://*/*", "https://*/*"]
+      }
+  ],
   "permissions": [
     "activeTab",
     "nativeMessaging"
