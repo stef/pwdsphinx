@@ -9,6 +9,12 @@ sphinx: a password **S**tore that **P**erfectly **H**ides from **I**tself (**N**
 pwdsphinx is python wrapper around libsphinx - a cryptographic password storage
 as described in https://eprint.iacr.org/2015/1099
 
+## Also on Radicle
+
+To clone this repo on [Radicle](https://radicle.xyz), simply run:
+
+  `rad clone rad:z3K5zSdfkoD6dytPhbk6v7mJLUojU`
+
 ## Dependencies
 
 You need [libsphinx](https://github.com/stef/libsphinx) and [libequihash](https://github.com/stef/equihash/) for the python reference frontend.
