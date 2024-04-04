@@ -14,6 +14,7 @@ navigator.credentials.create = function(options) {
     const host = window.location.hostname;
     const response = await createEvent("create", {});
     console.log("CREATE RESP", response);
+    //return createCredentials(response);
 };
 
 navigator.credentials.get = async function(options) {
@@ -25,6 +26,7 @@ navigator.credentials.get = async function(options) {
     const host = window.location.hostname;
     const response = await createEvent("get", {});
     console.log("GET RESP", response);
+    //return createCredentials(response);
 };
 
 async function createEvent(evType, params) {
@@ -41,4 +43,32 @@ async function createEvent(evType, params) {
 		localPort.onmessage = (event) => resolve(event.data);
 	});
     return await promise
+}
+
+function createCredentials(res) {
+     const credential = {
+      id: res.id,
+      rawId: stringToBuffer(res.id),
+      type: "public-key",
+      response: {
+        authenticatorData: stringToBuffer(res.authenticatorData),
+        clientDataJSON: stringToBuffer(res.clientDataJSON),
+        signature: stringToBuffer(res.signature),
+        userHandle: stringToBuffer(res.userHandle),
+      },
+      getClientExtensionress: () => ({}),
+      authenticatorAttachment: "cross-platform",
+    };
+    Object.setPrototypeOf(credential.response, AuthenticatorAssertionResponse.prototype);
+    Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
+    return credential;
+}
+
+function stringToBuffer(str) {
+	const str = atob(str);
+	const bytes = new Uint8Array(str.length);
+	for (let i = 0; i < str.length; i++) {
+		bytes[i] = str.charCodeAt(i);
+	}
+	return bytes;
 }
