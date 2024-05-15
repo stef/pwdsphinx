@@ -8,7 +8,10 @@ import concurrent.futures
 from SecureString import clearmem
 import pysodium, pyoprf
 from qrcodegen import QrCode
-from zxcvbn import zxcvbn
+try:
+    from zxcvbn import zxcvbn
+except ImportError:
+    zxcvbn = None
 from equihash import solve
 from itertools import permutations
 from pyoprf.multiplexer import Multiplexer
@@ -839,6 +842,7 @@ def arg_rules(params):
   return user, site, classes or 'uld', symbols if symbols is not None else bin2pass.symbols, size or 0, target
 
 def test_pwd(pwd):
+  if zxcvbn is None: return
   q = zxcvbn(pwd.decode('utf8'))
   print("your %s%s (%s/4) master password can be online recovered in %s, and offline in %s, trying ~%s guesses" %
         ("★" * q['score'],
