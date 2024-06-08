@@ -3,17 +3,17 @@
 This directory contains tools that can be used on their own, or
 in concert to interact with pwdsphinx.
 
-## getpwd.sh (depends on pinentry)
+## getpwd (depends on pinentry)
 
 This is a simple script which uses `pinentry` from the gnupg project
 to query a password and write it out to standard output. Which
-`pinentry` variant you use, is up to you, it can be a curses, gtk or
-qt interface. This should be safer than echoing a password into
+`pinentry` variant you use, is up to you, it can be a curses, GTK+ or
+QT interface. This should be safer than echoing a password into
 pwdsphinx, since your password will not show up in your process list
 nor your command line history. Use it like this:
 
 ```
-getpwd.sh | sphinx get username hostname
+getpwd | sphinx get username hostname
 ```
 
 ## exec-on-click.sh (depends on xinput)
