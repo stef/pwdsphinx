@@ -89,6 +89,8 @@ def main():
       syms = set(arg)
     elif set(arg) - set("uld") == set():
       rule = arg
+    elif len(arg) == 0:
+      syms = ''
     else:
       usage()
 
