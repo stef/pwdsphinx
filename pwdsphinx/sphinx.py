@@ -43,6 +43,7 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
 rwd_keys = cfg['client'].getboolean('rwd_keys', fallback=False)
 validate_password = cfg['client'].getboolean('validate_password',True)
+userlist = cfg['client'].getboolean('userlist', fallback=True)
 
 if verbose:
     print("hostname:", hostname, file=sys.stderr)
@@ -51,6 +52,8 @@ if verbose:
     print("datadir:", datadir, file=sys.stderr)
     print("ssl_cert:", ssl_cert, file=sys.stderr)
     print("rwd_keys:", rwd_keys, file=sys.stderr)
+    print("validate_password:", validate_password, file=sys.stderr)
+    print("userlist:", userlist, file=sys.stderr)
 
 #### consts ####
 
@@ -203,6 +206,9 @@ def read_pkt(s,size):
     return b''.join(res)
 
 def update_rec(s, host, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
+    if not userlist:
+        s.send(b"\0"*96)
+        return
     id = getid(host, '')
     signed_id = sign_blob(id, id, b'')
     s.send(signed_id)
@@ -499,42 +505,45 @@ def delete(s, pwd, user, host):
     s.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
 
-  # delete user from user list for this host
-  # a malicous server could correlate all accounts on this services to this users here
-  # first query user record for this host
-  id = getid(host, '')
-  signed_id = sign_blob(id, id, b'')
-  s.send(signed_id)
-  # wait for user blob
-  bsize = s.recv(2)
-  bsize = struct.unpack('!H', bsize)[0]
-  if bsize == 0:
-    # this should not happen, it means something is corrupt
-    s.close()
-    raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
+  if not userlist:
+     s.send(b"\0"*96)
+  else:
+    # delete user from user list for this host
+    # a malicous server could correlate all accounts on this services to this users here
+    # first query user record for this host
+    id = getid(host, '')
+    signed_id = sign_blob(id, id, b'')
+    s.send(signed_id)
+    # wait for user blob
+    bsize = s.recv(2)
+    bsize = struct.unpack('!H', bsize)[0]
+    if bsize == 0:
+      # this should not happen, it means something is corrupt
+      s.close()
+      raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
 
-  blob = s.recv(bsize)
-  if blob == b'fail':
-    s.close()
-    raise ValueError("ERROR: invalid signature on list of users")
-  version, blob = decrypt_blob(blob)
-  users = set(blob.decode().split('\x00'))
-  if user not in users:
-    # this should not happen, but maybe it's a sign of corruption?
-    s.close()
-    raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
-  users.remove(user)
-  blob = ('\x00'.join(sorted(users))).encode()
-  # notice we do not add rwd to encryption of user blobs
-  blob = encrypt_blob(blob)
-  bsize = len(blob)
-  if bsize >= 2**16:
-    s.close()
-    raise ValueError("ERROR: blob is bigger than 64KB.")
-  blob = struct.pack("!H", bsize) + blob
-  blob = sign_blob(blob, id, b'')
+    blob = s.recv(bsize)
+    if blob == b'fail':
+      s.close()
+      raise ValueError("ERROR: invalid signature on list of users")
+    version, blob = decrypt_blob(blob)
+    users = set(blob.decode().split('\x00'))
+    if user not in users:
+      # this should not happen, but maybe it's a sign of corruption?
+      s.close()
+      raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
+    users.remove(user)
+    blob = ('\x00'.join(sorted(users))).encode()
+    # notice we do not add rwd to encryption of user blobs
+    blob = encrypt_blob(blob)
+    bsize = len(blob)
+    if bsize >= 2**16:
+      s.close()
+      raise ValueError("ERROR: blob is bigger than 64KB.")
+    blob = struct.pack("!H", bsize) + blob
+    blob = sign_blob(blob, id, b'')
 
-  s.send(blob)
+    s.send(blob)
 
   if b'ok' != s.recv(2):
     s.close()
@@ -581,7 +590,7 @@ def usage(params, help=False):
   print("       echo -n 'password' | %s get <user> <site>" % params[0])
   print("       %s <commit|undo|delete> <user> <site> # if rwd_keys is false in your config" % params[0])
   print("       echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
-  print("       %s list <site>" % params[0])
+  if userlist: print("       %s list <site>" % params[0])
   print("       %s qr [svg] [key]" % params[0])
   if help: sys.exit(0)
   sys.exit(100)
@@ -665,7 +674,7 @@ def main(params=sys.argv):
     if len(params) != 4: usage(params)
     cmd = delete
     args = (params[2], params[3])
-  elif params[1] == 'list':
+  elif userlist and params[1] == 'list':
     if len(params) != 3: usage(params)
     cmd = users
     args = (params[2],)

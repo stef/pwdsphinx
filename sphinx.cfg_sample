@@ -23,6 +23,12 @@
 # typos of the master password, while decreasing security slightly
 #validate_password=True
 
+# userlist enables the maintenance of an encrypted blob of all records
+# belonging to the same sphinx user (defined by their masterkey) and
+# hostname. This enables the usage of the `list` command to the client.
+# if you disable this, you have to remember your usernames in other ways.
+#userlist=True
+
 # the server section is only needed if you run the oracle yourself.
 [server]
 # the ipv4 address the server is listening on

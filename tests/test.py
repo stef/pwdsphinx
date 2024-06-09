@@ -55,6 +55,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
 
     def test_huge_user(self):
+        if sphinx.userlist == False: return
         with sphinx.connect() as s:
             self.assertRaises(ValueError, sphinx.create,s, pwd, 'a'*(2**16 - 40), host, char_classes, syms, size)
         with sphinx.connect() as s:
@@ -143,6 +144,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(sphinx.delete(s, pwd, user, host))
 
     def test_delete_inv_mpwd(self):
+        if sphinx.rwd_keys == False: return
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
 
@@ -210,6 +212,7 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_commit_undo_inv_mpwd(self):
         # create
+        if sphinx.rwd_keys == False: return
         with sphinx.connect() as s:
             pwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
             self.assertIsInstance(pwd0, str)
@@ -249,6 +252,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(pwd0, pwd5)
 
     def test_list_users(self):
+        if sphinx.userlist == False: return
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
         with sphinx.connect() as s:
@@ -259,6 +263,7 @@ class TestEndToEnd(unittest.TestCase):
             self.assertEqual(users, '\n'.join((user,user2)))
 
     def test_list_users_diff_mpwd(self):
+        if sphinx.userlist == False: return
         with sphinx.connect() as s:
             self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
         with sphinx.connect() as s:
@@ -303,6 +308,7 @@ class TestEndToEnd(unittest.TestCase):
         sphinx.get_signkey = get_signkey
 
     def test_userblob_auth_create(self):
+        if sphinx.userlist == False: return
         # create
         with sphinx.connect() as s:
             rwd = sphinx.create(s, pwd, user, host, char_classes, syms, size)
@@ -362,6 +368,44 @@ class TestEndToEnd(unittest.TestCase):
     def test_main_inv_params(self):
         for cmd in ('create','get','change','commit','undo','delete','list'):
             self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', cmd))
+
+class TestEndToEndNoUserlist(TestEndToEnd):
+  def setUp(self):
+    if sphinx.userlist:
+      sphinx.userlist=False
+  def tearDown(self, *args, **kwargs):
+    super(TestEndToEndNoUserlist, self).tearDown(*args, **kwargs)
+    sphinx.userlist=True
+
+class TestEndToEndNoRWD_Keys(TestEndToEnd):
+  def setUp(self):
+    if sphinx.rwd_keys:
+      sphinx.rwd_keys=False
+  def tearDown(self, *args, **kwargs):
+    super(TestEndToEndNoRWD_Keys, self).tearDown(*args, **kwargs)
+    sphinx.rwd_keys=True
+
+class TestEndToEndNoValidatePassword(TestEndToEnd):
+  def setUp(self):
+    if sphinx.validate_password:
+      sphinx.validate_password=False
+  def tearDown(self, *args, **kwargs):
+    super(TestEndToEndNoValidatePassword, self).tearDown(*args, **kwargs)
+    sphinx.validate_password=True
+
+class TestEndToEndNoneEither(TestEndToEnd):
+  def setUp(self):
+    if sphinx.validate_password:
+      sphinx.validate_password=False
+    if sphinx.rwd_keys:
+      sphinx.rwd_keys=False
+    if sphinx.userlist:
+      sphinx.userlist=False
+  def tearDown(self, *args, **kwargs):
+    super(TestEndToEndNoneEither, self).tearDown(*args, **kwargs)
+    sphinx.validate_password=True
+    sphinx.rwd_keys=True
+    sphinx.userlist=True
 
 if __name__ == '__main__':
     unittest.main()

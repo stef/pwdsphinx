@@ -282,6 +282,10 @@ different "records" on the oracle.
 this helps to notice most typos of the master password, while
 decreasing security slightly.
 
+The `userlist` option (default: True) can disable the usage of userlists. This
+prohibits the server to correlate all the records that belong to the same
+sphinx user relating to the same host. The cost of this, is that the user has
+to remember themselves which usernames they have at which host.
 
 # SECURITY CONSIDERATIONS
 
