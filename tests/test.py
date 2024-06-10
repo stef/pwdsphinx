@@ -94,15 +94,16 @@ class TestEndToEnd(unittest.TestCase):
         log = open(f"{root}/servers/{idx}/log", "w")
         cls._oracles.append(
           (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()]), log))
-      time.sleep(0.4)
+      time.sleep(0.8)
 
     @classmethod
     def tearDownClass(cls):
       for p, log in cls._oracles:
         p.kill()
+        time.sleep(0.1)
         log.close()
       #rmtree(cls._root)
-      time.sleep(0.2)
+      time.sleep(0.4)
 
     def tearDown(self):
         #cleanup()

@@ -289,16 +289,20 @@ def dkg(s, n, t, index, aux):
 
     s.send(b''.join(noisexk.send_msg(session, share) for share,session in zip(shares,tx)))
 
-    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*(33+64))
+    msg = read_pkt(s, n*(33+64))
 
-    commitments, xshares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
-    commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
-                   for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
+    #commitments, xshares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
+    #commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
+    #               for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
+
+    #shares = []
+    #for ct,session in zip(split_by_n(xshares,66+64), rx):
+    #    pt = noisexk.read_msg(session, ct)
+    #    shares.append((bytes(pt[:33]),bytes(pt[33:])))
 
     shares = []
-    for ct,session in zip(split_by_n(xshares,66+64), rx):
-        pt = noisexk.read_msg(session, ct)
-        shares.append((bytes(pt[:33]),bytes(pt[33:])))
+    for ct,session in zip(split_by_n(msg,33+64), rx):
+        shares.append(noisexk.read_msg(session, ct))
 
     complaints, transcript = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
 
