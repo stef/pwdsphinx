@@ -50,6 +50,7 @@ except TypeError: # ignore exception in case ssl_cert is not set, thus None is a
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
 rwd_keys = cfg['client'].get('rwd_keys', False)
 validate_password = cfg['client'].get('validate_password',True)
+userlist = cfg['client'].get('userlist', True)
 threshold = int(cfg['client'].get('threshold') or "1")
 servers = cfg.get('servers',{})
 
@@ -71,6 +72,8 @@ if verbose:
     print("datadir:", datadir, file=sys.stderr)
     print("ssl_cert:", ssl_cert, file=sys.stderr)
     print("rwd_keys:", rwd_keys, file=sys.stderr)
+    print("validate_password:", validate_password, file=sys.stderr)
+    print("userlist:", userlist, file=sys.stderr)
     print("threshold:", threshold, file=sys.stderr)
     for name, server in servers.items():
       print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)}")
@@ -223,6 +226,9 @@ def read_pkt(s,size):
     return b''.join(res)
 
 def update_rec(s, id, item): # this is only for user blobs. a UI feature offering a list of potential usernames.
+    if not userlist:
+        s.send(b"\0"*96)
+        return
     signed_id = sign_blob(id, id, b'')
     s.send(signed_id)
     # wait for user blob
@@ -699,68 +705,71 @@ def delete(m, pwd, user, host):
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
   #print("authenticated")
 
-  # delete user from user list for this host
-  # a malicous server could correlate all accounts on this services to this users here
-  # first query user record for this host
-  for p in m:
-     id = getid1(host, '', p.name)
-     signed_id = sign_blob(id, id, b'')
-     p.send(signed_id)
+  if not userlist:
+     s.send(b"\0"*96)
+  else:
+     # delete user from user list for this host
+     # a malicous server could correlate all accounts on this services to this users here
+     # first query user record for this host
+     for p in m:
+        id = getid1(host, '', p.name)
+        signed_id = sign_blob(id, id, b'')
+        p.send(signed_id)
 
-  # wait for user blob
-  bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
-  if bsizes is None:
-    m.close()
-    raise ValueError("failed to get sizes for user blobs from threshold servers")
-  if len(bsizes) != 1:
-    m.close()
-    raise ValueError(f"ERROR: inconsistent user list blob sizes: {bsizes}")
-  bsize = list(bsizes)[0]
-  #print('got all blobsizes')
-  if bsize == 0:
-    # this should not happen, it means something is corrupt
-    m.close()
-    raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
+     # wait for user blob
+     bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
+     if bsizes is None:
+       m.close()
+       raise ValueError("failed to get sizes for user blobs from threshold servers")
+     if len(bsizes) != 1:
+       m.close()
+       raise ValueError(f"ERROR: inconsistent user list blob sizes: {bsizes}")
+     bsize = list(bsizes)[0]
+     #print('got all blobsizes')
+     if bsize == 0:
+       # this should not happen, it means something is corrupt
+       m.close()
+       raise ValueError("ERROR: server has no associated user record for this host", file=sys.stderr)
 
-  blobs = m.gather(bsize)
-  if blobs is None:
-    m.close()
-    raise ValueError("failed to read user blobs from sphinx servers")
-  #print('got all blobs')
-  ptblobs = set()
-  for blob in blobs.values():
-    if blob == b'fail':
-      m.close()
-      raise ValueError("ERROR: invalid signature on list of users")
-    ptblobs.add(decrypt_blob(blob))
+     blobs = m.gather(bsize)
+     if blobs is None:
+       m.close()
+       raise ValueError("failed to read user blobs from sphinx servers")
+     #print('got all blobs')
+     ptblobs = set()
+     for blob in blobs.values():
+       if blob == b'fail':
+         m.close()
+         raise ValueError("ERROR: invalid signature on list of users")
+       ptblobs.add(decrypt_blob(blob))
 
-  if len(ptblobs)!=1:
-    raise ValueError(f"ERROR: inconsistent user list blobs")
-  version, blob = list(ptblobs)[0]
+     if len(ptblobs)!=1:
+       raise ValueError(f"ERROR: inconsistent user list blobs")
+     version, blob = list(ptblobs)[0]
 
-  users = set(blob.decode().split('\x00'))
-  if user not in users:
-    # this should not happen, but maybe it's a sign of corruption?
-    m.close()
-    raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
-  users.remove(user)
-  blob = ('\x00'.join(sorted(users))).encode()
-  # notice we do not add rwd to encryption of user blobs
-  for p in m:
-    xblob = encrypt_blob(blob)
-    bsize = len(xblob)
-    if bsize >= 2**16:
-        m.close()
-        raise ValueError("ERROR: blob is bigger than 64KB.")
-    xblob = struct.pack("!H", bsize) + xblob
-    id = getid1(host, '', p.name)
-    xblob = sign_blob(xblob, id, b'')
-    #print(f'updating {p.name}\t{xblob.hex()}')
-    p.send(xblob)
+     users = set(blob.decode().split('\x00'))
+     if user not in users:
+       # this should not happen, but maybe it's a sign of corruption?
+       m.close()
+       raise ValueError(f'warning "{user}" is not in user record', file=sys.stderr)
+     users.remove(user)
+     blob = ('\x00'.join(sorted(users))).encode()
+     # notice we do not add rwd to encryption of user blobs
+     for p in m:
+       xblob = encrypt_blob(blob)
+       bsize = len(xblob)
+       if bsize >= 2**16:
+           m.close()
+           raise ValueError("ERROR: blob is bigger than 64KB.")
+       xblob = struct.pack("!H", bsize) + xblob
+       id = getid1(host, '', p.name)
+       xblob = sign_blob(xblob, id, b'')
+       #print(f'updating {p.name}\t{xblob.hex()}')
+       p.send(xblob)
 
-  if set(m.gather(2).values())!={b'ok'}:
-    m.close()
-    raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
+     if set(m.gather(2).values())!={b'ok'}:
+       m.close()
+       raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
 
   m.close()
   clearmem(rwd)
@@ -803,7 +812,7 @@ def usage(params, help=False):
   print("       echo -n 'password' | %s get <user> <site>" % params[0])
   print("       %s <commit|undo|delete> <user> <site> # if rwd_keys is false in your config" % params[0])
   print("       echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
-  print("       %s list <site>" % params[0])
+  if userlist: print("       %s list <site>" % params[0])
   print("       %s qr [svg] [key]" % params[0])
   if help: sys.exit(0)
   sys.exit(100)
@@ -888,7 +897,7 @@ def main(params=sys.argv):
     if len(params) != 4: usage(params)
     cmd = delete
     args = (params[2], params[3])
-  elif params[1] == 'list':
+  elif userlist and params[1] == 'list':
     if len(params) != 3: usage(params)
     cmd = users
     args = (params[2],)
