@@ -115,13 +115,8 @@ def load_authkeys(path):
             res.append((key,name))
     return res
 
-def setup_noise_sessions(s, n):
-    with open(noisekey, 'rb') as fd:
-        privkey = fd.read()
-    if len(privkey) != 32:
-        print("Invalid noisekey")
-        fail(s)
-
+def setup_noise_sessions(s, n, privkey, auth_keys):
+    # sets up a noise session with all peer
     # send own pubkey
     pk = noisexk.pubkey(privkey)
     s.sendall(pk)
@@ -146,7 +141,7 @@ def setup_noise_sessions(s, n):
     receiver_sessions = []
     msg1s = read_pkt(s,48*n)
     msgs = []
-    auth_keys = load_authkeys(authorized_keys)
+
     for msg in split_by_n(msg1s, 48):
         session, msg = noisexk.responder_session(privkey, auth_keys, msg)
         receiver_sessions.append(session)
@@ -270,15 +265,31 @@ def create(s, msg):
 
     s.send(b'ok')
 
-def dkg(s, n, t, index):
-    tx, rx = setup_noise_sessions(s, n)
+def dkg(s, n, t, index, aux):
+    with open(noisekey, 'rb') as fd:
+        privkey = fd.read()
+    if len(privkey) != 32:
+        print("Invalid noisekey")
+        fail(s)
+    auth_keys = load_authkeys(authorized_keys)
+
+    tx, rx = setup_noise_sessions(s, n, privkey, auth_keys)
 
     ## 1st step OPRF with a new seed
     # perform dkg to collectively generate new seed
-    shares, c = pyoprf.dkg_start(n,t)
-    s.send(b''.join(c)+b''.join(noisexk.send_msg(session, b''.join(share)) for share,session in zip(shares,tx)))
+    pk, sk = pysodium.crypto_sign_keypair()
+    c_hash, signed_c, shares, transcript = pyoprf.dkg_start(n,t,sk)
+    pysodium.crypto_generichash_update(transcript, aux)
 
-    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*(2*33+64))
+    s.send(c_hash)
+    c_hashes= read_pkt(s, len(c_hash)*n)
+
+    s.send(signed_c)
+    signed_commitments= read_pkt(s, len(signed_c)*n)
+
+    s.send(b''.join(noisexk.send_msg(session, share) for share,session in zip(shares,tx)))
+
+    msg = read_pkt(s, n*t*pysodium.crypto_core_ristretto255_BYTES+n*(33+64))
 
     commitments, xshares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
     commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
@@ -289,9 +300,9 @@ def dkg(s, n, t, index):
         pt = noisexk.read_msg(session, ct)
         shares.append((bytes(pt[:33]),bytes(pt[33:])))
 
-    complaints, c_len = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
+    complaints, transcript = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
 
-    s.send(bytes([c_len])+complaints)
+    s.send(struct.pack("B", len(complaints))+complaints)
     # todo handle complaints by recovering from recoverable
     # inconsistencies.
 
@@ -314,6 +325,7 @@ def create_dkg(s, msg):
     n,     msg = pop(msg,1,lambda x: x[0])
     id,    msg = pop(msg,32)
     alpha, msg = pop(msg,32)
+    aux = b'%s%s' % (op, alpha) # for the transcript
 
     # check if id is unique
     id = binascii.hexlify(id).decode()
@@ -321,7 +333,7 @@ def create_dkg(s, msg):
     if(os.path.exists(tdir)):
       fail(s)
 
-    xi = dkg(s,n,t,index)
+    xi = dkg(s,n,t,index, aux)
 
     #k=pysodium.randombytes(32)
     try:
@@ -471,6 +483,8 @@ def change_dkg(s, msg):
     if verbose: print('invalid get msg, trailing content %r' % msg)
     fail(s)
 
+  aux = b'%s%s' % (op, alpha)
+
   id = binascii.hexlify(id).decode()
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
@@ -484,7 +498,7 @@ def change_dkg(s, msg):
   n,      msg = pop(msg,1,lambda x: x[0])
   index,alpha = pop(msg,1,lambda x: x[0])
 
-  xi = dkg(s,n,t, index)
+  xi = dkg(s,n,t, index, aux)
 
   #k=pysodium.randombytes(32)
   try:

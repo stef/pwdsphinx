@@ -29,6 +29,10 @@
 # if you disable this, you have to remember your usernames in other ways.
 #userlist=True
 
+# the threshold - must specify at least this many servers in the
+# [servers] section
+# threshold = 3
+
 # the server section is only needed if you run the oracle yourself.
 [server]
 # the ipv4 address the server is listening on

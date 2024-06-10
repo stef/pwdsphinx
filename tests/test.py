@@ -101,7 +101,7 @@ class TestEndToEnd(unittest.TestCase):
       for p, log in cls._oracles:
         p.kill()
         log.close()
-      rmtree(cls._root)
+      #rmtree(cls._root)
       time.sleep(0.2)
 
     def tearDown(self):

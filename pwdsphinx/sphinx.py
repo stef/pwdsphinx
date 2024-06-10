@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, os, socket, ssl, struct, platform, getpass, time
+import sys, os, socket, ssl, struct, platform, getpass, time, binascii
 import concurrent.futures
 from SecureString import clearmem
 import pysodium, pyoprf
@@ -371,6 +371,7 @@ def getpwd():
     return sys.stdin.buffer.readline().rstrip(b'\n')
 
 def dispatch_peer_session_setup(m, n):
+  # routes noise_xk handshakes between all peers
   pubkeys=m.gather(32, n)
   if None in pubkeys.values():
     peers=[m[i].name for i in pubkeys if pubkeys[i] is None]
@@ -410,22 +411,21 @@ def dkg(m, op, threshold, keyids, alpha):
 
    dispatch_peer_session_setup(m, n)
 
+   c_hashes = m.gather(pysodium.crypto_generichash_BYTES+pysodium.crypto_sign_BYTES,n)
+   m.broadcast(b''.join(c_hashes.values()))
+
+   commitments = m.gather(pysodium.crypto_sign_BYTES+(threshold*pysodium.crypto_core_ristretto255_BYTES), n)
+   m.broadcast(b''.join(commitments.values()))
+
    # expected response size is
-   # the commitments:  (pysodium.crypto_core_ristretto255_BYTES * threshold)
-   # the n shares (2*33) + final noisexk handshake packet (65): + ((33*2+64)*n)
-   responders=m.gather((pysodium.crypto_core_ristretto255_BYTES * threshold) + ((33*2+64)*n), n,
-                       lambda x: (x[:threshold*pysodium.crypto_core_ristretto255_BYTES], # commitents
-                                  tuple(bytes(x) # shares
-                                        for x in split_by_n(x[threshold*pysodium.crypto_core_ristretto255_BYTES:],
-                                                            2*33+64))) )
+   # the n shares 33 + final noisexk handshake packet (65): ((33+64)*n)
+   responders=m.gather((33+64)*n, n, lambda x: (tuple(bytes(s) for s in split_by_n(x, 33+64))) )
    if responders is None:
      raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
 
-   commitments = b''.join(responders[i][0] for i in range(n))
    for i in range(n):
-     shares = b''.join([bytes(responders[j][1][i]) for j in range(n)])
-     msg = commitments + shares
-     m.send(i, msg)
+     shares = b''.join([bytes(responders[j][i]) for j in range(n)])
+     m.send(i, shares)
 
    # todo handle complaints!
    complaints = m.gather(n+1,n, lambda x: 0 if x[0] == 0 else [e for e in x[1:x[0]+1] ])
@@ -467,6 +467,8 @@ def init():
     print("ERROR: failed to initialize master key", file=sys.stderr)
     return 1
   finally:
+    print("you want to make a backup of the following masterkey, keep it safe and secure", binascii.b2a_base64(mk))
+    print('this key is also stored - and must be available - at:', kfile)
     clearmem(mk)
   return 0
 
