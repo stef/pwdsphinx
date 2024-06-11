@@ -145,6 +145,10 @@ if __name__ == '__main__':
         ret = encode("age", pk)
     elif op == "privkey":
         ret = encode('age-secret-key-', rwd).upper()
+    elif op == "topk":
+        sk = decode('age-secret-key-', rwd)
+        pk = pysodium.crypto_scalarmult_base(sk)
+        ret = encode("age", pk)
     else:
         usage()
     print(ret)
