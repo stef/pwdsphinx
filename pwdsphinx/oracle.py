@@ -278,6 +278,9 @@ def dkg(s, n, t, index, aux):
     ## 1st step OPRF with a new seed
     # perform dkg to collectively generate new seed
     pk, sk = pysodium.crypto_sign_keypair()
+    s.send(pk)
+    pks = read_pkt(s,len(pk)*n)
+
     c_hash, signed_c, shares, transcript = pyoprf.dkg_start(n,t,sk)
     pysodium.crypto_generichash_update(transcript, aux)
 
@@ -291,32 +294,19 @@ def dkg(s, n, t, index, aux):
 
     msg = read_pkt(s, n*(33+64))
 
-    #commitments, xshares = pop(msg, pysodium.crypto_core_ristretto255_BYTES * t * n)
-    #commitments = [tuple(bytes(c) for c in split_by_n(x, pysodium.crypto_core_ristretto255_BYTES))
-    #               for x in split_by_n(commitments, pysodium.crypto_core_ristretto255_BYTES * t)]
-
-    #shares = []
-    #for ct,session in zip(split_by_n(xshares,66+64), rx):
-    #    pt = noisexk.read_msg(session, ct)
-    #    shares.append((bytes(pt[:33]),bytes(pt[33:])))
-
     shares = []
     for ct,session in zip(split_by_n(msg,33+64), rx):
         shares.append(noisexk.read_msg(session, ct))
 
-    complaints, transcript = pyoprf.dkg_verify_commitments(n,t,index,commitments,shares)
+    complaints, transcript = pyoprf.dkg_verify_commitments(n,t,index,c_hashes,signed_commitments,pks,shares,transcript)
 
     s.send(struct.pack("B", len(complaints))+complaints)
     # todo handle complaints by recovering from recoverable
     # inconsistencies.
 
-    qual = [j+1 for j in range(n)] + [0]
+    share, final_msg = pyoprf.dkg_finish(n, shares, index, sk, transcript)
 
-    xi, x_i = pyoprf.dkg_finish(n, qual, shares, index)
-    #print(index, xi.hex(), x_i.hex())
-    shares = (xi, x_i)
-
-    return xi
+    return share
 
 # msg format: 0xf0|index|threshold|n|id[32]|alpha[32]]
 def create_dkg(s, msg):
@@ -345,7 +335,8 @@ def create_dkg(s, msg):
     except:
       fail(s)
 
-    s.send(bytes([xi[0]])+beta)
+    msg = bytes([xi[0]])+beta
+    s.send(msg)
 
     # wait for auth signing pubkey and rules
     msg = s.recv(32+RULE_SIZE+64) # pubkey, rule, signature
