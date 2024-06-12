@@ -160,7 +160,7 @@ def update_blob(s):
     signed_id = s.recv(32+64)
     if len(signed_id)!=32+64:
       fail(s)
-    if sum(signed_id[:32]) == 0: retun
+    if sum(signed_id[:32]) == 0: return
 
     id = binascii.hexlify(signed_id[:32]).decode()
     pk = load_blob(id,'pub')
