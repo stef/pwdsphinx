@@ -210,7 +210,7 @@ def commit_undo(m, op, pwd, user, host):
   if not auth(m,ids,alpha,pwd,r):
     m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
-  if set(m.gather(2).values())!={b'ok'}:
+  if set(m.gather(2))!={b'ok'}:
     m.close()
     raise ValueError("Server failed to %s" % "Commit" if op == COMMIT else "UNDO")
   m.close()
@@ -277,15 +277,15 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
     if nonces is None:
       m.close()
       return False
-    nonces = list(nonces.items())
+    nonces = list(enumerate(nonces))
     rwd = b''
   else:
     msgs = m.gather(65,proc=lambda x: (x[:33],x[33:]))
     if msgs is None:
       m.close()
       return False
-    nonces = [(idx,resp[1]) for idx, resp in msgs.items()]
-    beta = pyoprf.thresholdmult([resp[0] for resp in msgs.values()][:threshold])
+    nonces = [(idx,resp[1]) for idx, resp in enumerate(msgs)]
+    beta = pyoprf.thresholdmult([resp[0] for resp in msgs][:threshold])
     rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
   for idx, nonce in nonces:
@@ -300,7 +300,7 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
     return False
 
   fails = 0
-  for idx, resp in responses.items():
+  for idx, resp in enumerate(responses):
     if resp==b'\x00\x04auth': continue
     if resp==b'\x00\x04fail':
       print(f'authentication failed for {m[idx].name}')
@@ -328,7 +328,7 @@ def ratelimit(m,reqs):
 
   puzzles = []
   with concurrent.futures.ProcessPoolExecutor() as executor:
-    for idx, challenge in challenges.items():
+    for idx, challenge in enumerate(challenges):
         n = challenge[0]
         k = challenge[1]
 
@@ -373,7 +373,7 @@ def getpwd():
 def dispatch_peer_session_setup(m, n):
   # routes noise_xk handshakes between all peers
   pubkeys=m.gather(32, n)
-  if None in pubkeys.values():
+  if None in pubkeys:
     peers=[m[i].name for i in pubkeys if pubkeys[i] is None]
     raise ValueError(f"peer(s) did not provide a pubkey for DKG privacy: {', '.join(peers)}")
 
@@ -411,11 +411,14 @@ def dkg(m, op, threshold, keyids, alpha):
 
    dispatch_peer_session_setup(m, n)
 
+   pks = m.gather(pysodium.crypto_sign_PUBLICKEYBYTES,n)
+   m.broadcast(b''.join([pks[i] for i in range(n)]))
+
    c_hashes = m.gather(pysodium.crypto_generichash_BYTES+pysodium.crypto_sign_BYTES,n)
-   m.broadcast(b''.join(c_hashes.values()))
+   m.broadcast(b''.join([c_hashes[i] for i in range(n)]))
 
    commitments = m.gather(pysodium.crypto_sign_BYTES+(threshold*pysodium.crypto_core_ristretto255_BYTES), n)
-   m.broadcast(b''.join(commitments.values()))
+   m.broadcast(b''.join([commitments[i] for i in range(n)]))
 
    # expected response size is
    # the n shares 33 + final noisexk handshake packet (65): ((33+64)*n)
@@ -428,11 +431,13 @@ def dkg(m, op, threshold, keyids, alpha):
      m.send(i, shares)
 
    # todo handle complaints!
-   complaints = m.gather(n+1,n, lambda x: 0 if x[0] == 0 else [e for e in x[1:x[0]+1] ])
+
+   c_lens = m.gather(1, n)
+   complaints = {i: split_by_n(m[i].read(c_lens[i]*2), 2) for i in range(n) if c_lens[i][0]>0}
+   #complaints = m.gather(n+1,n, lambda x: 0 if x[0] == 0 else [e for e in x[1:x[0]+1] ])
    fail = False
-   for k,v in (complaints or {}).items():
-     if v == 0: continue
-     print(f"{m[k].name} complains about {', '.join(m[i-1].name for i in v)}")
+   for k,v in complaints.items():
+     print(f"{m[k].name} complains about {', '.join(f'{m[i[1]-1].name}(t:{i[0]})' for i in v)}")
      fail = True
    if fail:
      raise ValueError("peers detected inconsistencies during DKG, aborting.")
@@ -547,11 +552,11 @@ def get(m, pwd, user, host, raw=False):
     if resps is None:
       m.close()
       raise ValueError("Failed to get answers from shareholders")
-    if len({resp[1] for resp in resps.values()}) != 1:
+    if len({resp[1] for resp in resps if resp}) != 1:
       m.close()
       raise ValueError("ERROR: servers disagree on rules")
     rules = resps[0][1]
-    beta = pyoprf.thresholdmult([resp[0] for resp in resps.values()])
+    beta = pyoprf.thresholdmult([resp[0] for resp in resps if resp])
   else:
     resp = m.gather(32+RULE_SIZE, 1)[0] # beta + sealed rules
     if resps is None:
@@ -592,7 +597,7 @@ def read_blob(m, ids, rwd = b''):
     m.close()
     return
 
-  bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
+  bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]))
   if bsizes is None:
     m.close()
     raise ValueError("failed to get sizes for user blobs from threshold servers")
@@ -612,7 +617,7 @@ def read_blob(m, ids, rwd = b''):
     raise ValueError("failed to read user blobs from sphinx servers")
   #print('got all blobs')
   ptblobs = set()
-  for blob in blobs.values():
+  for blob in blobs:
     if blob == b'fail':
       m.close()
       raise ValueError("ERROR: invalid signature on list of users")
@@ -677,7 +682,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     # send over new signed(pubkey)
     m[i].send(sign_blob(b''.join([pk,rule]), id, rwd))
 
-  if set(m.gather(2).values())!={b'ok'}:
+  if set(m.gather(2))!={b'ok'}:
     m.close()
     raise ValueError("ERROR: failed to update password rules on the server during changing of password.")
 
@@ -708,7 +713,7 @@ def delete(m, pwd, user, host):
   #print("authenticated")
 
   if not userlist:
-     s.send(b"\0"*96)
+     m.broadcast(b"\0"*96)
   else:
      # delete user from user list for this host
      # a malicous server could correlate all accounts on this services to this users here
@@ -719,7 +724,7 @@ def delete(m, pwd, user, host):
         p.send(signed_id)
 
      # wait for user blob
-     bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]).values())
+     bsizes = set(m.gather(2, proc = lambda x: struct.unpack('!H', x)[0]))
      if bsizes is None:
        m.close()
        raise ValueError("failed to get sizes for user blobs from threshold servers")
@@ -739,7 +744,7 @@ def delete(m, pwd, user, host):
        raise ValueError("failed to read user blobs from sphinx servers")
      #print('got all blobs')
      ptblobs = set()
-     for blob in blobs.values():
+     for blob in blobs:
        if blob == b'fail':
          m.close()
          raise ValueError("ERROR: invalid signature on list of users")
@@ -769,7 +774,7 @@ def delete(m, pwd, user, host):
        #print(f'updating {p.name}\t{xblob.hex()}')
        p.send(xblob)
 
-     if set(m.gather(2).values())!={b'ok'}:
+     if set(m.gather(2))!={b'ok'}:
        m.close()
        raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
 
