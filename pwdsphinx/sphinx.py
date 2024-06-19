@@ -411,13 +411,10 @@ def dkg(m, op, threshold, keyids, alpha):
 
    dispatch_peer_session_setup(m, n)
 
-   pks = m.gather(pysodium.crypto_sign_PUBLICKEYBYTES,n)
-   m.broadcast(b''.join([pks[i] for i in range(n)]))
-
-   c_hashes = m.gather(pysodium.crypto_generichash_BYTES+pysodium.crypto_sign_BYTES,n)
+   c_hashes = m.gather(pysodium.crypto_generichash_BYTES,n)
    m.broadcast(b''.join([c_hashes[i] for i in range(n)]))
 
-   commitments = m.gather(pysodium.crypto_sign_BYTES+(threshold*pysodium.crypto_core_ristretto255_BYTES), n)
+   commitments = m.gather(threshold*pysodium.crypto_core_ristretto255_BYTES, n)
    m.broadcast(b''.join([commitments[i] for i in range(n)]))
 
    # expected response size is
