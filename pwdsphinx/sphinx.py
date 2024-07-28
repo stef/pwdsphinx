@@ -515,7 +515,25 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     #char_classes = 'uld'
     #symbols = bin2pass.symbols
   else:
-    xormask = pysodium.randombytes(32)
+    _uppers = set([x.decode('utf8') for x in bin2pass.sets['u']])
+    _lowers = set([x.decode('utf8') for x in bin2pass.sets['l']])
+    _digits = set([x.decode('utf8') for x in bin2pass.sets['d']])
+    _symbols = set(symbols)
+    while True:
+        xormask = pysodium.randombytes(32)
+        candidate = bin2pass.derive(
+            xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask),
+            char_classes,size,symbols)
+        if 1 <= size < 8: break # too much of a bias especially for ulsd when size < 5
+        if 'u' in char_classes and len(_uppers.intersection(candidate)) == 0:
+            continue
+        if 'l' in char_classes and len(_lowers.intersection(candidate)) == 0:
+            continue
+        if 'd' in char_classes and len(_digits.intersection(candidate)) == 0:
+            continue
+        if len(_symbols) > 0 and len(_symbols.intersection(candidate)) == 0:
+            continue
+        break
 
   rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
   # send over new signed(pubkey, rule)
