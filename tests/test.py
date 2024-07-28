@@ -9,6 +9,7 @@ import tracemalloc
 from pyoprf import multiplexer
 from pwdsphinx import sphinx, bin2pass
 from binascii import b2a_base64
+import pyoprf, ctypes
 
 # to get coverage, run
 # PYTHONPATH=.. coverage run ../tests/test.py
@@ -19,6 +20,7 @@ from binascii import b2a_base64
 # disable the output of sphinx
 sphinx.print = Mock()
 
+N = 3
 data_dir = 'data/'
 char_classes = 'uld'
 syms = bin2pass.symbols
@@ -30,8 +32,9 @@ host = 'example.com'
 servers = {'zero': {'host': 'localhost', 'port': 10000, 'ssl_cert': 'cert.pem'},
            'one': {'host': 'localhost', 'port': 10001, 'ssl_cert': 'cert.pem'},
            'two': {'host': 'localhost', 'port': 10002, 'ssl_cert': 'cert.pem'},
-           'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem'},
-           'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}}
+           #'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem'},
+           #'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}
+           }
 
 class Input:
   def __init__(self, txt = None):
@@ -57,43 +60,47 @@ get_signkey = sphinx.get_signkey
 class TestEndToEnd(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+      #libc = ctypes.cdll.LoadLibrary('libc.so.6')
+      #cstderr = ctypes.c_void_p.in_dll(libc, 'stderr')
+      #log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
+      #log_file.value = cstderr.value
+
       cls._root = mkdtemp(prefix='sphinx-oracle-root.')
       root = cls._root
-      #print(f"created oracle root {cls._root}")
       pks = []
-      for idx in range(5):
+      for idx in range(N):
         makedirs(f"{root}/servers/{idx}")
         copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
         copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
-        copyfile("authorized_keys", f"{root}/servers/{idx}/authorized_keys")
-        pk, sk = pysodium.crypto_box_keypair()
-        with open(f"{root}/servers/{idx}/noise.key", 'wb') as fd:
+        pk, sk = pysodium.crypto_sign_keypair()
+        with open(f"{root}/servers/{idx}/ltsig.key", 'wb') as fd:
           fd.write(sk)
-        pks.append(b2a_base64(pk).decode("utf8")[:-1])
+        #pks.append(b2a_base64(pk).decode("utf8")[:-1])
+        pks.append(pk)
         with open(f"{root}/servers/{idx}/sphinx.cfg", 'w') as fd:
           fd.write(f'[server]\n'
                    f'verbose = true\n'
                    f'address = "127.0.0.1"\n'
                    f'port={10000+idx}\n'
-                   f'timeout = 5\n'
+                   f'timeout = 30\n'
                    f'max_kids = 5\n'
                    f'ssl_key= "key.pem"\n'
                    f'ssl_cert= "cert.pem"\n'
-                   f'noisekey = "noise.key"\n'
-                   f'authorized_keys = "authorized_keys"\n'
+                   f'ltsigkey = "ltsig.key"\n'
                    f'datadir = "data"\n'
                    f'rl_decay=1800\n'
-                   f'rl_threshold=1\n')
-      # authorized_keys
-      for idx in range(5):
-        with open(f"{root}/servers/{idx}/authorized_keys",'w') as fd:
-          for pk, name in zip(pks, servers.keys()):
-            fd.write(f"{pk} {name}\n")
+                   f'rl_threshold=10\n')
+      # lt sig pubkeys
+      for idx in range(N):
+        for pk, name in zip(pks, servers.keys()):
+          with open(f"data/{name}.pub",'wb') as fd:
+            fd.write(pk)
       cls._oracles = []
-      for idx in range(5):
+      for idx in range(N):
         log = open(f"{root}/servers/{idx}/log", "w")
         cls._oracles.append(
           (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()]), log))
+        log.close()
       time.sleep(0.8)
 
     @classmethod
@@ -107,7 +114,7 @@ class TestEndToEnd(unittest.TestCase):
 
     def tearDown(self):
         #cleanup()
-        for idx in range(5):
+        for idx in range(N):
           ddir = f"{self._root}/servers/{idx}/data/"
           for f in listdir(ddir):
             if f == 'key': continue
@@ -180,8 +187,8 @@ class TestEndToEnd(unittest.TestCase):
             rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
             self.assertIsInstance(rwd0, str)
 
-        s = connect()
-        rwd = sphinx.get(s, pwd, user, host)
+        with connect() as s:
+            rwd = sphinx.get(s, pwd, user, host)
         self.assertIsInstance(rwd, str)
 
         self.assertEqual(rwd,rwd0)

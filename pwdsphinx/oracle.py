@@ -14,14 +14,15 @@ from pwdsphinx.consts import *
 from pwdsphinx.utils import split_by_n
 cfg = getcfg('sphinx')
 
+
 verbose = cfg['server'].get('verbose', False)
 address = cfg['server'].get('address', '127.0.0.1')
 port = int(cfg['server'].get('port',2355))
 timeout = int(cfg['server'].get('timeout',"3"))
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server'].get('datadir',"/var/lib/sphinx"))
-noisekey = os.path.expanduser(cfg['server']['noisekey'])
-authorized_keys = os.path.expanduser(cfg['server']['authorized_keys'])
+ts_epsilon = 1200 # todo make configurable
+debug = False # todo make configurable
 try:
     ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 except KeyError:
@@ -31,6 +32,10 @@ try:
     ssl_cert = os.path.expanduser(cfg['server']['ssl_cert'])
 except KeyError:
     print("Error: ssl_cert missing! must specify it in the config file")
+try:
+    ltsigkey_path = os.path.expanduser(cfg['server']['ltsigkey'])
+except KeyError:
+    print("Error: ltsigkey missing! must specify it in the config file")
 
 rl_decay = int(cfg['server'].get('rl_decay',1800))
 rl_threshold = int(cfg['server'].get('rl_threshold',1))
@@ -41,7 +46,6 @@ if(verbose):
   print(f"timeout:      {timeout}s")
   print(f"max kids:     {max_kids}")
   print(f"datadir:      {datadir}")
-  print(f"noisekey:     {noisekey}")
   print(f"ssl_key:      {ssl_key}")
   if 'ssl_cert' in globals():
       print(f"ssl_cert:     {ssl_cert}")
@@ -104,57 +108,6 @@ def read_pkt(s,size):
       res.append(s.recv(size-read))
       read+=len(res[-1])
     return b''.join(res)
-
-def load_authkeys(path):
-    res = []
-    with open(path, 'r') as fd:
-        for line in fd:
-            b64key, name = line.split(' ', 1)
-            name = name.strip()
-            key = a2b_base64(b64key)
-            res.append((key,name))
-    return res
-
-def setup_noise_sessions(s, n, privkey, auth_keys):
-    # sets up a noise session with all peer
-    # send own pubkey
-    pk = noisexk.pubkey(privkey)
-    s.sendall(pk)
-
-    # get all peers pubkeys
-    pubkeys = split_by_n(read_pkt(s,32*n),32)
-    if len(pubkeys) != len(set(pubkeys)):
-        print(f"invalid number of distinct noisekeys ({len(set(pubkeys))} != {n}(n)) ")
-        fail(s)
-
-    sender_sessions = []
-    msgs = []
-
-    # initiate sessions with all peers
-    for pubkey in pubkeys:
-        session, msg = noisexk.initiator_session(privkey, bytes(pubkey))
-        sender_sessions.append(session)
-        msgs.append(msg)
-    s.sendall(b''.join(msgs))
-
-    # respond to all session requests from peers
-    receiver_sessions = []
-    msg1s = read_pkt(s,48*n)
-    msgs = []
-
-    for msg in split_by_n(msg1s, 48):
-        session, msg = noisexk.responder_session(privkey, auth_keys, msg)
-        receiver_sessions.append(session)
-        msgs.append(msg)
-    s.sendall(b''.join(msgs))
-
-    # receive final handshake message from responder
-    msg2s = read_pkt(s,48*n)
-    msgs = []
-    for msg, session in zip(split_by_n(msg2s, 48), sender_sessions):
-        noisexk.initiator_session_complete(session, msg)
-
-    return sender_sessions, receiver_sessions
 
 def update_blob(s):
     signed_id = s.recv(32+64)
@@ -265,53 +218,43 @@ def create(s, msg):
 
     s.send(b'ok')
 
-def dkg(s, n, t, index, aux):
-    with open(noisekey, 'rb') as fd:
-        privkey = fd.read()
-    if len(privkey) != 32:
-        print("Invalid noisekey")
+def dkg(s, msg0, aux):
+    with open(ltsigkey_path, 'rb') as fd:
+      ltsigkey = fd.read()
+    if len(ltsigkey) != pysodium.crypto_sign_SECRETKEYBYTES:
+      print("Invalid long-term signature key")
+      fail(s)
+
+    peer = pyoprf.tpdkg_peer_start(ts_epsilon, ltsigkey, msg0)
+
+    while pyoprf.tpdkg_peer_not_done(peer):
+      in_size = pyoprf.tpdkg_peer_input_size(peer)
+      if in_size > 0:
+        msg = read_pkt(s, in_size)
+      else:
+        msg = b''
+
+      cur_step = peer[0].step
+      try:
+        out = pyoprf.tpdkg_peer_next(peer, msg)
+      except Exception as e:
+        print(f"{e} | peer step {cur_step}")
         fail(s)
-    auth_keys = load_authkeys(authorized_keys)
+      if(len(out)>0):
+        s.send(out)
 
-    tx, rx = setup_noise_sessions(s, n, privkey, auth_keys)
-
-    ## 1st step OPRF with a new seed
-    # perform dkg to collectively generate new seed
-    c_hash, coms, shares = pyoprf.dkg_start(n,t)
-
-    s.send(c_hash)
-    c_hashes= read_pkt(s, len(c_hash)*n)
-
-    s.send(coms)
-    commitments= read_pkt(s, len(coms)*n)
-
-    s.send(b''.join(noisexk.send_msg(session, share) for share,session in zip(shares,tx)))
-
-    msg = read_pkt(s, n*(33+64))
-
-    shares = []
-    for ct,session in zip(split_by_n(msg,33+64), rx):
-        shares.append(noisexk.read_msg(session, ct))
-
-    complaints = pyoprf.dkg_verify_commitments(n,t,index,c_hashes,commitments,shares)
-
-    s.send(struct.pack("B", len(complaints))+complaints)
-    # todo handle complaints by recovering from recoverable
-    # inconsistencies.
-
-    share = pyoprf.dkg_finish(n, shares, index)
+    share = bytes(peer[0].share)
 
     return share
 
-# msg format: 0xf0|index|threshold|n|id[32]|alpha[32]]
+# msg format: 0xf0|msg0[pyoprf.tpdkg_msg0_SIZE]|id[32]|alpha[32]]
 def create_dkg(s, msg):
-    if len(msg)!=68:
+    if len(msg)!=65+pyoprf.tpdkg_msg0_SIZE:
+      print(f"asdf {len(msg)} != {pyoprf.tpdkg_msg0_SIZE}",file=sys.stderr)
       fail(s)
     if verbose: print('Data received:',msg.hex())
     op,    msg = pop(msg,1)
-    index, msg = pop(msg,1,lambda x: x[0])
-    t,     msg = pop(msg,1,lambda x: x[0])
-    n,     msg = pop(msg,1,lambda x: x[0])
+    msg0,  msg = pop(msg,pyoprf.tpdkg_msg0_SIZE)
     id,    msg = pop(msg,32)
     alpha, msg = pop(msg,32)
     aux = b'%s%s' % (op, alpha) # for the transcript
@@ -322,7 +265,7 @@ def create_dkg(s, msg):
     if(os.path.exists(tdir)):
       fail(s)
 
-    xi = dkg(s,n,t,index, aux)
+    xi = dkg(s, msg0, aux)
 
     #k=pysodium.randombytes(32)
     try:
@@ -483,12 +426,10 @@ def change_dkg(s, msg):
 
   auth(s, id, alpha)
 
-  msg = s.recv(35)
-  t,      msg = pop(msg,1,lambda x: x[0])
-  n,      msg = pop(msg,1,lambda x: x[0])
-  index,alpha = pop(msg,1,lambda x: x[0])
+  msg = s.recv(pyoprf.tpdkg_msg0_SIZE+32)
+  msg0,alpha = pop(msg,pyoprf.tpdkg_msg0_SIZE)
 
-  xi = dkg(s,n,t, index, aux)
+  xi = dkg(s, msg0, aux)
 
   #k=pysodium.randombytes(32)
   try:
@@ -743,7 +684,7 @@ def ratelimit(conn):
      data = CREATE+conn.recv(64)
      create(conn, data)
    elif op == CREATE_DKG:
-     data = CREATE_DKG+conn.recv(67)
+     data = CREATE_DKG+conn.recv(65+pyoprf.tpdkg_msg0_SIZE)
      create_dkg(conn, data)
    elif op == CHALLENGE_CREATE:
      create_challenge(conn)
@@ -751,6 +692,14 @@ def ratelimit(conn):
      verify_challenge(conn)
 
 def main():
+    if debug == True:
+        import ctypes
+        libc = ctypes.cdll.LoadLibrary('libc.so.6')
+        fdopen = libc.fdopen
+        log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
+        fdopen.restype = ctypes.c_void_p
+        log_file.value = fdopen(2, 'w')
+
     ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ctx.load_cert_chain(certfile=ssl_cert, keyfile=ssl_key)
 

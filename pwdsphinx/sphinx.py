@@ -52,6 +52,7 @@ rwd_keys = cfg['client'].get('rwd_keys', False)
 validate_password = cfg['client'].get('validate_password',True)
 userlist = cfg['client'].get('userlist', True)
 threshold = int(cfg['client'].get('threshold') or "1")
+ts_epsilon = 1200 # todo make configurable
 servers = cfg.get('servers',{})
 
 if len(servers)>1:
@@ -370,74 +371,51 @@ def getpwd():
   else:
     return sys.stdin.buffer.readline().rstrip(b'\n')
 
-def dispatch_peer_session_setup(m, n):
-  # routes noise_xk handshakes between all peers
-  pubkeys=m.gather(32, n)
-  if None in pubkeys:
-    peers=[m[i].name for i in pubkeys if pubkeys[i] is None]
-    raise ValueError(f"peer(s) did not provide a pubkey for DKG privacy: {', '.join(peers)}")
-
-  m.broadcast(b''.join(pubkeys[i] for i in range(n)))
-
-  # dispatch 1st message in noise xk handshake
-  responders=m.gather(48*n, n, lambda x: [bytes(l) for l in split_by_n(x,48)])
-  if responders is None:
-    raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
-
-  for i in range(n):
-    msg = b''.join([bytes(responders[j][i]) for j in range(n)])
-    m.send(i, msg)
-
-  # dispatch 2nd message in noise xk handshake
-  responders=m.gather(48*n, n, lambda x: [bytes(l) for l in split_by_n(x,48)])
-  if responders is None:
-    raise ValueError(f"failed to get stage 2 input from shareholders for dkg")
-
-  for i in range(n):
-    msg = b''.join([bytes(responders[j][i]) for j in range(n)])
-    m.send(i, msg)
-
 def dkg(m, op, threshold, keyids, alpha):
    n = len(m)
 
+   # load peer long-term keys
+   peer_lt_pks = []
+   for name, server in servers.items():
+      with open(server.get('ltsigkey'),'rb') as fd:
+         peer_lt_pk = fd.read()
+         if(len(peer_lt_pk)!=pysodium.crypto_sign_PUBLICKEYBYTES):
+            raise ValueError(f"long-term signature key for server {name} is of incorrect size")
+         peer_lt_pks.append(peer_lt_pk)
+
+
    if op == CREATE_DKG:
+     tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg create k", peer_lt_pks)
      for index, id in enumerate(keyids):
-        msg = b"%c%c%c%c%s%s" % (CREATE_DKG, index+1, threshold, n, id, alpha)
+        msg = b"%c%s%s%s" % (CREATE_DKG, msg0 ,id, alpha)
         m.send(index,msg)
    else:
-     for index in range(n):
-       msg = b"%c%c%c%s" % (threshold, n, index+1, alpha)
-       m.send(index,msg)
+     tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg change k", peer_lt_pks)
+     msg = b"%s%s" % (msg0, alpha)
+     m.broadcast(msg)
 
-   dispatch_peer_session_setup(m, n)
+   while pyoprf.tpdkg_tp_not_done(tp):
+     ret, sizes = pyoprf.tpdkg_tp_input_sizes(tp)
+     peer_msgs = []
+     if ret:
+         if sizes[0] > 0:
+             print(f"step: {tp[0].step}")
+             peer_msgs = m.gather(sizes[0],n,debug=True)
+     else:
+         peer_msgs = [m[i].read(s) if s>0 else b'' for i, s in enumerate(sizes)]
+     msgs = b''.join(peer_msgs)
 
-   c_hashes = m.gather(pysodium.crypto_generichash_BYTES,n)
-   m.broadcast(b''.join([c_hashes[i] for i in range(n)]))
-
-   commitments = m.gather(threshold*pysodium.crypto_core_ristretto255_BYTES, n)
-   m.broadcast(b''.join([commitments[i] for i in range(n)]))
-
-   # expected response size is
-   # the n shares 33 + final noisexk handshake packet (65): ((33+64)*n)
-   responders=m.gather((33+64)*n, n, lambda x: (tuple(bytes(s) for s in split_by_n(x, 33+64))) )
-   if responders is None:
-     raise ValueError(f"failed to get stage 1 input from shareholders for dkg")
-
-   for i in range(n):
-     shares = b''.join([bytes(responders[j][i]) for j in range(n)])
-     m.send(i, shares)
-
-   # todo handle complaints!
-
-   c_lens = m.gather(1, n)
-   complaints = {i: split_by_n(m[i].read(c_lens[i]*2), 2) for i in range(n) if c_lens[i][0]>0}
-   #complaints = m.gather(n+1,n, lambda x: 0 if x[0] == 0 else [e for e in x[1:x[0]+1] ])
-   fail = False
-   for k,v in complaints.items():
-     print(f"{m[k].name} complains about {', '.join(f'{m[i[1]-1].name}(t:{i[0]})' for i in v)}")
-     fail = True
-   if fail:
-     raise ValueError("peers detected inconsistencies during DKG, aborting.")
+     cur_step = tp[0].step
+     try:
+         out = pyoprf.tpdkg_tp_next(tp, msgs)
+     except Exception as e:
+         # todo handle errors more user-friendly
+         # and also handle cheater reporting
+         raise ValueError(f"{e} | tp step {cur_step}")
+     if(len(out)>0):
+       for i in range(tp[0].n):
+         msg = pyoprf.tpdkg_tp_peer_msg(tp, out, i)
+         m.send(i, msg)
 
    betas = m.gather(33, n)
    if betas is None:
