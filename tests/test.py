@@ -1,5 +1,5 @@
 import unittest
-from os import listdir, makedirs
+from os import listdir, makedirs, environ, path
 from shutil import rmtree, copyfile
 from tempfile import mkdtemp
 from unittest.mock import Mock
@@ -30,11 +30,13 @@ user = 'user1'
 user2 = 'user2'
 host = 'example.com'
 servers = {'zero': {'host': 'localhost', 'port': 10000, 'ssl_cert': 'cert.pem'},
-           'one': {'host': 'localhost', 'port': 10001, 'ssl_cert': 'cert.pem'},
-           'two': {'host': 'localhost', 'port': 10002, 'ssl_cert': 'cert.pem'},
-           #'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem'},
-           #'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}
+           'one':  {'host': 'localhost', 'port': 10001, 'ssl_cert': 'cert.pem'},
+           'two':  {'host': 'localhost', 'port': 10002, 'ssl_cert': 'cert.pem'},
+           'drei': {'host': 'localhost', 'port': 10003, 'ssl_cert': 'cert.pem'},
+           'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}
            }
+corrupt_dkg_lib = environ.get('CORRUPT_DKG_LIB')
+orig_servers=sphinx.servers
 
 class Input:
   def __init__(self, txt = None):
@@ -47,8 +49,10 @@ class Input:
   def close(self):
     return
 
-def connect():
-  m = multiplexer.Multiplexer(servers)
+def connect(peers=None):
+  if peers == None:
+    peers = dict(tuple(servers.items())[:N])
+  m = multiplexer.Multiplexer(peers)
   m.connect()
   return m
 
@@ -68,7 +72,7 @@ class TestEndToEnd(unittest.TestCase):
       cls._root = mkdtemp(prefix='sphinx-oracle-root.')
       root = cls._root
       pks = []
-      for idx in range(N):
+      for idx in range(len(servers)):
         makedirs(f"{root}/servers/{idx}")
         copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
         copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
@@ -91,34 +95,41 @@ class TestEndToEnd(unittest.TestCase):
                    f'rl_decay=1800\n'
                    f'rl_threshold=10\n')
       # lt sig pubkeys
-      for idx in range(N):
+      for idx in range(len(servers)):
         for pk, name in zip(pks, servers.keys()):
           with open(f"data/{name}.pub",'wb') as fd:
             fd.write(pk)
       cls._oracles = []
-      for idx in range(N):
+      env = environ
+      for idx in range(len(servers)):
         log = open(f"{root}/servers/{idx}/log", "w")
+        if idx == N and corrupt_dkg_lib is not None:
+          print(f"enabling byzantine peers {corrupt_dkg_lib}", file=log)
+          env["BYZANTINE_DKG"]=corrupt_dkg_lib
         cls._oracles.append(
-          (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()]), log))
+          (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()], env=env), log))
         log.close()
+      del env["BYZANTINE_DKG"]
       time.sleep(0.8)
 
     @classmethod
     def tearDownClass(cls):
       for p, log in cls._oracles:
         p.kill()
-        time.sleep(0.1)
+        r = p.wait()
         log.close()
       #rmtree(cls._root)
       time.sleep(0.4)
 
     def tearDown(self):
-        #cleanup()
-        for idx in range(N):
-          ddir = f"{self._root}/servers/{idx}/data/"
-          for f in listdir(ddir):
-            if f == 'key': continue
-            rmtree(ddir+f)
+      sphinx.servers = orig_servers
+      #cleanup()
+      for idx in range(len(servers)):
+        ddir = f"{self._root}/servers/{idx}/data/"
+        if not path.exists(ddir): continue
+        for f in listdir(ddir):
+          if f == 'key': continue
+          rmtree(ddir+f)
 
     def test_create_user(self):
         with connect() as s:
@@ -409,6 +420,28 @@ class TestEndToEnd(unittest.TestCase):
             rwd2 = sphinx.change(s, pwd, pwd, user, host, '', '', 0, pwd+pwd)
         self.assertIsInstance(rwd2, str)
         self.assertEqual(rwd2, pwd+pwd)
+
+    def test_corrupted_dkg(self):
+        sphinx.servers = {
+          'zero': { 'host': "localhost",
+                    'port': 10000,
+                    'ssl_cert': "cert.pem",
+                    'ltsigkey': "data/zero.pub"},
+          'drei': { 'host': "localhost",
+                    'port': 10003,
+                    'ssl_cert': "cert.pem",
+                    'ltsigkey': "data/drei.pub"},
+          'eris': { 'host': "localhost",
+                    'port': 10004,
+                    'ssl_cert': "cert.pem",
+                    'ltsigkey': "data/eris.pub"}
+        }
+
+        if corrupt_dkg_lib is None:
+          # skipping since we don't have the byzantine peers lib
+          return
+        with connect(sphinx.servers) as s:
+          self.assertRaises(ValueError, sphinx.create ,s, pwd, user, host, char_classes, syms, size)
 
     def test_main_create(self):
         sys.stdin = Input()

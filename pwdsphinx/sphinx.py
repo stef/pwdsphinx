@@ -399,18 +399,25 @@ def dkg(m, op, threshold, keyids, alpha):
      peer_msgs = []
      if ret:
          if sizes[0] > 0:
-             print(f"step: {tp[0].step}")
-             peer_msgs = m.gather(sizes[0],n,debug=True)
+             #print(f"step: {tp[0].step}")
+             peer_msgs = m.gather(sizes[0],n) #,debug=True)
      else:
          peer_msgs = [m[i].read(s) if s>0 else b'' for i, s in enumerate(sizes)]
      msgs = b''.join(peer_msgs)
 
      cur_step = tp[0].step
      try:
-         out = pyoprf.tpdkg_tp_next(tp, msgs)
+       out = pyoprf.tpdkg_tp_next(tp, msgs)
      except Exception as e:
-         # todo handle errors more user-friendly
-         # and also handle cheater reporting
+       m.close()
+       if tp[0].cheater_len > 0:
+         cheaters, cheats = pyoprf.tpdkg_get_cheaters(tp)
+         msg=[f"Warning during the distributed key generation the peers misbehaved: {sorted(cheaters)}"]
+         for k, v in cheats:
+           msg.append(f"\tmisbehaving peer: {k} was caught: {v}")
+         msg = '\n'.join(msg)
+         raise ValueError(msg)
+       else:
          raise ValueError(f"{e} | tp step {cur_step}")
      if(len(out)>0):
        for i in range(tp[0].n):
@@ -419,6 +426,7 @@ def dkg(m, op, threshold, keyids, alpha):
 
    betas = m.gather(33, n)
    if betas is None:
+     m.close()
      raise ValueError(f"failed to get oprf responses from shareholders in final step of dkg")
 
    rwds = set(pyoprf.thresholdmult([betas[i] for i in order])

@@ -42,6 +42,7 @@ rl_threshold = int(cfg['server'].get('rl_threshold',1))
 rl_gracetime = int(cfg['server'].get('rl_gracetime',10))
 
 if(verbose):
+  print(f"pid:          {os.getpid()}")
   print(f"address:      {address}:{port}")
   print(f"timeout:      {timeout}s")
   print(f"max kids:     {max_kids}")
@@ -49,9 +50,9 @@ if(verbose):
   print(f"ssl_key:      {ssl_key}")
   if 'ssl_cert' in globals():
       print(f"ssl_cert:     {ssl_cert}")
-  print(f"rl decay:     {rl_decay}")
+  print(f"rl decay:     {rl_decay}s")
   print(f"rl threshold: {rl_threshold}")
-  print(f"rl gracetime: {rl_gracetime}")
+  print(f"rl gracetime: {rl_gracetime}s")
 
 Difficulties = [
     # timeouts are based on benchmarking a raspberry pi 1b
@@ -107,6 +108,7 @@ def read_pkt(s,size):
     while read<size:
       res.append(s.recv(size-read))
       read+=len(res[-1])
+      if len(res[-1]) == 0: raise ValueError("end of stream?")
     return b''.join(res)
 
 def update_blob(s):
@@ -709,7 +711,7 @@ def main():
     try:
         s.bind((address, port))
     except socket.error as msg:
-        print('Bind failed. Error Code : %s Message: %s' % (str(msg[0]), msg[1]))
+        print(f'Bind to {address}:{port} failed. Error {msg}')
         sys.exit()
     #Start listening on socket
     s.listen()
