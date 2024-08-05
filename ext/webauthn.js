@@ -5,22 +5,24 @@ const browserCredentials = {
   get: navigator.credentials.get.bind(navigator.credentials),
 };
 
-navigator.credentials.create = function(options) {
+navigator.credentials.create = async function(options) {
     if(!options && !options.publicKey) {
         // not webauthn call
-        return await browserCredentials.create(options)
+        return await browserCredentials.create(options);
     }
     const pubKey = options.publicKey;
     const host = window.location.hostname;
     const response = await createEvent("create", {});
     console.log("CREATE RESP", response);
+    const o_resp = await browserCredentials.create(options);
+    console.log(o_resp);
     //return createCredentials(response);
 };
 
 navigator.credentials.get = async function(options) {
     if(!options && !options.publicKey) {
         // not webauthn call
-        return await browserCredentials.get(options)
+        return await browserCredentials.get(options);
     }
     const pubKey = options.publicKey;
     const host = window.location.hostname;
@@ -64,8 +66,8 @@ function createCredentials(res) {
     return credential;
 }
 
-function stringToBuffer(str) {
-	const str = atob(str);
+function stringToBuffer(s) {
+	const str = atob(s);
 	const bytes = new Uint8Array(str.length);
 	for (let i = 0; i < str.length; i++) {
 		bytes[i] = str.charCodeAt(i);

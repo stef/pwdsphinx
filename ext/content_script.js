@@ -8,7 +8,11 @@
     s.setAttribute('id', "sphinx-webauthn-page-script");
     (document.head || document.documentElement).appendChild(s);
 	document.addEventListener('sphinxWebauthnEvent', function(event) {
-        //console.log("new event", event);
+        if(event.source != window) {
+            console.log("invalid webauthnEvent sender", window.source);
+            return;
+        }
+        console.log("MSG DBG", event.data);
         const port = event.detail.port;
         const site = window.location.hostname;
         const evType = event.detail.type;
