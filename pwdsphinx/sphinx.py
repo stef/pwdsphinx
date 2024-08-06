@@ -330,6 +330,7 @@ def ratelimit(m,reqs):
   puzzles = []
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for idx, challenge in enumerate(challenges):
+        if challenge is None: continue
         n = challenge[0]
         k = challenge[1]
 
