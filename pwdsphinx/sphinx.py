@@ -184,6 +184,8 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
     raise ValueError("ERROR: rules can only contain any of 'uld'.")
   if set(syms) - set(bin2pass.symbols) != set():
     raise ValueError("ERROR: symbols can only contain any of '%s'." % bin2pass.symbols)
+  if char_classes == '' and len(syms)<2:
+    raise ValueError("ERROR: no char classes and not enough symbols specified.")
   if xor_mask is None and (char_classes == '' and len(syms)<2):
     raise ValueError("ERROR: no char classes and not enough symbols specified.")
   if xor_mask is None:
