@@ -10,7 +10,6 @@ converters = {}
 def load_converters():
   global converters
   p = Path(__file__).parent.absolute()
-  print(p,file=sys.stderr)
   for converter_fname in os.listdir(f'{p}/converters/'):
     if converter_fname.startswith('_') or not converter_fname.endswith('.py'):
         continue
