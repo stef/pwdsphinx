@@ -8,7 +8,6 @@ import pysodium
 import equihash
 import pyoprf
 from pyoprf import noisexk
-from binascii import a2b_base64
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 from pwdsphinx.utils import split_by_n
@@ -186,9 +185,9 @@ def create(s, msg):
       fail(s)
 
     # 1st step OPRF with a new seed
-    k=pysodium.randombytes(32)
+    k=b'\x01'+pysodium.randombytes(32)
     try:
-      beta = pyoprf.evaluate(k, alpha)
+      beta = pyoprf.evaluate(k[1:], alpha)
     except:
       fail(s)
 
@@ -348,7 +347,7 @@ def auth(s,id,alpha):
     print('no pubkey found in %s' % id)
     fail(s)
   nonce=pysodium.randombytes(32)
-  k = load_blob(id,'key')
+  k = load_blob(id,'key',33)
   if k is not None:
     try:
        beta = bytes([k[0]])+pyoprf.evaluate(k[1:], alpha)
@@ -386,10 +385,10 @@ def change(conn, msg):
   if(len(alpha)!=32):
     fail(conn)
 
-  k=pysodium.randombytes(32)
+  k=b'\x01'+pysodium.randombytes(32)
 
   try:
-      beta = pyoprf.evaluate(k, alpha)
+      beta = pyoprf.evaluate(k[1:], alpha)
   except:
     fail(conn)
 
@@ -433,9 +432,8 @@ def change_dkg(s, msg):
 
   xi = dkg(s, msg0, aux)
 
-  #k=pysodium.randombytes(32)
   try:
-      beta = pyoprf.evaluate(xi[1:], alpha)
+    beta = pyoprf.evaluate(xi[1:], alpha)
   except:
     fail(s)
 
@@ -614,9 +612,9 @@ def create_challenge(conn):
 
   challenge = b''.join([bytes([n, k]), struct.pack('Q', int(now))])
 
-  key = load_blob('', "key", 32)
+  key = load_blob('', "key", 33)
   if not key:
-    key=pysodium.randombytes(32)
+    key=b'\x01' + pysodium.randombytes(32)
     save_blob('','key',key)
 
   state = pysodium.crypto_generichash_init(32, key)
@@ -650,7 +648,7 @@ def verify_challenge(conn):
     if len(payload)!=64: fail(conn)
   req = req_type + payload
   # read mac key
-  key = load_blob('', "key", 32)
+  key = load_blob('', "key", 33)
   if not key:
     fail(conn)
 
