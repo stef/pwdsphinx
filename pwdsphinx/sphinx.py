@@ -21,12 +21,14 @@ try:
   from pwdsphinx.consts import *
   from pwdsphinx.utils import split_by_n
   from pwdsphinx.ext import init_browser_ext
+  from pwdsphinx.converter import convert
 except ImportError:
   import bin2pass
   from config import getcfg
   from consts import *
   from utils import split_by_n
   from ext import init_browser_ext
+  from converter import convert
 
 win=False
 if platform.system() == 'Windows':
@@ -76,6 +78,7 @@ if verbose:
     print("validate_password:", validate_password, file=sys.stderr)
     print("userlist:", userlist, file=sys.stderr)
     print("threshold:", threshold, file=sys.stderr)
+    print("servers", servers)
     for name, server in servers.items():
       print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)}")
 
@@ -510,8 +513,9 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     _symbols = set(symbols)
     while True:
         xormask = pysodium.randombytes(32)
-        candidate = bin2pass.derive(
+        candidate = convert(
             xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask),
+            user,
             char_classes,size,symbols)
         if 1 <= size < 8: break # too much of a bias especially for ulsd when size < 5
         if 'u' in char_classes and len(_uppers.intersection(candidate)) == 0:
@@ -540,7 +544,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
 
-  ret = bin2pass.derive(rwd,char_classes,size,symbols)
+  ret = convert(rwd,user,char_classes,size,symbols)
   clearmem(rwd)
   return ret
 
@@ -588,7 +592,7 @@ def get(m, pwd, user, host, raw=False):
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
   if raw == True: return rwd
 
-  ret = bin2pass.derive(rwd,classes,size,symbols)
+  ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
 
   return ret
@@ -692,7 +696,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   m.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
-  ret = bin2pass.derive(rwd,classes,size,symbols)
+  ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
 
   return ret
@@ -933,7 +937,6 @@ def main(params=sys.argv):
     usage(params)
 
   error = None
-  s = None
   if cmd != users:
     pwd = ''
     if (rwd_keys or cmd in {create,change,get}):
