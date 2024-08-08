@@ -7,7 +7,6 @@ import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, str
 import pysodium
 import equihash
 import pyoprf
-from pyoprf import noisexk
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 from pwdsphinx.utils import split_by_n
