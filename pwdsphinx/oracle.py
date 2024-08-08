@@ -9,7 +9,6 @@ import equihash
 import pyoprf
 from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
-from pwdsphinx.utils import split_by_n
 cfg = getcfg('sphinx')
 
 
