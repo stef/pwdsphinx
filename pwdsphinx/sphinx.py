@@ -393,11 +393,11 @@ def dkg(m, op, threshold, keyids, alpha):
    if op == CREATE_DKG:
      tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg create k", peer_lt_pks)
      for index, id in enumerate(keyids):
-        msg = b"%c%s%s%s" % (CREATE_DKG, msg0 ,id, alpha)
+        msg = b"%c%s%s%s" % (CREATE_DKG, id, alpha, msg0)
         m.send(index,msg)
    else:
      tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg change k", peer_lt_pks)
-     msg = b"%s%s" % (msg0, alpha)
+     msg = b"%s%s" % (alpha, msg0)
      m.broadcast(msg)
 
    while pyoprf.tpdkg_tp_not_done(tp):

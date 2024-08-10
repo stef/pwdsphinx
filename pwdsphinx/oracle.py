@@ -253,9 +253,13 @@ def create_dkg(s, msg):
       fail(s)
     if verbose: print('Data received:',msg.hex())
     op,    msg = pop(msg,1)
-    msg0,  msg = pop(msg,pyoprf.tpdkg_msg0_SIZE)
     id,    msg = pop(msg,32)
-    alpha, msg = pop(msg,32)
+    alpha, msg0 = pop(msg,32)
+
+    if len(msg0) != pyoprf.tpdkg_msg0_SIZE:
+      print(f"msg0 is invalid size {len(msg0)}")
+      fail(s)
+
     aux = b'%s%s' % (op, alpha) # for the transcript
 
     # check if id is unique
@@ -426,7 +430,10 @@ def change_dkg(s, msg):
   auth(s, id, alpha)
 
   msg = s.recv(pyoprf.tpdkg_msg0_SIZE+32)
-  msg0,alpha = pop(msg,pyoprf.tpdkg_msg0_SIZE)
+  alpha,msg0 = pop(msg,32)
+  if len(msg0) != pyoprf.tpdkg_msg0_SIZE:
+    print(f"msg0 is invalid size {len(msg0)}")
+    fail(s)
 
   xi = dkg(s, msg0, aux)
 
