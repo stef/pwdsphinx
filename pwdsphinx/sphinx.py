@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, os, socket, ssl, struct, platform, getpass, time, binascii
+import sys, os, socket, ssl, struct, platform, getpass, binascii
 import concurrent.futures
 from SecureString import clearmem
 import pysodium, pyoprf
@@ -323,7 +323,7 @@ def ratelimit(m,reqs):
     m[i].send(pkt0)
 
   #challenge = s.recv(1+1+8+32) # n,k,ts,sig
-  challenges = m.gather(1+1+8+32, threshold)
+  challenges = m.gather(1+1+8+32)
   if challenges is None:
     m.close()
     return False
@@ -352,14 +352,6 @@ def ratelimit(m,reqs):
               if verbose: print(f"{m[idx].name} sent a moderate puzzle: %d" % n, file=sys.stderr)
         seed = challenge + reqs[idx]
 
-        def timed_solve(n,k,seed):
-            delta = time.time()
-            solution = solve(n,k,seed)
-            delta = time.time() - delta
-            try:
-              os.write(3,f"{idx} {delta}".encode('utf8'))
-            except OSError: pass
-            return solution
         solution = executor.submit(solve,n,k,seed)
         puzzles.append((challenge, solution, idx))
 
@@ -879,6 +871,13 @@ def test_pwd(pwd):
 #### main ####
 
 def main(params=sys.argv):
+  #import ctypes
+  #libc = ctypes.cdll.LoadLibrary('libc.so.6')
+  #fdopen = libc.fdopen
+  #log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
+  #fdopen.restype = ctypes.c_void_p
+  #log_file.value = fdopen(2, 'w')
+
   if len(params) < 2: usage(params, True)
   m = Multiplexer(servers)
   cmd = None
