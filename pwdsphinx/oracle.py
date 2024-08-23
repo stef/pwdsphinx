@@ -185,7 +185,7 @@ def create(s, msg):
     # 1st step OPRF with a new seed
     k=b'\x01'+pysodium.randombytes(32)
     try:
-      beta = pyoprf.evaluate(k[1:], alpha)
+      beta = k[:1]+pyoprf.evaluate(k[1:], alpha)
     except:
       fail(s)
 
@@ -390,7 +390,7 @@ def change(conn, msg):
   k=b'\x01'+pysodium.randombytes(32)
 
   try:
-      beta = pyoprf.evaluate(k[1:], alpha)
+      beta = k[:1]+pyoprf.evaluate(k[1:], alpha)
   except:
     fail(conn)
 

@@ -291,6 +291,8 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
       m.close()
       return False
     nonces = [(idx,resp[1]) for idx, resp in enumerate(msgs)]
+    if len(msgs) < threshold:
+        raise ValueError("not enough peers answered, during auth")
     beta = pyoprf.thresholdmult([resp[0] for resp in msgs][:threshold])
     rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
@@ -322,14 +324,10 @@ def ratelimit(m,reqs):
     pkt0 = b''.join([CHALLENGE_CREATE, req])
     m[i].send(pkt0)
 
-  #challenge = s.recv(1+1+8+32) # n,k,ts,sig
-  challenges = m.gather(1+1+8+32)
+  challenges = m.gather(1+1+8+32) # n,k,ts,sig
   if challenges is None:
     m.close()
     return False
-  #if len(challenge)!= 1+1+8+32:
-  #  if verbose: print("challengelen incorrect: %s %s" %(len(challenge), repr(challenge)), file=sys.stderr)
-  #  raise ValueError("ERROR: failed to get ratelimit challenge")
   m.close()
 
   puzzles = []
@@ -469,14 +467,14 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     m.broadcast(msg)
 
     # wait for response from sphinx server
-    beta = m.gather(32)
+    beta = m.gather(33)
     if beta is None:
       m.close()
       raise ValueError("ERROR: Creating new password, the record probably already exists or the first message to server was corrupted during transport.")
       # or (less probable) the initial message was longer/shorter than the 65 bytes we sent
       # or (even? less probable) the value alpha received by the server is not a valid point
       # both of these less probable causes point at corruption during transport
-    beta = beta[0]
+    beta = beta[0][1:]
 
   rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
@@ -540,7 +538,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   clearmem(rwd)
   return ret
 
-def get(m, pwd, user, host, raw=False):
+def get(m, pwd, user, host):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
 
@@ -558,15 +556,15 @@ def get(m, pwd, user, host, raw=False):
     rules = resps[0][1]
     beta = pyoprf.thresholdmult([resp[0] for resp in resps if resp])
   else:
-    resp = m.gather(32+RULE_SIZE, 1)[0] # beta + sealed rules
+    resp = m.gather(33+RULE_SIZE, 1)[0] # beta + sealed rules
     if resps is None:
       m.close()
       raise ValueError("Failed to get answers from sphinx server")
     if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
       m.close()
       raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
-    beta = resp[:32]
-    rules = resp[32:]
+    beta = resp[1:33]
+    rules = resp[33:]
 
   rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
@@ -582,7 +580,6 @@ def get(m, pwd, user, host, raw=False):
     raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
-  if raw == True: return rwd
 
   ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
@@ -655,11 +652,11 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     beta = dkg(m, CHANGE_DKG, threshold, None, alpha)
   else:
     m.broadcast(alpha)
-    beta = m.gather(32,1) # beta
-    if beta is None or len(beta[0])!=32:
+    beta = m.gather(33,1) # beta
+    if beta is None or len(beta[0])!=33:
       m.close()
       raise ValueError("ERROR: changing password failed due to corruption during transport.")
-    beta = beta[0]
+    beta = beta[0][1:]
   rwd = pyoprf.unblind_finalize(r, beta, newpwd)
 
   if validate_password:
@@ -954,7 +951,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      raise # only for dbg
+      #raise # only for dbg
     clearmem(pwd)
   else:
     try:
@@ -963,7 +960,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      raise # only for dbg
+      #raise # only for dbg
   m.close()
 
   if not ret:
