@@ -109,7 +109,8 @@ class TestEndToEnd(unittest.TestCase):
         cls._oracles.append(
           (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()], env=env), log))
         log.close()
-      del env["BYZANTINE_DKG"]
+      if corrupt_dkg_lib is not None:
+        del env["BYZANTINE_DKG"]
       time.sleep(0.8)
 
     @classmethod
