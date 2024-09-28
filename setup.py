@@ -31,7 +31,7 @@ class BuildMakefilesBuild(SetuptoolsBuild):
         SetuptoolsBuild.run(self)
 
 setup(name = 'pwdsphinx',
-       version = '1.0.19',
+       version = '1.99.1-beta',
        description = 'SPHINX password protocol',
        license = "GPLv3",
        author = 'Stefan Marsiske',
@@ -39,7 +39,7 @@ setup(name = 'pwdsphinx',
        url = 'https://github.com/stef/pwdsphinx',
        long_description=read('README.md'),
        long_description_content_type="text/markdown",
-       packages = ['pwdsphinx'],
+       packages = ['pwdsphinx', 'pwdsphinx.converters'],
        install_requires = ("pysodium", "SecureString",
                            "qrcodegen","zxcvbn-python", 'pyequihash', 'pyoprf'),
        classifiers = ["Development Status :: 4 - Beta",
