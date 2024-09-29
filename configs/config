@@ -1,17 +1,17 @@
 # the client section is only needed if you use the client functionality
 [client]
 # whether to produce some output on the console
-verbose = False
+verbose = false
 
 # the ip address or hostname the server is listening on
-address = 127.0.0.1
+address = "127.0.0.1"
 
 # the port on which the server is listening
 port = 2355
 
 # the directory where the client stores its master secret - you might want to
 # back this up
-datadir = ~/.sphinx/
+datadir = "~/.sphinx/"
 
 # master password optional for authentication, if it is False it protects
 # against offline master pwd bruteforce attacks. The drawback is that for known
@@ -21,7 +21,7 @@ datadir = ~/.sphinx/
 
 # stores a check digit of 5 bits in the rule blob, this helps to notice most
 # typos of the master password, while decreasing security slightly
-validate_password=True
+validate_password=true
 
 # the server section is only needed if you run the oracle yourself.
 [server]
@@ -65,7 +65,7 @@ rl_gracetime=10
 # the websphinx section is only needed if you use the browser webextensions
 [websphinx]
 # the path of your pinentry program
-pinentry=/usr/bin/pinentry
+pinentry="/usr/bin/pinentry"
 
 # a file where websphinx logs, this is only for dev/debug purposes
-log=
+log=""
