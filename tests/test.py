@@ -107,7 +107,7 @@ class TestEndToEnd(unittest.TestCase):
           print(f"enabling byzantine peers {corrupt_dkg_lib}", file=log)
           env["BYZANTINE_DKG"]=corrupt_dkg_lib
         cls._oracles.append(
-          (subprocess.Popen("oracle", cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()], env=env), log))
+          (subprocess.Popen(["python3", path.dirname(path.abspath(sphinx.__file__)) + "/oracle.py"], cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()], env=env), log))
         log.close()
       if corrupt_dkg_lib is not None:
         del env["BYZANTINE_DKG"]
