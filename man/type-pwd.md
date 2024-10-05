@@ -17,7 +17,7 @@ This script combines `getpwd(1)`, `exec-on-click(1)` and the
 master password, and then waits until you click somewhere (hopefully
 into a password entry field) and then sends the password as
 keystrokes. Using this mechanism you make sure your password is never
-on your clipboard where malware might steal it. And also it allows to
+on your clipboard where malware might steal it. And also it allows you to
 enter your password on those sites that disable copy/pasting into
 password fields.
 
