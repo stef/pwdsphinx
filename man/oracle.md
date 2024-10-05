@@ -64,7 +64,7 @@ decays to an easier difficulty.
 `rl_threshold` increase the difficulty of ratelimit puzzles if not
 decaying.
 
-`rl_gracetime` gracetime in seconds added to the expcted time to solve
+`rl_gracetime` gracetime in seconds added to the expected time to solve
 a rate-limiting puzzle.
 
 # SECURITY CONSIDERATIONS
@@ -83,7 +83,7 @@ configuration variables starting with `rl_` it is possible to
 configure this. If you have clients that have less than 1G RAM, it
 might be possible to increase the difficulty to the maximum level
 where those devices will not be able to solve the ratelimting
-puzzles. Rate-limiting in general should not be noticable, only if
+puzzles. Rate-limiting in general should not be noticeable, only if
 dozens of get requests are served to the same record. At the highest
 level the solution should take about 20-40 seconds (depending on your
 cpu).
