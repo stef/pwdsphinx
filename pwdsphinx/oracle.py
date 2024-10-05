@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: 2018-2021, Marsiske Stefan
+# SPDX-FileCopyrightText: 2018-2024, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct
