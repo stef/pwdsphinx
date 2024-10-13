@@ -546,10 +546,13 @@ def get(m, pwd, user, host):
   m = ratelimit(m, msgs)
 
   if len(servers) > 1:
-    resps = m.gather(33+RULE_SIZE, threshold, lambda x: (x[:33], x[33:]))
+    resps = m.gather(33+RULE_SIZE, threshold)
     if resps is None:
       m.close()
-      raise ValueError("Failed to get answers from shareholders")
+      raise ValueError("Failed to get any answers from shareholders")
+    if len({x for x in resps if x is not None}) == 1 and {x for x in resps if x is not None} == {b'\x00\x04fail'}:
+      raise ValueError("ERROR: The record does not exist, there's a chance you are being fished.")
+    resps = [(x[:33], x[33:]) for x in resps if x is not None]
     if len({resp[1] for resp in resps if resp}) != 1:
       m.close()
       raise ValueError("ERROR: servers disagree on rules")
@@ -560,9 +563,11 @@ def get(m, pwd, user, host):
     if resps is None:
       m.close()
       raise ValueError("Failed to get answers from sphinx server")
-    if resp == b'\x00\x04fail' or len(resp)!=32+RULE_SIZE:
+    if resp == b'\x00\x04fail':
+      raise ValueError("ERROR: The record does not exist, there's a chance you are being fished.")
+    if len(resp)!=32+RULE_SIZE:
       m.close()
-      raise ValueError("ERROR: Either the record does not exist, or the request to server was corrupted during transport.")
+      raise ValueError("ERROR: the request to server was corrupted during transport.")
     beta = resp[1:33]
     rules = resp[33:]
 
