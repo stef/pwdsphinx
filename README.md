@@ -17,10 +17,10 @@ To clone this repo on [Radicle](https://radicle.xyz), simply run:
 
 ## Dependencies
 
-You need [libsphinx](https://github.com/stef/libsphinx) and [libequihash](https://github.com/stef/equihash/) for the python reference frontend.
+You need [liboprf](https://github.com/stef/liboprf) and [libequihash](https://github.com/stef/equihash/) for the python reference frontend.
 
-You need also to install `pysodium` using either your OS package
-manager or pip.
+You need also to install `pysodium` and `pyoprf` using either
+your OS package manager or pip.
 
 If you want to use also the websphinx browser extension you need to
 install also an X11 variant of pinentry from the gnupg project:
