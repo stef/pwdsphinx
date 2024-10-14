@@ -248,16 +248,20 @@ def dkg(s, msg0, aux):
 
 # msg format: 0xf0|msg0[pyoprf.tpdkg_msg0_SIZE]|id[32]|alpha[32]]
 def create_dkg(s, msg):
-    if len(msg)!=65+pyoprf.tpdkg_msg0_SIZE:
-      print(f"asdf {len(msg)} != {pyoprf.tpdkg_msg0_SIZE}",file=sys.stderr)
-      fail(s)
     if verbose: print('Data received:',msg.hex())
+    if len(msg)!=65 + pyoprf.tpdkg_msg0_SIZE + pyoprf.TOPRF_Share_BYTES:
+      print(f"qwer {len(msg)} != {65+pyoprf.tpdkg_msg0_SIZE+pyoprf.TOPRF_Share_BYTES}",file=sys.stderr)
+      fail(s)
     op,    msg = pop(msg,1)
     id,    msg = pop(msg,32)
-    alpha, msg0 = pop(msg,32)
+    alpha, msg = pop(msg,32)
+    msg0, zero = pop(msg,pyoprf.tpdkg_msg0_SIZE)
 
     if len(msg0) != pyoprf.tpdkg_msg0_SIZE:
       print(f"msg0 is invalid size {len(msg0)}")
+      fail(s)
+    if len(zero) != pyoprf.TOPRF_Share_BYTES:
+      print(f"zero is invalid size {len(zero)}")
       fail(s)
 
     aux = b'%s%s' % (op, alpha) # for the transcript
@@ -272,12 +276,12 @@ def create_dkg(s, msg):
 
     #k=pysodium.randombytes(32)
     try:
-      beta = pyoprf.evaluate(xi[1:], alpha)
+      ssid_S = b"SPHINX CREATE DKG 3hashTDH" + alpha
+      beta = pyoprf._3hashtdh(xi, zero, alpha, ssid_S)
     except:
       fail(s)
 
-    msg = bytes([xi[0]])+beta
-    s.send(msg)
+    s.send(beta)
 
     # wait for auth signing pubkey and rules
     msg = s.recv(32+RULE_SIZE+64) # pubkey, rule, signature
@@ -302,6 +306,7 @@ def create_dkg(s, msg):
     save_blob(id,'key',xi)
     save_blob(id,'pub',pk)
     save_blob(id,'rules',rules)
+    save_blob(id,'zero',zero)
 
     s.send(b'ok')
 
@@ -336,23 +341,34 @@ def get(conn, msg):
     if rules is None:
         fail(conn)
 
+    zero = load_blob(id,'zero',33)
+
     try:
-        beta = pyoprf.evaluate(k[1:], alpha)
+      if zero is not None:
+        ssid_S = b"SPHINX GET 3hashTDH" + alpha
+        beta = pyoprf._3hashtdh(k, zero, alpha, ssid_S)
+      else:
+        beta = k[:1] + pyoprf.evaluate(k[1:], alpha)
     except:
       fail(conn)
 
-    conn.send(k[:1]+beta+rules)
+    conn.send(beta+rules)
 
 def auth(s,id,alpha):
   pk = load_blob(id,'pub',32)
   if pk is None:
     print('no pubkey found in %s' % id)
     fail(s)
+  zero = load_blob(id,'zero',33)
   nonce=pysodium.randombytes(32)
   k = load_blob(id,'key',33)
   if k is not None:
     try:
-       beta = bytes([k[0]])+pyoprf.evaluate(k[1:], alpha)
+      if zero is not None:
+          ssid_S = b"SPHINX AUTH 3hashTDH" + alpha
+          beta = pyoprf._3hashtdh(k, zero, alpha, ssid_S)
+      else:
+          beta = k[:1]+pyoprf.evaluate(k[1:], alpha)
     except:
        fail(s)
   else:
@@ -437,12 +453,17 @@ def change_dkg(s, msg):
 
   xi = dkg(s, msg0, aux)
 
+  zero = load_blob(id,'zero',33)
   try:
-    beta = pyoprf.evaluate(xi[1:], alpha)
+    if zero is not None:
+      ssid_S = b"SPHINX CHANGE DKG 3hashTDH" + alpha
+      beta = pyoprf._3hashtdh(xi, zero, alpha, ssid_S)
+    else:
+      beta = xi[:1] + pyoprf.evaluate(xi[1:], alpha)
   except:
     fail(s)
 
-  s.send(bytes([xi[0]])+beta)
+  s.send(beta)
 
   blob = s.recv(32+RULE_SIZE+64)
   if len(blob)!=32+RULE_SIZE+64:
@@ -689,7 +710,7 @@ def ratelimit(conn):
      data = CREATE+conn.recv(64)
      create(conn, data)
    elif op == CREATE_DKG:
-     data = CREATE_DKG+conn.recv(65+pyoprf.tpdkg_msg0_SIZE)
+     data = CREATE_DKG+conn.recv(64+pyoprf.tpdkg_msg0_SIZE+pyoprf.TOPRF_Share_BYTES)
      create_dkg(conn, data)
    elif op == CHALLENGE_CREATE:
      create_challenge(conn)
