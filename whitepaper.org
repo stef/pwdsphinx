@@ -178,9 +178,13 @@ values. The servers have to store their index in a threshold setup
 next to the key-share they hold. Thus the key is stored in the
 following format:
 
-+----------+------------+
-| u8 index | u8[32] key |
-+----------+------------+
+#+BEGIN_EXAMPLE
++--------+------------+
+| 1 byte |  32 bytes  |
++--------+------------+
+|  index |  key       |
++--------+------------+
+#+END_EXAMPLE
 
 Similarly the beta value that is the response sent back to the client,
 based on the key needs to include this index, and thus has the same
@@ -210,7 +214,7 @@ any secret SPHINX key. And even if they are able to do so, all they
 managed is to reduce the security of the threshold variant to the
 security of the non-threshold variant in this case. Unlinkable records
 thus create another obstacle for attackers that is essentially a
-combinatorical explosion.
+combinatorial explosion.
 
 Besides the shares that are stored on the servers, the servers also
 store the public authentication key for management operations. This
