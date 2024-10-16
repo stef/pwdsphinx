@@ -34,13 +34,13 @@ nativeport.onMessage.addListener((response) => {
     portFromCS.postMessage({ status: "ERROR", error: error });
     return;
   }
-   
+
   // client error handling
   if(response.results == 'fail') {
     console.log('websphinx failed');
     return;
   }
-  
+
   // handle manual inserts
   if(response.results.mode == "manual") {
     //console.log("manual");
@@ -48,7 +48,7 @@ nativeport.onMessage.addListener((response) => {
     portFromCS.postMessage(response);
     return;
   }
-  
+
   // handle get current pwd
   if(response.results.cmd == 'login') {
     // 1st step in an automatic change pwd
@@ -68,13 +68,13 @@ nativeport.onMessage.addListener((response) => {
     browser.tabs.executeScript({code: 'document.websphinx.login(' + JSON.stringify(login) + ');'});
     return;
   }
-   
+
   // handle list users
   if(response.results.cmd == 'list') {
     portFromCS.postMessage(response);
     return;
   }
-   
+
   // handle create password
   if(response.results.cmd == 'create') {
     let account = {
@@ -84,7 +84,7 @@ nativeport.onMessage.addListener((response) => {
     browser.tabs.executeScript({code: 'document.websphinx.create(' + JSON.stringify(account) + ');'});
     return;
   }
-   
+
   // handle change password
   if(response.results.cmd == 'change') {
     let change = {
@@ -95,7 +95,7 @@ nativeport.onMessage.addListener((response) => {
     changeData = false;
     return;
   }
-   
+
   // handle commit result
   if(response.results.cmd == 'commit') {
     portFromCS.postMessage(response);

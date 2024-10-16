@@ -4,24 +4,27 @@
     const src = br.runtime.getURL("webauthn.js");
     const bg = br.runtime.connect();
     const site = window.location.hostname;
+
     s.setAttribute('src', src);
     s.setAttribute('id', "sphinx-webauthn-page-script");
     (document.head || document.documentElement).appendChild(s);
-	document.addEventListener('sphinxWebauthnEvent', function(event) {
+	document.addEventListener('sphinxWebauthnEvent', webauthnEventHandler);
+
+    function webauthnEventHandler(event) {
         if(event.source != window) {
             console.log("invalid webauthnEvent sender", window.source);
             return;
         }
         console.log("MSG DBG", event.data);
-        const port = event.detail.port;
+        const port = event.port;
         const site = window.location.hostname;
-        const evType = event.detail.type;
+        const evType = event.type;
         // TODO
-        let user = '';
-        let msg = { "action": "login", "site": site, "name": user, "mode": "insert" };
-        if(evType == "register") {
-            msg.action = "create";
-        }
+        let msg = {
+            "site": site,
+            "action": event.type,
+            "params": event.params,
+        };
         chrome.runtime.sendMessage(
             msg,
             function(response) {
@@ -29,5 +32,6 @@
             }
         );
         //bg.postMessage();
-	});
+	}
 })();
+

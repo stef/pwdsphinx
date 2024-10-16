@@ -1,3 +1,4 @@
+// save original credential functions
 const browserCredentials = {
   create: navigator.credentials.create.bind(
 	navigator.credentials,
@@ -5,20 +6,26 @@ const browserCredentials = {
   get: navigator.credentials.get.bind(navigator.credentials),
 };
 
+// override credentials.create
 navigator.credentials.create = async function(options) {
-    if(!options && !options.publicKey) {
+    if(!options || !options.pubKeyCredParam) {
         // not webauthn call
         return await browserCredentials.create(options);
     }
-    const pubKey = options.publicKey;
     const host = window.location.hostname;
-    const response = await createEvent("create", {});
+    // Required response fields
+    const params = {
+        'challenge': options.challenge,
+        'username': options.user.name,
+        'algo': options.pubKeyCredParam.alg,
+    };
+    const response = await createEvent("create", params);
+    response.clientDataJSON = JSON.stringify(options);
     console.log("CREATE RESP", response);
-    const o_resp = await browserCredentials.create(options);
-    console.log(o_resp);
-    //return createCredentials(response);
+    return createCreateCredentialsResponse(response);
 };
 
+// override credentials.get
 navigator.credentials.get = async function(options) {
     if(!options && !options.publicKey) {
         // not webauthn call
@@ -28,17 +35,16 @@ navigator.credentials.get = async function(options) {
     const host = window.location.hostname;
     const response = await createEvent("get", {});
     console.log("GET RESP", response);
-    //return createCredentials(response);
+    return createGetCredentialsResponse(response);
 };
 
+// initiate messaging with the backend
 async function createEvent(evType, params) {
     const { port1: localPort, port2: remotePort } = new MessageChannel();
     let ev = new CustomEvent("sphinxWebauthnEvent", {
-        "detail": {
-            "type": evType,
-            "port": remotePort,
-            "params": params,
-        }
+        "type": evType,
+        "port": remotePort,
+        "params": params,
     });
     document.dispatchEvent(ev);
 	const promise = new Promise((resolve) => {
@@ -47,23 +53,32 @@ async function createEvent(evType, params) {
     return await promise
 }
 
-function createCredentials(res) {
-     const credential = {
-      id: res.id,
-      rawId: stringToBuffer(res.id),
-      type: "public-key",
-      response: {
-        authenticatorData: stringToBuffer(res.authenticatorData),
-        clientDataJSON: stringToBuffer(res.clientDataJSON),
-        signature: stringToBuffer(res.signature),
-        userHandle: stringToBuffer(res.userHandle),
-      },
-      getClientExtensionress: () => ({}),
-      authenticatorAttachment: "cross-platform",
+// create the response object of credentials.create
+function createCreateCredentialsResponse(res) {
+    if(res.error) {
+        return;
+    }
+    const credential = {
+        id: res.id, // base64 encoded raw id
+        rawId: stringToBuffer(res.id), // decode id
+        type: "public-key",
+        response: {
+            authenticatorData: stringToBuffer(res.authenticatorData),
+            clientDataJSON: stringToBuffer(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
+            signature: stringToBuffer(res.signature),
+            userHandle: stringToBuffer(res.userHandle),
+        },
+        getClientExtensionress: () => ({}),
+        authenticatorAttachment: "cross-platform",
     };
     Object.setPrototypeOf(credential.response, AuthenticatorAssertionResponse.prototype);
     Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
     return credential;
+}
+
+// create the response object of credentials.get
+function createGetCredentialsResponse(res) {
+    // TODO
 }
 
 function stringToBuffer(s) {
