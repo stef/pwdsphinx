@@ -59,6 +59,15 @@ previous password, listing usernames associated with a host.
 
 ** Core Sphinx Protocol
 
+This is a simplified description of the protocol, for a full academic
+papers including security proofs, please see:
+https://eprint.iacr.org/2015/1099 "Device-Enhanced Password Protocols
+with Optimal Online-Offline Protection" by Stanislaw Jarecki, Hugo
+Krawczyk, Maliheh Shirvanian, and Nitesh Saxena. And additionally:
+https://eprint.iacr.org/2018/695 "SPHINX: A Password Store that
+Perfectly Hides Passwords from Itself" by Maliheh Shirvanian,
+Stanislaw Jarecki, Hugo Krawczyk, and Nitesh Saxena
+
 The most essential operation in the Extended Sphinx Protocol is the
 Sphinx query. This is the basis for all other operations in the
 protocol - the only exception being the READ operation.
@@ -99,7 +108,125 @@ the rwd:
  rwd = hash(pwd,pwd_k)
 #+END_SRC
 
-In our implementation `rwd` results in a high entropy 32 byte array.
+In our implementation `rwd` results in a high entropy array of 32
+bytes.
+
+** Threshold SPHINX protocol
+
+v2.0 of SPHINX supports a threshold variant. This further lowers the
+trust needed in individual SPHINX servers, and greatly improves on
+robustness and reliability of SPHINX.
+
+Instead of one server an attacker must compromise t+1 (threshold)
+servers to have access to the secret seed from the non-threshold
+version of SPHINX.
+
+Furthermore the threshold setup allows for much greater robustness,
+there is no single-point-of-failure anymore, if a server is
+unavailable others can take its role.
+
+The threshold variant makes backups possible. By running a number of
+threshold SPHINX servers by the user themselves, the shares held by
+those servers can be stored offline and recovered in case all the
+public servers are unavailable.
+
+The following is a simplified description of the protocol used for
+threshold-SPHINX, for a full academic paper with security proofs see
+https://eprint.iacr.org/2017/363 "TOPPSS: Cost-minimal
+Password-Protected Secret Sharing based on Threshold OPRF" by
+Stanislaw Jarecki, Aggelos Kiayias, Hugo Krawczyk, and Jiayu Xu
+
+Quote from the TOPPSS paper (slightly edited for text-representation):
+
+#+BEGIN_QUOTE
+The underlying PRF, f_k(x) = H"(x, (H'(x))^k), remains unchanged, but the
+key k is shared using Shamir secret-sharing across n servers, where server S_i
+stores the key share k_i.
+
+[...]
+
+For evaluation, given any subset SE of t+1 servers, the user U sends
+to each of them the same message a = (H'(x))^r for random r, exactly as
+in the single-server OPRF protocol 2HashDH. If each server S_i in SE
+returned bi = a^k_i then U could reconstruct the value a^k using standard
+Lagrange interpolation in the exponent, i.e. a_k = Π b_i^λ_i, i∈SE  with
+the Lagrange coefficients λ_i computed using the indexes of servers in
+SE. After computing a^k, the value of f_k(x) is computed by U by
+deblinding a_k exactly as in the case of protocol 2HashDH.
+#+END_QUOTE
+
+For the distributed key-generation (DKG) for the creation and change
+of records operations SPHINX uses the Trusted Party DKG as provided
+and specified by liboprf at
+https://github.com/stef/liboprf/blob/master/docs/tp-dkg.txt
+
+The domain separator for create type DKG is:
+
+    "threshold sphinx dkg create k",
+
+for update type DKG it is:
+
+    "threshold sphinx dkg change k"
+
+DKG Cheaters MUST be identified and reported to the user.
+
+*** Keys and Beta values
+
+To be able to calculate the correct Lagrange coefficients in the
+threshold setup the client needs to know the index of the beta
+values. The servers have to store their index in a threshold setup
+next to the key-share they hold. Thus the key is stored in the
+following format:
+
++----------+------------+
+| u8 index | u8[32] key |
++----------+------------+
+
+Similarly the beta value that is the response sent back to the client,
+based on the key needs to include this index, and thus has the same
+format as the key: 1 byte for the index, 32 bytes for the beta value.
+
+For keys and beta values used in a non-threshold setting, this value
+SHOULD be 1.
+
+Valid values for the index are between 1..128 inclusive, anything else
+is invalid, and MUST be rejected by the client and/or server.
+
+*** Unlinkable records
+
+In the threshold variant the client interacts with multiple servers,
+and thus the protocol needs to store all relevant information
+(password rules and authentication keys) on all of them.
+
+It is a desirable security property to have all related records on
+all the servers to be unlinkable. Just like all the records belonging
+to the same user are unlinkable (if the userlist feature is disabled)
+in the non-threshold variant, having the records belonging to the same
+account on the threshold servers provides an extra cost multiplier for
+any attacker having access to multiple leaked threshold SPHINX
+databases. Since all the records are unlinkable, an attacker must be
+test all possible combinations of records if they want to reconstruct
+any secret SPHINX key. And even if they are able to do so, all they
+managed is to reduce the security of the threshold variant to the
+security of the non-threshold variant in this case. Unlinkable records
+thus create another obstacle for attackers that is essentially a
+combinatorical explosion.
+
+Besides the shares that are stored on the servers, the servers also
+store the public authentication key for management operations. This
+key is unique for all servers and records, this is achieved by
+including servers name in the record ID (see below for details), as
+all servers have different names so will all record IDs be different.
+
+The other data that all servers need to store are the password
+rules. These are encrypted, all with the same key, but with MUST use
+different nonces, and thus should also be unlinkable.
+
+*** Threshold Management Operations
+
+Management operations (change, delete, commit, undo) MUST operate on
+all shares, otherwise they become desynchronized and lead to
+inconsistencies and failure to recover passwords.
 
 * The Extended Sphinx Protocol Details
 
@@ -111,8 +238,8 @@ core Sphinx Protocol and why we did so.
 The output of the core sphinx protocol (at least in our instantiation)
 is an array of 32 random bytes. Most services are not expecting binary
 data (although they should!) and the worse ones even have some rules
-of what kind of character classes to expect or forbid or how long the
-password should be. In order to store these per-service information
+of what kind of character classes to expect or forbid, or how long the
+password should be. In order to store these per-service password rules
 without having to sync this across different devices used by a user we
 store these per-service password rules on the sphinx server.
 
@@ -163,7 +290,7 @@ wrong password goes on undetected. The check-digit is calculated as
 such:
 
 #+BEGIN_SRC
-  check-digit = blake2b("sphinx check digit context", rwd, 1)[0] & 0x1ff
+  check-digit = blake2b("sphinx check digit context", rwd, 1)[0] & 0x1f
 #+END_SRC
 
 *** rwd to ASCII conversion
@@ -197,8 +324,8 @@ calculate the binary rwd that SPHINX should output in order to
 generate a specified password. It is however not possible do actually
 make SPHINX output this value directly. In order to allow certain
 non-random pre-defined passwords to be output by SPHINX we xor the rwd
-with the xor mask from the rules blob. Normally the xor mask is all
-zeroes, and thus the output of the SPHINX query is unchanged and thus
+with the xor mask from the rules blob. Normally the xor mask is also
+totally random, and thus the output of the SPHINX query is thus also
 totally random. If the user specifies a pre-defined password during
 Create or Change operations, we first calculate backwards the target
 rwd that would produce that pre-defined output, and then we xor this
@@ -207,9 +334,9 @@ xor mask. It is important to notice, that the maximum length of such
 pre-definied output passwords is maximum 38 characters long.
 
 __Warning__ this mode generates passwords that violate the security guarantees
-of the sphinx protocol and should be avoided at all costs. This mode only
+of the SPHINX protocol and should be avoided if possible. This mode only
 exists as a convience function and a such a perfect example of convenience
-violating security.
+weakening security.
 
 Converting a base-n number back into an rwd is as simple as the
 following example pseudo-code:
@@ -218,6 +345,17 @@ following example pseudo-code:
     result = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
     return int.to_bytes(result, 32, 'big')
 #+END_SRC
+
+Xor masks (can) have another purpose, they can ensure that in fact all
+character classes requested in the rules are actually satisfied. When
+a create or change operation generates a new password that does not
+satisfy all rules, then randomly choosing a new xor mask until all
+rules are satisfied can quickly and transparently guarantee that all
+rules are satisfied. This is quicker than requesting the server (or
+running a full DKG again) to generate a new seed. However this SHOULD
+only be applied at account passwords that are longer than 8, otherwise
+the different character class rules can introduce a bias that makes it
+slightly easier to bruteforce the account password.
 
 ** Encrypted blobs
 
@@ -239,8 +377,8 @@ Encryption/decryption of blobs is done using
 Thus all encrypted blobs are prefixed with a 24
 bytes nonce and extended with a 16 bytes authentication tag.
 
-Blobs are prepended with a version byte, that is authenticated
-but not encrypted.
+Blobs are prepended with an authenticated but unencrypted version
+byte.
 
 ** The client master-key
 
@@ -288,7 +426,7 @@ following way:
 
 #+BEGIN_EXAMPLE
    id_key = blake2b("sphinx host salt", masterkey)
-   id = blake2b(user||host, id_key)
+   id = blake2b(user||host||sphinx server name, id_key)
 #+END_EXAMPLE
 
 The id_key is necessary to prohibit guessing IDs and pre-computation
@@ -299,6 +437,15 @@ as long as the hostname is directly taken from the URL-bar, it should
 not match the correct hostname, and thus the protocol will fail
 because no appropriate record is found. The lack of a record where you
 expect one is also a warning-sign for being phished.
+
+The inclusion of the SPHINX server name in the hash of the ID ensures
+that the ID is unique depending on the server it belongs to. This
+makes the records unlinkable across servers, which is especially
+useful in case of a threshold SPHINX setup. An attacker having access
+to t threshold servers records will be unable to know which record on
+each of the compromised servers belongs to the same ID and thus can be
+used to reassemble a record, forcing the attacker to bruteforce-
+combine also the shares.
 
 ** Authentication keys for management operations
 
@@ -314,6 +461,11 @@ Our protocol provides two authentication mechanisms, one requiring
 knowledge of the master password for a record, the other one only
 requires knowledge of the client secret. Both have their benefits and
 drawbacks.
+
+If the authentication succeeds the server responds with a message
+"auth" prefixed with the big-endian 16 bit length: '\x00\x04auth' In
+case of failure the token is "fail" and similarly prefixed with the
+length: '\x00\x04fail'.
 
 *** Authentication-keys without master passwords
 
@@ -332,7 +484,12 @@ pubkey is generated as such:
 
 The parameter id used to calculate key1 is the record id, we use this
 to derive unique keys for each record that cannot be linked to other
-keys derived from the same master key.
+keys derived from the same master key. Note that the use of the `id`
+parameter, and the fact that the calculation of it also utilizes the
+name of the SPHINX server results in unique keys for the same record
+across all threshold SPHINX servers. This means that also the
+authentication public keys are unlinkable not only across users and
+records, but also servers.
 
 Drawback of this method is that anyone with the master key can
 enumerate accounts at the sphinx server and run authenticated
@@ -355,7 +512,10 @@ added to the key:
 
 The rwd is the raw output of the SPHINX protocol, and by mixing it
 into the authentication key we make sure only users knowing the master
-password can execute management operations.
+password can execute management operations. Note again that due to the
+inclusion of the ID and it being dependent on the SPHINX server name,
+this key is also unique across all servers and records, making them
+unlinkable.
 
 The drawback of this authentication method is that this allows anyone
 with the authentication public key, the sphinx seed (both of which are
@@ -373,8 +533,18 @@ stored at the sphinx server have the following three components:
 
 The seed (also referred to as simply the "key"), is the secret
 component which during the Sphinx Query is contributed by the server
-to the final rwd. The authentication public key is a unique ed25519
-key used to authenticate management operations on this record.
+to the final rwd. This is a 33 byte array, with the first byte
+denoting the index of the share in the threshold setup, if this is a
+key for a non-threshold setup this value is 1. The index byte can only
+have valid values 1..128 inclusive, other values are invalid. The
+remaining 32 bytes are the ristretto255 scalar value, that is used as
+the key in the OPRF for the server-side evaluation.
+
+The authentication public key is a unique ed25519 key used to
+authenticate management operations on this record.
+
+The encrypted password rules are also unique due to the unique nonce
+used on each server in case of a threshold SPHINX setup.
 
 ** User records
 
@@ -386,10 +556,15 @@ user records, these are encrypted blobs, which contain a list of
 usernames. The record id for these records is generated as normal
 records, with the user component provided as an empty string.
 
+Clients might opt to not use User records, if this is not desired,
+then during any protocol run that accesses user records, the client
+SHOULD send a record ID of all zeros, and the server will skip user
+record handling.
+
 Our extended protocol provides a READ primitive to fetch these blobs,
 however writing these blobs is only possible implicitly through the
 CREATE and DELETE sphinx record management operations. It is of course
-possible to create some bogus sphinx entry, just to store some
+possible to create some bogus SPHINX entry, just to store some
 "secret" instead of a username in the user record, but the protection
 of these records is not very strong, there are countless better
 methods to do so.
@@ -415,9 +590,11 @@ record blobs thus looks like this:
 The following operations make up the extended protocol:
 
   - Create: create a new record
+  - Create DKG: create a new threshold SPHINX record by running a DKG
   - Get: query a record
   - Change: change the seed and update the password rules and auth pubkey
     associated with the record
+  - Change DKG: change the record in a threshold setup by running a DKG
   - Commit: activate the changed seed, password rules and auth pubkey,
     saving a backup copy of the previous values
   - Undo: restore the backup seed, password rules and auth pubkey
@@ -430,8 +607,9 @@ successfully address records and to authenticate management operations.
 
 ** Initial messages
 
-All initial messages (except the `read` and `create` operation) sent
-from the client to the server have the same structure:
+All initial messages (except the `read`, `create` and `*_dkg`
+operations) sent from the client to the server have the same
+structure:
 
 #+BEGIN_SRC
    u8   ratelimit_opcode
@@ -440,11 +618,21 @@ from the client to the server have the same structure:
    u8   alpha[32]
 #+END_SRC
 
-All operations - except the create operation - are subject to
-ratelimiting, and the initial message is part of the puzzle that must
-be solved, before the operation can be processed. For the create
-operation there is no ratelimit and hence the initial message for
-`create` operations lacks the first `ratelimit_op` field.
+All operations - except the create and the create dkg operations - are
+subject to ratelimiting, and the initial message is part of the puzzle
+that must be solved, before the operation can be processed. For the
+create operations there is no ratelimit and hence the initial message
+for `create` and `create_dkg` operations lacks the first
+`ratelimit_op` field.
+
+The `create_dkg` operation has one extra field, the DKG message 0:
+
+#+BEGIN_SRC
+   u8   opcode     = 0xf0
+   u8   id[32]
+   u8   alpha[32]
+   u8   msg0[177]
+#+END_SRC
 
 Since there is no rwd necessary - only the client master-key - for
 querying the user list the initial message of the read operation is
@@ -464,13 +652,15 @@ ratelimiting see the dedicated chapter below.
 The opcodes for the messages are the following:
 
 #+BEGIN_SRC
-CREATE   =  0x00
-READ     =  0x33
-UNDO     =  0x55
-GET      =  0x66
-COMMIT   =  0x99
-CHANGE   =  0xaa
-DELETE   =  0xff
+CREATE     =  0x00
+READ       =  0x33
+UNDO       =  0x55
+GET        =  0x66
+COMMIT     =  0x99
+CHANGE_DKG =  0xa0
+CHANGE     =  0xaa
+CREATE_DKG =  0xf0
+DELETE     =  0xff
 #+END_SRC
 
 The `id` member of the message is the record ID as specified above,
@@ -491,7 +681,7 @@ being used.
 ** Authentication
 
 The following management operations require authentication: Change,
-Commit, Undo, Delete, Read.
+Change DKG, Commit, Undo, Delete, Read.
 
 Authentication always starts with a basic Sphinx query, so that in
 case the client uses Authentication-keys with master passwords (see
@@ -518,7 +708,8 @@ Creation of a record is a quite straight-forward matter:
  1. The client initiates a CREATE operation on the server - including
     a run of the SPHINX Query (see above), but the server instead of
     loading a sphinx seed (which doesn't exist yet) just generates one
-    randomly.
+    randomly or engages in a TP-DKG with all other servers in case of
+    a threshold configuration.
  2. The client derives the encryption and authentication key. The
     password rules are encrypted and appended to the authentication
     public key. The auth pubkey and the encrypted rules are signed
@@ -546,14 +737,17 @@ record, but not when creating a user record).
     also sending along a newly encrypted password rules blob. This
     allows a client - if required - to change either of these, but
     they can also stay the same.
- 3. The server generates a new sphinx seed and executes its part of
-    the Sphinx query on it - sending back the resulting `beta` value
-    to the client.
+ 3. The server generates a new sphinx seed (either randomly or
+    engaging in a TP-DKG with all other servers) and executes its part
+    of the Sphinx query on it - sending back the resulting `beta`
+    value to the client.
  4. The client can finish the Sphinx query using the new sphinx
-    rwd. Using this it can generate a new authentication key-pair. It
-    signs the new public key with the new secret key - just to prove
-    ownership of this keypair, and sends the signed public key back to
-    the server.
+    rwd. Using this it can generate a new authentication key-pair (if
+    the rwd is included in it). It signs the new public key with the
+    new secret key - just to prove ownership of this keypair, and
+    sends the signed public key back to the server. note when the
+    setting rwd_keys is set to false, no new key is generated, but the
+    old one must still be sent to the server.
  5. The server checks if the public key can be used to verify the
     signature over it, if successful the server stores the new sphinx
     seed, the new auth public key and the new encrypted password rules
@@ -574,7 +768,7 @@ the new password will be different from the old one.
 Also notable is, that this operation in fact does not change the
 password despite its name, it merely generates a new one, which still
 needs to be activated using the Commit operation. Client
-implementations may automatically call Commit after a successful
+implementations MAY automatically call Commit after a successful
 Change operation.
 
 *** Commit new record
@@ -694,7 +888,9 @@ The server:
 ** Weaknesses
 
 1. When using server side user-lists the server can correlate which
-   records belong to the same user and target server.
+   records belong to the same user and target server. This can be
+   disabled by sending an all-zero record id for the userlists, which
+   skips user records processing.
 2. Server can collect usage statistics on sphinx records.
 3. Management operations have unique communication patterns, even
    through the TLS encryption it can be deduced which operation is
@@ -710,6 +906,12 @@ The server:
    operation without changing anything. And thus it is possible for an
    attacker to circumvent the authentication required during the READ
    operation.
+5. The change operation leaks if a client is configured to use the rwd
+   in the authentication. If the rwd is included in the auth key then
+   a new unique public auth key is generated, if rwd is not used in
+   the auth key, then the old and new public key are the same. A
+   threshold mitigates the offline bruteforce threat, but not the
+   infoleak threat (which leaks this info to all servers anyway).
 
 * Bruteforce attacks against our Sphinx implementation
 
@@ -911,6 +1113,13 @@ the session transcript consisting of the userid and the blinded
 password together with a fresh timestamp, this approach would not
 require extra round-trips nor maintaining state at the Sphinx storage,
 but it would allow precomputation for an attacker.
+
+** Rate-limiting in the threshold setting
+
+A client must solve all rate-limit puzzles in time to be able to
+interact with the SPHINX servers, in case of increased puzzle
+difficulty in combination with large threshold values can lead to
+significant strain on the client.
 
 ** Equihash puzzle-wrapped Sphinx
 
