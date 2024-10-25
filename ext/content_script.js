@@ -8,30 +8,33 @@
     s.setAttribute('src', src);
     s.setAttribute('id', "sphinx-webauthn-page-script");
     (document.head || document.documentElement).appendChild(s);
-	document.addEventListener('sphinxWebauthnEvent', webauthnEventHandler);
+	window.addEventListener('message', webauthnEventHandler);
 
-    function webauthnEventHandler(event) {
-        if(event.source != window) {
-            console.log("invalid webauthnEvent sender", window.source);
+    function webauthnEventHandler(msg) {
+        console.log("MSGRECV", msg);
+        let options = msg.data;
+        if(!options.type || options.type != "sphinxWebauthnEvent") {
             return;
         }
-        console.log("MSG DBG", event.data);
-        const port = event.port;
+        if(msg.origin != window.origin) {
+            console.log("invalid webauthnEvent sender");
+            return;
+        }
+        console.log("MSG DBG", msg, options);
         const site = window.location.hostname;
-        const evType = event.type;
         // TODO
-        let msg = {
+        let response = {
             "site": site,
-            "action": event.type,
-            "params": event.params,
+            "action": options.action,
+            "params": options.params,
         };
-        chrome.runtime.sendMessage(
-            msg,
-            function(response) {
-                port.postMessage(response);
-            }
-        );
         //bg.postMessage();
+        let pagePort = msg.ports[0];
+        try {
+            pagePort.postMessage(response);
+        } catch(err) {
+            console.log("Failed to send message to the page:", err);
+        }
 	}
 })();
 

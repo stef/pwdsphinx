@@ -1,14 +1,14 @@
 // save original credential functions
 const browserCredentials = {
-  create: navigator.credentials.create.bind(
-	navigator.credentials,
-  ),
+  create: navigator.credentials.create.bind(navigator.credentials),
   get: navigator.credentials.get.bind(navigator.credentials),
 };
 
+
 // override credentials.create
-navigator.credentials.create = async function(options) {
-    if(!options || !options.pubKeyCredParam) {
+navigator.credentials.create = async function(args) {
+    let options = args.publicKey;
+    if(!options || !options.pubKeyCredParams) {
         // not webauthn call
         return await browserCredentials.create(options);
     }
@@ -17,12 +17,14 @@ navigator.credentials.create = async function(options) {
     const params = {
         'challenge': options.challenge,
         'username': options.user.name,
-        'algo': options.pubKeyCredParam.alg,
+        'algos': options.pubKeyCredParams,
     };
-    const response = await createEvent("create", params);
+    console.log("SENDING PARAMS TO CS", params);
+    let response = await createEvent("create", params);
     response.clientDataJSON = JSON.stringify(options);
     console.log("CREATE RESP", response);
-    return createCreateCredentialsResponse(response);
+    let createObj = createCreateCredentialsResponse(response);
+    return createObj;
 };
 
 // override credentials.get
@@ -39,18 +41,25 @@ navigator.credentials.get = async function(options) {
 };
 
 // initiate messaging with the backend
-async function createEvent(evType, params) {
-    const { port1: localPort, port2: remotePort } = new MessageChannel();
-    let ev = new CustomEvent("sphinxWebauthnEvent", {
-        "type": evType,
-        "port": remotePort,
+async function createEvent(action, params) {
+    let msg = {
+        "type": "sphinxWebauthnEvent",
+        "action": action,
         "params": params,
-    });
-    document.dispatchEvent(ev);
+    };
+    const { port1: localPort, port2: remotePort } = new MessageChannel();
 	const promise = new Promise((resolve) => {
-		localPort.onmessage = (event) => resolve(event.data);
+		localPort.onmessage = (event) => {
+            resolve(event.data);
+        }
 	});
-    return await promise
+    try {
+        window.postMessage(msg, '*', [remotePort]);
+    } catch(err) {
+        console.log("Failed to send message to content script:", err);
+    }
+    let resp = await promise;
+    return resp;
 }
 
 // create the response object of credentials.create
@@ -60,7 +69,7 @@ function createCreateCredentialsResponse(res) {
     }
     const credential = {
         id: res.id, // base64 encoded raw id
-        rawId: stringToBuffer(res.id), // decode id
+        rawId: stringToBuffer(res.id, true), // decode id
         type: "public-key",
         response: {
             authenticatorData: stringToBuffer(res.authenticatorData),
@@ -68,7 +77,6 @@ function createCreateCredentialsResponse(res) {
             signature: stringToBuffer(res.signature),
             userHandle: stringToBuffer(res.userHandle),
         },
-        getClientExtensionress: () => ({}),
         authenticatorAttachment: "cross-platform",
     };
     Object.setPrototypeOf(credential.response, AuthenticatorAssertionResponse.prototype);
@@ -81,11 +89,22 @@ function createGetCredentialsResponse(res) {
     // TODO
 }
 
-function stringToBuffer(s) {
-	const str = atob(s);
-	const bytes = new Uint8Array(str.length);
-	for (let i = 0; i < str.length; i++) {
-		bytes[i] = str.charCodeAt(i);
+function stringToBuffer(s, isB64) {
+    if(!s) {
+        return new Uint8Array(0);
+    }
+    if(isB64) {
+        s = atob(s.replaceAll('-', '+').replaceAll('_', '/'));
+    }
+    const arr = Uint8Array.from(str, c => c.charCodeAt(0));
+    return arr.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+	let binary = '';
+	const bytes = new Uint8Array( buffer );
+	for (let i = 0; i < bytes.byteLength; i++) {
+		binary += String.fromCharCode(bytes[i]);
 	}
-	return bytes;
+	return window.btoa(binary);
 }
