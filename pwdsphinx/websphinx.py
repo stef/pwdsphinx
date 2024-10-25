@@ -194,6 +194,10 @@ def qrcode(data):
     send_message({ 'results': 'fail' })
 
 
+def echo(data):
+    send_message(data)
+
+
 func_map = {
     'login': get,
     'list': users,
@@ -202,6 +206,7 @@ func_map = {
     'commit': commit,
     'undo': undo,
     'qrcode': qrcode,
+    'echo': echo,
 }
 
 
