@@ -193,6 +193,18 @@ def qrcode(data):
   except:
     send_message({ 'results': 'fail' })
 
+
+func_map = {
+    'login': get,
+    'list': users,
+    'create': create,
+    'change': change,
+    'commit': commit,
+    'undo': undo,
+    'qrcode': qrcode,
+}
+
+
 def main():
   global log
   if log: log = open(log,'ab')
@@ -209,20 +221,9 @@ def main():
       log.write(repr(data).encode())
       log.write(b'\n')
       log.flush()
-    if data['cmd'] == 'login':
-      get(data)
-    elif data['cmd'] == 'list':
-      users(data)
-    elif data['cmd'] == 'create':
-      create(data)
-    elif data['cmd'] == 'change':
-      change(data)
-    elif data['cmd'] == 'commit':
-      commit(data)
-    elif data['cmd'] == 'undo':
-      undo(data)
-    elif data['cmd'] == 'qrcode':
-      qrcode(data)
+
+    if data['cmd'] in func_map:
+        func_map[data['cmd']](data)
 
 if __name__ == '__main__':
   main()
