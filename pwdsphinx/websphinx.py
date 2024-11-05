@@ -22,6 +22,7 @@
 import subprocess
 import sys, struct, json
 from zxcvbn import zxcvbn
+from SecureString import clearmem
 try:
     from pwdsphinx import sphinx, bin2pass
     from pwdsphinx.config import getcfg
@@ -197,6 +198,34 @@ def qrcode(data):
 def echo(data):
     send_message(data)
 
+def webauthn_create(data):
+  def callback(arg):
+    pk, sk = pysodium.crypto_sign_seed_keypair(arg)
+    clearmem(arg)
+    # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
+    challenge_sig =  pysodium.crypto_sign_detached(data['challenge'], sk)
+    clearmem(sk)
+    res = {
+        'pk': pk,
+        'challenge_sig': challenge_sig,
+        'name': data['name'],
+        'site': data['site'],
+        'cmd': 'webauthn-create',
+    }
+    send_message({'results': res})
+  try:
+    pwd=None
+    while not pwd:
+        pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        if pwd != pwd2:
+            send_message({ 'results': 'fail' })
+            return
+        if not pwdq(pwd): pwd=None
+
+    handler(callback, sphinx.create, pwd, 'raw://'+data['name'], data['site'], '', '')
+  except:
+    send_message({ 'results': 'fail' })
 
 func_map = {
     'login': get,
@@ -207,6 +236,7 @@ func_map = {
     'undo': undo,
     'qrcode': qrcode,
     'echo': echo,
+    'webauthn-create': webauthn_create,
 }
 
 
