@@ -10,17 +10,23 @@ navigator.credentials.create = async function(args) {
     let options = args.publicKey;
     if(!options || !options.pubKeyCredParams) {
         // not webauthn call
+        // TODO throw popop warning
         return await browserCredentials.create(options);
     }
     const host = window.location.hostname;
     // Required response fields
     const params = {
-        'challenge': options.challenge,
+        'challenge': arrayBufferToBase64(options.challenge),
         'username': options.user.name,
+        'userid': arrayBufferToBase64(options.user.id),
+        //algos:
+        // -8: Ed25519 !!
+		// -7: ES256
+		// -257: RS256
         'algos': options.pubKeyCredParams,
     };
     console.log("SENDING PARAMS TO CS", params);
-    let response = await createEvent("create", params);
+    let response = await createEvent("webauthn-create", params);
     response.clientDataJSON = JSON.stringify(options);
     console.log("CREATE RESP", response);
     let createObj = createCreateCredentialsResponse(response);

@@ -123,6 +123,10 @@ browser.runtime.onConnect.addListener(function(p) {
       msg.rules= request.rules;
       msg.size= request.size;
     }
+    if(request.action == "webauthn-create") {
+        msg.challenge = request.params.challenge;
+        msg.name = request.params.username;
+    }
     if (request.action == "change") {
       if(request.mode != "manual") {
         // first get old password
@@ -136,7 +140,8 @@ browser.runtime.onConnect.addListener(function(p) {
        request.action!="list" &&
        request.action!="create" &&
        request.action!="change" &&
-       request.action!="commit") {
+       request.action!="commit" &&
+       request.action!="webauthn-create") {
       console.log("unhandled popup request");
       console.log(request);
       return;
