@@ -291,8 +291,8 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
       m.close()
       return False
     nonces = [(idx,resp[1]) for idx, resp in enumerate(msgs)]
-    if len(msgs) < threshold:
-        raise ValueError("not enough peers answered, during auth")
+    if len(msgs) < len(m):
+        raise ValueError("auth: not all peers answered or authenticated")
     beta = pyoprf.thresholdmult([resp[0] for resp in msgs][:threshold])
     rwd = pyoprf.unblind_finalize(r, beta, pwd)
 
@@ -316,6 +316,9 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
       fails+=1
     else:
       raise ValueError("unexpected auth result")
+
+  if fails > 0:
+      raise ValueError("some peers have failed to authenticate us")
 
   return rwd
 
