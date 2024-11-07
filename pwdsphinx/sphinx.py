@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2024, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import sys, os, socket, ssl, struct, platform, getpass, binascii
+import sys, os, socket, ssl, struct, platform, getpass, binascii, zlib
 import concurrent.futures
 from SecureString import clearmem
 import pysodium, pyoprf
@@ -804,10 +804,16 @@ def print_qr(qrcode: QrCode) -> None:
 
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
-  data = (bytes([1*key+2*rwd_keys + 4*validate_password]) +
+  hosts = []
+  for name, server in servers.items():
+    if len(name)>255: raise ValueError(f"server name: {name} is too long, max 255 allowed in qr codes")
+    hosts.append(bytes([len(name.encode('utf8'))]) + name.encode('utf8') +
+                 bytes([len(server.get('host','localhost'))]) + server.get('host','localhost').encode('utf8') +
+                 struct.pack("!H", server.get('port', 2355)))
+  hosts=zlib.compress(b''.join(hosts))
+  data = (bytes([1*key+2*rwd_keys + 4*validate_password + 8*userlist, threshold]) +
           mk +
-          struct.pack("!H", port) +
-          hostname.encode("utf8"))
+          hosts)
 
   qr = QrCode.encode_binary(data, QrCode.Ecc.LOW)
   if key:
