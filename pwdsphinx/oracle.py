@@ -13,6 +13,7 @@ from pwdsphinx.config import getcfg
 from pwdsphinx.consts import *
 cfg = getcfg('sphinx')
 
+# todo genkey ltsig integrate into oracle
 
 verbose = cfg['server'].get('verbose', False)
 address = cfg['server'].get('address', '127.0.0.1')
@@ -78,7 +79,7 @@ def fail(s):
     if verbose:
         traceback.print_stack()
         print('fail')
-    s.send(b'\x00\x04fail') # plaintext :/
+    s.send(b'\x00\x04fail') # plaintext :/ todo use ltsigkey?
     s.shutdown(socket.SHUT_RDWR)
     s.close()
     os._exit(0)
@@ -366,7 +367,7 @@ def auth(s,id,alpha):
     print('bad sig')
     fail(s)
   else:
-    s.send(b'\x00\x04auth') # plaintext :/
+    s.send(b'\x00\x04auth') # plaintext :/ todo use ltsigkey?
 
 def change(conn, msg):
   op,   msg = pop(msg,1)
@@ -796,9 +797,9 @@ def parse_params():
     exit(1)
 
   debug=False
-  if 'debug' in sys.args:
+  if 'debug' in sys.argv:
     debug = True
-  if not 'init' in sys.args:
+  if not 'init' in sys.argv:
       main(debug)
 
   # init
