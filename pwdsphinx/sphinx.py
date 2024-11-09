@@ -466,7 +466,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   if threshold > 1:
     beta = dkg(m, CREATE_DKG, threshold, ids, alpha)
   else:
-    msg = b''.join([CREATE, id[0], alpha])
+    msg = b''.join([CREATE, ids[0], alpha])
     m.broadcast(msg)
 
     # wait for response from sphinx server
@@ -563,12 +563,12 @@ def get(m, pwd, user, host):
     beta = pyoprf.thresholdmult([resp[0] for resp in resps if resp])
   else:
     resp = m.gather(33+RULE_SIZE, 1)[0] # beta + sealed rules
-    if resps is None:
+    if resp is None:
       m.close()
       raise ValueError("Failed to get answers from sphinx server")
     if resp == b'\x00\x04fail':
       raise ValueError("ERROR: The record does not exist, there's a chance you are being fished.")
-    if len(resp)!=32+RULE_SIZE:
+    if len(resp)!=33+RULE_SIZE:
       m.close()
       raise ValueError("ERROR: the request to server was corrupted during transport.")
     beta = resp[1:33]
