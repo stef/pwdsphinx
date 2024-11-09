@@ -512,6 +512,22 @@ class TestEndToEndNoneEither(TestEndToEnd):
     sphinx.rwd_keys=True
     sphinx.userlist=True
 
+class TestEndToEndSingleMode(TestEndToEnd):
+  def setUp(self):
+    self.threshold=sphinx.threshold
+    sphinx.threshold=1
+    sphinx.servers=dict(list(sphinx.servers.items())[:1])
+    global N
+    self.N=N
+    N=1
+
+  def tearDown(self, *args, **kwargs):
+    super(TestEndToEndSingleMode, self).tearDown(*args, **kwargs)
+    sphinx.servers=orig_servers
+    sphinx.threshold=self.threshold
+    global N
+    N=self.N
+
 if __name__ == '__main__':
   unittest.main()
 
