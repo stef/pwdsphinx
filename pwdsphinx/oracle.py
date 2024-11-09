@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct
+from os import access, R_OK
+from os.path import isfile, getsize
 import pysodium
 import equihash
 import pyoprf
@@ -19,7 +21,6 @@ timeout = int(cfg['server'].get('timeout',"3"))
 max_kids = int(cfg['server'].get('max_kids',5))
 datadir = os.path.expanduser(cfg['server'].get('datadir',"/var/lib/sphinx"))
 ts_epsilon = 1200 # todo make configurable
-debug = False # todo make configurable
 try:
     ssl_key = os.path.expanduser(cfg['server']['ssl_key'])
 except KeyError:
@@ -696,7 +697,7 @@ def ratelimit(conn):
    elif op == CHALLENGE_VERIFY:
      verify_challenge(conn)
 
-def main():
+def main(debug=False):
     if debug == True:
         import ctypes
         libc = ctypes.cdll.LoadLibrary('libc.so.6')
@@ -771,5 +772,47 @@ def main():
         pass
     s.close()
 
+def is_readable(path):
+  return isfile(path) and access(path, R_OK)
+
+def missing_file(path):
+    print(f"The SSL key at {path} is not a readable file. Make sure this is a proper ssl key.")
+    print(f"Our GettingStarted document gives simple example of how to do so.")
+    print(f"Check out https://sphinx.pm/server_install.html .")
+    print(f"Aborting.")
+    exit(1)
+
+def parse_params():
+  if not is_readable(ssl_key):
+    missing_file(ssl_key)
+  if not is_readable(ssl_cert):
+    missing_file(ssl_cert)
+  if not is_readable(ltsigkey_path) and 'init' not in sys.argv:
+    print(f"Long-term signing key at {ltsigkey_path} is not readable.")
+    print(f"You can generate one by running: {sys.argv[0]} init")
+  if not getsize != pysodium.crypto_sign_SECRETKEYBYTES:
+    print(f"The long-term signing key of the oracle has an invalid size, maybe it's corrupt?")
+    print("abort.")
+    exit(1)
+
+  debug=False
+  if 'debug' in sys.args:
+    debug = True
+  if not 'init' in sys.args:
+      main(debug)
+
+  # init
+  pk, sk = pysodium.crypto_sign_keypair()
+  with open(ltsigkey_path, 'xb') as fd:
+    fd.write(sk)
+
+  with open(f"{ltsigkey_path}.pub", 'xb') as fd:
+    fd.write(pk)
+
+  print(f"successfully created long-term signature key pair at:")
+  print(f"{ltsigkey_path}")
+  print(f"and the public key - which you should make available to all clients -, is at:")
+  print(f"{ltsigkey_path}.pub")
+
 if __name__ == '__main__':
-  main()
+  parse_params()
