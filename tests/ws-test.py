@@ -19,7 +19,10 @@ if sys.argv[1] == 'list':
     msg['site']= sys.argv[2]
 
 msg['mode'] = 'ws-test'
-msg = json.dumps(msg)
+if sys.argv[1] == 'json':
+    msg = sys.argv[2]
+else:
+    msg = json.dumps(msg)
 
 print("cmd:", msg)
 cmd = struct.pack('i', len(msg))+msg.encode("utf-8")
