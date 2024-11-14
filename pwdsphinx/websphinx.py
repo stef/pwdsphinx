@@ -20,9 +20,11 @@
 
 
 import subprocess
-import sys, struct, json
+import sys, struct, json, pysodium
 from zxcvbn import zxcvbn
 from SecureString import clearmem
+from pyoprf.multiplexer import Multiplexer
+from binascii import b2a_base64
 try:
     from pwdsphinx import sphinx, bin2pass
     from pwdsphinx.config import getcfg
@@ -35,9 +37,10 @@ pinentry = cfg['websphinx']['pinentry']
 log = cfg['websphinx'].get('log')
 
 def handler(cb, cmd, *args):
-    s = sphinx.connect()
-    cb(cmd(s, *args))
-    s.close()
+    m = Multiplexer(sphinx.servers)
+    m.connect()
+    cb(cmd(m, *args))
+    m.close()
 
 def getpwd(title):
     proc=subprocess.Popen([pinentry, '-g'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -206,8 +209,8 @@ def webauthn_create(data):
     challenge_sig =  pysodium.crypto_sign_detached(data['challenge'], sk)
     clearmem(sk)
     res = {
-        'pk': pk,
-        'challenge_sig': challenge_sig,
+        'pk': b2a_base64(pk).decode('utf8'),
+        'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
         'name': data['name'],
         'site': data['site'],
         'cmd': 'webauthn-create',
