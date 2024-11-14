@@ -34,13 +34,13 @@ nativeport.onMessage.addListener((response) => {
     portFromCS.postMessage({ status: "ERROR", error: error });
     return;
   }
-   
+
   // client error handling
   if(response.results == 'fail') {
     console.log('websphinx failed');
     return;
   }
-  
+
   // handle manual inserts
   if(response.results.mode == "manual") {
     //console.log("manual");
@@ -48,7 +48,7 @@ nativeport.onMessage.addListener((response) => {
     portFromCS.postMessage(response);
     return;
   }
-  
+
   // handle get current pwd
   if(response.results.cmd == 'login') {
     // 1st step in an automatic change pwd
@@ -68,13 +68,13 @@ nativeport.onMessage.addListener((response) => {
     browser.tabs.executeScript({code: 'document.websphinx.login(' + JSON.stringify(login) + ');'});
     return;
   }
-   
+
   // handle list users
   if(response.results.cmd == 'list') {
     portFromCS.postMessage(response);
     return;
   }
-   
+
   // handle create password
   if(response.results.cmd == 'create') {
     let account = {
@@ -84,7 +84,7 @@ nativeport.onMessage.addListener((response) => {
     browser.tabs.executeScript({code: 'document.websphinx.create(' + JSON.stringify(account) + ');'});
     return;
   }
-   
+
   // handle change password
   if(response.results.cmd == 'change') {
     let change = {
@@ -95,7 +95,7 @@ nativeport.onMessage.addListener((response) => {
     changeData = false;
     return;
   }
-   
+
   // handle commit result
   if(response.results.cmd == 'commit') {
     portFromCS.postMessage(response);
@@ -146,3 +146,27 @@ browser.runtime.onConnect.addListener(function(p) {
     nativeport.postMessage(msg);
   });
 });
+
+// handle "synchronous" calls for webauthn
+chrome.runtime.onMessage.addListener(
+	function(request, sender, sendResponse) {
+		let msg = {
+			cmd: request.action,
+			mode: request.mode,
+			site: request.site,
+			challenge: request.params.challenge,
+			name: request.params.username,
+		};
+		let sending = browser.runtime.sendNativeMessage(APP_NAME, msg);
+		sending.then(
+			function(response) {
+				console.log('response received from native app', response);
+				sendResponse(response);
+			},
+			function(error) {
+				console.log('error received from native app', error);
+				sendResponse(error);
+			}
+		);
+	}
+);
