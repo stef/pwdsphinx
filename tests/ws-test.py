@@ -19,8 +19,9 @@ if sys.argv[1] == 'list':
     msg['site']= sys.argv[2]
 
 msg['mode'] = 'ws-test'
+
 if sys.argv[1] == 'json':
-    msg = sys.argv[2]
+    msg = sys.argv[2].replace("'", '"')
 else:
     msg = json.dumps(msg)
 
