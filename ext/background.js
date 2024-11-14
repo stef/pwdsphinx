@@ -123,10 +123,6 @@ browser.runtime.onConnect.addListener(function(p) {
       msg.rules= request.rules;
       msg.size= request.size;
     }
-    if(request.action == "webauthn-create") {
-        msg.challenge = request.params.challenge;
-        msg.name = request.params.username;
-    }
     if (request.action == "change") {
       if(request.mode != "manual") {
         // first get old password
@@ -140,8 +136,7 @@ browser.runtime.onConnect.addListener(function(p) {
        request.action!="list" &&
        request.action!="create" &&
        request.action!="change" &&
-       request.action!="commit" &&
-       request.action!="webauthn-create") {
+       request.action!="commit") {
       console.log("unhandled popup request");
       console.log(request);
       return;
@@ -151,3 +146,27 @@ browser.runtime.onConnect.addListener(function(p) {
     nativeport.postMessage(msg);
   });
 });
+
+// handle "synchronous" calls for webauthn
+chrome.runtime.onMessage.addListener(
+	function(request, sender, sendResponse) {
+		let msg = {
+			cmd: request.action,
+			mode: request.mode,
+			site: request.site,
+			challenge: request.params.challenge,
+			name: request.params.username,
+		};
+		let sending = browser.runtime.sendNativeMessage(APP_NAME, msg);
+		sending.then(
+			function(response) {
+				console.log('response received from native app', response);
+				sendResponse(response);
+			},
+			function(error) {
+				console.log('error received from native app', error);
+				sendResponse(error);
+			}
+		);
+	}
+);

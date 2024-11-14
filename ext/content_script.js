@@ -2,7 +2,7 @@
     const br = chrome || browser;
     const s = document.createElement("script");
     const src = br.runtime.getURL("webauthn.js");
-    const bg = br.runtime.connect();
+    //const bg = br.runtime.connect();
     const site = window.location.hostname;
 
     s.setAttribute('src', src);
@@ -23,18 +23,22 @@
         console.log("MSG DBG", msg, options);
         const site = window.location.hostname;
         // TODO
-        let response = {
+        let bgMsg = {
             "site": site,
             "action": options.action,
             "params": options.params,
         };
-        //bg.postMessage();
         let pagePort = msg.ports[0];
-        try {
-            pagePort.postMessage(response);
-        } catch(err) {
-            console.log("Failed to send message to the page:", err);
-        }
+        br.runtime.sendMessage(bgMsg).then(
+            function(response) {
+                console.log('response received from native app', response);
+                pagePort.postMessage(response);
+            },
+            function(error) {
+                console.log('error received from native app', error);
+                pagePort.postMessage(error);
+            }
+        );
 	}
 })();
 
