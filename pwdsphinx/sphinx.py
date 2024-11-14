@@ -181,15 +181,15 @@ def unpack_rule(ct):
 
   return rule, symbols, size, check_digit, xor_mask
 
-def pack_rule(char_classes, syms, size, check_digit, xor_mask=None):
+def pack_rule(char_classes, syms, size, check_digit, xor_mask=None, with_schema=False):
   # pack rules into and encrypt them
   if set(char_classes) - {'u','l','d'}:
     raise ValueError("ERROR: rules can only contain any of 'uld'.")
   if set(syms) - set(bin2pass.symbols) != set():
     raise ValueError("ERROR: symbols can only contain any of '%s'." % bin2pass.symbols)
-  if char_classes == '' and len(syms)<2:
+  if not with_schema and (char_classes == '' and len(syms)<2):
     raise ValueError("ERROR: no char classes and not enough symbols specified.")
-  if xor_mask is None and (char_classes == '' and len(syms)<2):
+  if not with_schema and (xor_mask is None and (char_classes == '' and len(syms)<2)):
     raise ValueError("ERROR: no char classes and not enough symbols specified.")
   if xor_mask is None:
       xor_mask = b'\x00' * 32
@@ -521,7 +521,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
             continue
         break
 
-  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
+  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask, with_schema='://' in user)
   # send over new signed(pubkey, rule)
   for i,(id,pk) in enumerate(zip(ids, sign_keys)):
     msg = b''.join([pk, rule])
