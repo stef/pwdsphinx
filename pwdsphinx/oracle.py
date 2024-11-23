@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: 2018-2024, Marsiske Stefan
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct
+import socket, sys, ssl, os, datetime, binascii, shutil, os.path, traceback, struct, select
 from os import access, R_OK
 from os.path import isfile, getsize
 import pysodium
@@ -725,9 +725,10 @@ def main(debug=False):
         # main loop
         while 1:
             #wait to accept a connection - blocking call
-            try:
+            r,w,x = select.select([s], [], [], 0.5)
+            if len(r) == 1:
               conn, addr = s.accept()
-            except socket.timeout:
+            else:
               try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
                 if pid != 0:
@@ -736,8 +737,6 @@ def main(debug=False):
                 continue
               except ChildProcessError:
                 continue
-            except:
-              raise
 
             if verbose:
                 print('{} Connection from {}:{}'.format(datetime.datetime.now(), addr[0], addr[1]))
