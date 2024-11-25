@@ -22,21 +22,27 @@
 const APP_NAME = "websphinx";
 
 var browser = browser || chrome;
-var portFromCS;
+var ports = {};
 var nativeport = browser.runtime.connectNative(APP_NAME);
 var changeData = true;
 
 nativeport.onMessage.addListener((response) => {
+  console.log("MSG FROM WEBSPHINX", response);
   // internal error handling
   if (browser.runtime.lastError) {
     var error = browser.runtime.lastError.message;
     console.error(error);
-    portFromCS.postMessage({ status: "ERROR", error: error });
+    ports['popup'].postMessage({ status: "ERROR", error: error });
     return;
   }
 
   // client error handling
   if(response.results == 'fail') {
+    if(response.cmd) {
+        response.results = {'error': true, 'id': response.id, 'cmd': response.cmd};
+        const tabId = Number(response.tabId);
+        browser.tabs.sendMessage(tabId, response);
+    }
     console.log('websphinx failed');
     return;
   }
@@ -45,7 +51,7 @@ nativeport.onMessage.addListener((response) => {
   if(response.results.mode == "manual") {
     //console.log("manual");
     // its a manual mode response so we just pass it to the popup
-    portFromCS.postMessage(response);
+    ports['popup'].postMessage(response);
     return;
   }
 
@@ -69,9 +75,25 @@ nativeport.onMessage.addListener((response) => {
     return;
   }
 
+  // handle webauthn create
+  if(response.results.cmd == 'webauthn-create') {
+    console.log("WEBAUTHN_CREATE FROM WEBSPHINX", response.results);
+    const tabId = Number(response.results.tabId);
+    browser.tabs.sendMessage(tabId, response);
+    console.log("WEBAUTHN_CREATE SENT TO CS", response.results);
+    return;
+  }
+
+  // handle webauthn get
+  if(response.results.cmd == 'webauthn-get') {
+    const tabId = Number(response.results.tabId);
+    browser.tabs.sendMessage(tabId, response);
+    return;
+  }
+
   // handle list users
   if(response.results.cmd == 'list') {
-    portFromCS.postMessage(response);
+    ports['popup'].postMessage(response);
     return;
   }
 
@@ -98,7 +120,7 @@ nativeport.onMessage.addListener((response) => {
 
   // handle commit result
   if(response.results.cmd == 'commit') {
-    portFromCS.postMessage(response);
+    ports['popup'].postMessage(response);
     return;
   }
   console.log("unhandled native port response");
@@ -106,67 +128,82 @@ nativeport.onMessage.addListener((response) => {
 });
 
 browser.runtime.onConnect.addListener(function(p) {
-  portFromCS = p;
+  ports[p.name] = p;
 
-  // proxy from CS to native backend
-  portFromCS.onMessage.addListener(function(request, sender, sendResponse) {
-    // prepare message to native backend
-    let msg = {
-        cmd: request.action,
-        mode: request.mode,
-        site: request.site
-    };
+  if(p.name == 'popup') {
+	  // proxy from CS to native backend
+	  p.onMessage.addListener(function(request, sender, sendResponse) {
+		// prepare message to native backend
+		let msg = {
+			cmd: request.action,
+			mode: request.mode,
+			site: request.site
+		};
 
-    if(request.action!="list") msg.name=request.name;
-    if (request.action == "login") changeData=false;
-    if (request.action == "create") {
-      msg.rules= request.rules;
-      msg.size= request.size;
-    }
-    if (request.action == "change") {
-      if(request.mode != "manual") {
-        // first get old password
-        // but this will trigger the login inject in the nativport onmessage cb
-        changeData = true;
-        msg.cmd= "login";
-      }
-    }
+		if(request.action!="list") msg.name=request.name;
+		if (request.action == "login") changeData=false;
+		if (request.action == "create") {
+		  msg.rules= request.rules;
+		  msg.size= request.size;
+		}
+		if (request.action == "change") {
+		  if(request.mode != "manual") {
+			// first get old password
+			// but this will trigger the login inject in the nativport onmessage cb
+			changeData = true;
+			msg.cmd= "login";
+		  }
+		}
 
-    if(request.action!="login" &&
-       request.action!="list" &&
-       request.action!="create" &&
-       request.action!="change" &&
-       request.action!="commit") {
-      console.log("unhandled popup request");
-      console.log(request);
-      return;
-    }
+		if(request.action!="login" &&
+		   request.action!="list" &&
+		   request.action!="create" &&
+		   request.action!="change" &&
+		   request.action!="commit") {
+		  console.log("unhandled popup request");
+		  console.log(request);
+		  return;
+		}
 
-    // send request to native backend
-    nativeport.postMessage(msg);
-  });
-});
-
-// handle "synchronous" calls for webauthn
-chrome.runtime.onMessage.addListener(
-	function(request, sender, sendResponse) {
+		// send request to native backend
+		nativeport.postMessage(msg);
+	  });
+  }
+  if(p.name == 'content-script') {
+      console.log("CONN FROM CS TO BGJS HUH?");
+	  p.onMessage.addListener(function(request, sender, sendResponse) {
+        console.log("MSG FROM CS TO BGJS, MEH?!", request);
 		let msg = {
 			cmd: request.action,
 			mode: request.mode,
 			site: request.site,
 			challenge: request.params.challenge,
 			name: request.params.username,
+			id: request.id,
 		};
-		let sending = browser.runtime.sendNativeMessage(APP_NAME, msg);
-		sending.then(
-			function(response) {
-				console.log('response received from native app', response);
-				sendResponse(response);
-			},
-			function(error) {
-				console.log('error received from native app', error);
-				sendResponse(error);
-			}
-		);
+		nativeport.postMessage(msg);
+	  });
+  }
+});
+
+// handle "synchronous" calls for webauthn
+chrome.runtime.onMessage.addListener(
+	function(request, sender, sendResponse) {
+        console.log("MSG TO BGJS AS RUNTIME.POSTMSG", request);
+        if(!request.action || !request.action.startsWith('webauthn')) {
+            return;
+        }
+        const tabId = sender.tab.id;
+        console.log("MSG FROM CS TO BGJS", request);
+		let msg = {
+			cmd: request.action,
+			mode: request.mode,
+			site: request.site,
+			challenge: request.params.challenge,
+			name: request.params.username,
+			id: request.id,
+            tabId: tabId,
+		};
+		nativeport.postMessage(msg);
 	}
 );

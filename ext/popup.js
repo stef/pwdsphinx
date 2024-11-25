@@ -34,7 +34,7 @@ class Sphinx {
     this.users = [];
     this.mode = '';
     this.inputs = 0;
-    this.background = browser.runtime.connect();
+    this.background = browser.runtime.connect({'name': 'popup'});
 
     browser.tabs.query({ currentWindow: true, active: true }, this.onTabs.bind(this));
 

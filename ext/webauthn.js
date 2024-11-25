@@ -41,7 +41,7 @@ navigator.credentials.get = async function(options) {
     }
     const pubKey = options.publicKey;
     const host = window.location.hostname;
-    const response = await createEvent("get", {});
+    const response = await createEvent("webauthn-get", {});
     console.log("GET RESP", response);
     return createGetCredentialsResponse(response);
 };

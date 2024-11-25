@@ -215,6 +215,7 @@ def webauthn_create(data):
         'site': data['site'],
         'cmd': 'webauthn-create',
         'id': data['id'],
+        'tabId': data['tabId']
     }
     send_message({'results': res})
   try:
@@ -223,13 +224,13 @@ def webauthn_create(data):
         pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
         pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
         if pwd != pwd2:
-            send_message({ 'results': 'fail', 'id': data['id']})
+            send_message({ 'results': 'fail', 'id': data['id'], 'tabId': data['tabId'], 'cmd': res['cmd']})
             return
         if not pwdq(pwd): pwd=None
 
     handler(callback, sphinx.create, pwd, 'raw://'+data['name'], data['site'], '', '')
   except Exception as e:
-      send_message({ 'results': 'fail', 'id': data['id']})
+      send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
 
 func_map = {
     'login': get,
