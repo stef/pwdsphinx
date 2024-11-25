@@ -67,7 +67,7 @@ def pwdq(pwd):
                           stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
 
-    if((resp:=proc.stdout.readline())!=b'OK Pleased to meet you\n'):
+    if not (resp:=proc.stdout.readline()).startswith(b'OK Pleased to meet you'):
         raise ValueError(f"strange greeting \"{resp}\"")
     fetchOK(proc ,"SETTITLE Password Quality Check")
     fetchOK(proc ,"SETOK use this")
@@ -214,6 +214,7 @@ def webauthn_create(data):
         'name': data['name'],
         'site': data['site'],
         'cmd': 'webauthn-create',
+        'id': data['id'],
     }
     send_message({'results': res})
   try:
@@ -222,13 +223,13 @@ def webauthn_create(data):
         pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
         pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
         if pwd != pwd2:
-            send_message({ 'results': 'fail' })
+            send_message({ 'results': 'fail', 'id': data['id']})
             return
         if not pwdq(pwd): pwd=None
 
     handler(callback, sphinx.create, pwd, 'raw://'+data['name'], data['site'], '', '')
-  except:
-    send_message({ 'results': 'fail' })
+  except Exception as e:
+      send_message({ 'results': 'fail', 'id': data['id']})
 
 func_map = {
     'login': get,
@@ -262,6 +263,8 @@ def main():
 
     if data['cmd'] in func_map:
         func_map[data['cmd']](data)
+    else:
+        send_message({ 'results': 'fail' })
 
 if __name__ == '__main__':
   main()
