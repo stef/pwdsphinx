@@ -9,7 +9,7 @@ host="$3"
 MOUSEID=$(xinput --list --short | grep -F "Virtual core pointer" | sed 's/.*id=\([0-9]*\).*/\1/')
 
 x11_type() {
-   xdotool type --clearmodifiers "$1"
+   xdotool type --clearmodifiers -- "$1"
 }
 
 wfc() {
