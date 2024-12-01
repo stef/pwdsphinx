@@ -41,7 +41,9 @@ qr code.
 
 In general if any operation requires a master(input) password, it is
 expected on standard input, and any resulting account (output)
-password is printed to standard output.
+password is printed to standard output. In the examples we use `echo`
+but it is recommended to use `getpwd(1)` or similar tools to query and pass the
+input password.
 
 ## INITIALIZING A CLIENT
 
@@ -100,7 +102,7 @@ standard output.
 ## CHANGE PASSWORD
 
 You might want to (or are forced to regularly) change your password,
-this is easy while you can keep your master password the unchanged (or
+this is easy while you can keep your master password unchanged (or
 you can change it too, if you want). The command is this:
 
 ```
@@ -120,7 +122,10 @@ case your account has new password rules and you want/have to
 accommodate them. For more information see the `PASSWORD RULES` and
 `PREDETERMINED PASSWORDS` sections below.
 
-Your new new password is returned on standard output.
+Your new new password is returned on standard output. __IMPORTANT__ this
+only creates a new output password, but does not activate it. Running a `get`
+operation will still respond with the previous password, to activate the new
+password, you need to run a `commit` operation, see the next section:
 
 ## COMMITTING A CHANGED PASSWORD
 
@@ -262,8 +267,7 @@ Files are parsed in this order, this means global settings can be
 overridden by per-user and per-directory settings.
 
 The client can be configured changing the settings in the `[client]`
-section of the config file. The `host` and `port` should match what
-you set in the `oracle(1)` server.
+and the `[servers]` sections of the config file. 
 
 The `datadir` (default: `~/.sphinx`) variable holds the location for
 your client parameters. Particularly it contains a masterkey which is
@@ -287,6 +291,33 @@ prohibits the server to correlate all the records that belong to the same
 sphinx user relating to the same host. The cost of this, is that the user has
 to remember themselves which usernames they have at which host.
 
+The `threshold` option must specify the number of servers necessary to operate
+sphinx. If the `[servers]` section contains more than two entries, this value
+must be greater than 1 and less than the number of servers listed in the
+`[servers]` section: 1 < threshold < len(servers).
+
+The `[servers]' section contains subsections for each server like this:
+
+```
+[servers]
+[servers.zero]
+host="localhost"
+port=10000
+ltsigkey = "zero.pub"
+```
+
+The subsections all have the the format [server.`name`]. This `name` can be
+freely chosen and can be a public value. it is __important__ to never change
+it, as long as you want to access your passwords on this server. This name
+value is used together with other values to create unique record IDs. If you
+change the name the record IDs change, and you will not be able to access your
+old records.
+
+The `host` and `port` should match what you set in the `oracle(1)` server.  The
+`ltsigkey` is the servers long-term signing key for threshold operations. This
+key only needed for threshold operation, if you use SPHINX in a single-server
+setting you don't need this. 
+
 # SECURITY CONSIDERATIONS
 
 You **should** back up and encrypt your master key.
@@ -307,6 +338,14 @@ of your master password.
 
 The `validate_password` configuration setting if enabled, decreases
 security slightly (by 5 bits). In general it should be safe to enable.
+
+The `userlist` configuration setting is by default enabled, and allows a server
+operator to correlate records that belong to the same SPHINX user on the same
+online service. If you have multiple accounts on an online service and all of
+them are handled by the same SPHINX server, the server operator can take note
+when a userlist record is updated and which SPHINX record belongs to this
+operation. This leaks some information, that can be used by an adversarial
+server operator to correlate records.
 
 In this man page we are using echo only for demonstration, you should
 use something like this instead (or even directly `getpwd(1)` from the

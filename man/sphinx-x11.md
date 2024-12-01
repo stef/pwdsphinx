@@ -86,7 +86,7 @@ As an example the `user-pass-otp.sphinx` script
 is explained below:
 
 ```
-#!./sphinx-x11
+#!sphinx-x11
 
 wait-for-click
 user

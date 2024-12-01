@@ -3,12 +3,6 @@
 # whether to produce some output on the console
 #verbose = False
 
-# the ip address or hostname the server is listening on
-#address = 127.0.0.1
-
-# the port on which the server is listening
-#port = 2355
-
 # the directory where the client stores its master secret - you might want to
 # back this up
 #datadir = ~/.config/sphinx
@@ -32,6 +26,31 @@
 # the threshold - must specify at least this many servers in the
 # [servers] section
 # threshold = 3
+
+# the servers used by the client
+[servers]
+# you need at least one server. the name is freely chosen (in this case it is
+# "first", but should not change, unless you want to lose access to your
+# existing passwords.
+[servers.first]
+# the ip address of the server
+address="127.0.0.1"
+# the port where the server is running, 443 is nice to punch through firewalls.
+port=443
+# the long term signature key of the server.
+ltsigkey="first.pub"
+
+# in case you want to use a threshold version of SPHINX you need at least 3
+# servers (and the threshold is then 2)
+#[servers.2nd]
+#address="127.0.0.1"
+#port=2355
+#ltsigkey="2nd.pub"
+#
+#[servers.3rd]
+#address="127.0.0.1"
+#port=5523
+#ltsigkey="3rd.pub"
 
 # the server section is only needed if you run the oracle yourself.
 [server]
@@ -71,6 +90,12 @@ ssl_cert="cert.pem"
 # when checking freshness of puzzle solution, allow this extra
 # gracetime in addition to the hardness max solution time
 #rl_gracetime=10
+
+# a path pointing at a long-term signing key. If this file doesn't exist, 
+# you can generate it by running `oracle init`, it will also generate a public
+# key, which all your clients need to put in their ltsigkey configuration
+# variable.
+ltsigkey="ltsig.key"
 
 # the websphinx section is only needed if you use the browser webextensions
 [websphinx]

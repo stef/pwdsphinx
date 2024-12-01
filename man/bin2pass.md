@@ -41,7 +41,7 @@ resulting password having characters from digits, lower- and upper-case letters
 and the <space> and * symbols.
 
 ```
-dd if=/dev/random bs=1 count=30 | ./pwdsphinx/bin2pass.py " *"
+dd if=/dev/random bs=1 count=32 | ./pwdsphinx/bin2pass.py " *"
 ```
 
 # REPORTING BUGS
