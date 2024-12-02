@@ -207,7 +207,6 @@ def webauthn_create(data):
     clearmem(arg)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
     challenge_sig =  pysodium.crypto_sign_detached(data['challenge'], sk)
-    clearmem(sk)
     res = {
         'pk': b2a_base64(pk).decode('utf8'),
         'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
@@ -217,6 +216,23 @@ def webauthn_create(data):
         'id': data['id'],
         'tabId': data['tabId']
     }
+
+    # delete first user
+    m = Multiplexer(sphinx.servers)
+    sphinx.delete(m, pwd, 'raw://'+data['name'], data['site'])
+    m.connect()
+    m.close()
+
+    # create new user with pk
+    m = Multiplexer(sphinx.servers)
+    m.connect()
+    # TODO add optional argument to create() to skip extending the userlist
+    orig_userlist = sphinx.userlist
+    sphinx.userlist = False
+    sphinx.create(m, pwd, 'raw://'+pk.hex(), data['site'], '', '', target = sk)
+    sphinx.userlist = orig_userlist
+    m.close()
+    clearmem(sk)
     send_message({'results': res})
   try:
     pwd=None
@@ -227,7 +243,7 @@ def webauthn_create(data):
             send_message({ 'results': 'fail', 'id': data['id'], 'tabId': data['tabId'], 'cmd': res['cmd']})
             return
         if not pwdq(pwd): pwd=None
-
+    # TODO use webauthn:// instead of raw:// - don't forget to rewrite it in handle()
     handler(callback, sphinx.create, pwd, 'raw://'+data['name'], data['site'], '', '')
   except Exception as e:
       send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
