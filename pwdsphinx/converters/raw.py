@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 def convert(rwd):
-    return rwd
+    # rwd[:] does not copy the underlying data, and thus
+    # a clearmem() not only wipes the original, but also the copy...
+    return rwd[:1] + rwd[1:]
 
 schema = {"raw": convert}
 
