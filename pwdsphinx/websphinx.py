@@ -202,9 +202,19 @@ def echo(data):
     send_message(data)
 
 def webauthn_create(data):
-  def callback(arg):
-    pk, sk = pysodium.crypto_sign_seed_keypair(arg)
-    clearmem(arg)
+  try:
+    pwd=None
+    while not pwd:
+        pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
+        if pwd != pwd2:
+            send_message({ 'results': 'fail', 'id': data['id'], 'tabId': data['tabId'], 'cmd': res['cmd']})
+            return
+        if not pwdq(pwd): pwd=None
+    # TODO use webauthn:// instead of raw:// - don't forget to rewrite it in handle()
+    rand_bytes = pysodium.randombytes(32)
+    pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
+    clearmem(rand_bytes)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
     challenge_sig =  pysodium.crypto_sign_detached(data['challenge'], sk)
     res = {
@@ -217,12 +227,6 @@ def webauthn_create(data):
         'tabId': data['tabId']
     }
 
-    # delete first user
-    m = Multiplexer(sphinx.servers)
-    sphinx.delete(m, pwd, 'raw://'+data['name'], data['site'])
-    m.connect()
-    m.close()
-
     # create new user with pk
     m = Multiplexer(sphinx.servers)
     m.connect()
@@ -234,19 +238,9 @@ def webauthn_create(data):
     m.close()
     clearmem(sk)
     send_message({'results': res})
-  try:
-    pwd=None
-    while not pwd:
-        pwd=getpwd("create password for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
-        pwd2=getpwd("REPEAT: create for user \"%s\" at host \"%s\"%%0a" % (data['name'], data['site']))
-        if pwd != pwd2:
-            send_message({ 'results': 'fail', 'id': data['id'], 'tabId': data['tabId'], 'cmd': res['cmd']})
-            return
-        if not pwdq(pwd): pwd=None
-    # TODO use webauthn:// instead of raw:// - don't forget to rewrite it in handle()
-    handler(callback, sphinx.create, pwd, 'raw://'+data['name'], data['site'], '', '')
   except Exception as e:
       send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
+      #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
 
 func_map = {
     'login': get,
