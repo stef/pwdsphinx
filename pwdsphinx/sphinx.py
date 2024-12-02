@@ -493,12 +493,14 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   else:
       checkdigit = 0
 
-  if target:
+  if target and not user.startswith('raw;//'):
     trwd, char_classes, symbols = bin2pass.pass2bin(target, None)
     xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),trwd)
     size = len(target)
     #char_classes = 'uld'
     #symbols = bin2pass.symbols
+  elif user.startswith('raw://'):
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),target)
   else:
     _uppers = set([x.decode('utf8') for x in bin2pass.sets['u']])
     _lowers = set([x.decode('utf8') for x in bin2pass.sets['l']])
