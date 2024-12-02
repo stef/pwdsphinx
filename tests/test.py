@@ -18,7 +18,7 @@ import pyoprf, ctypes
 # python3 -m unittest discover --start-directory ../tests
 
 # disable the output of sphinx
-sphinx.print = Mock()
+#sphinx.print = Mock()
 
 N = 3
 data_dir = 'data/'
@@ -473,6 +473,29 @@ class TestEndToEnd(unittest.TestCase):
     def test_main_inv_params(self):
         for cmd in ('create','get','change','commit','undo','delete','list'):
             self.assertRaises(SystemExit, sphinx.main, ('sphinx.py', cmd))
+
+    def test_predefined_pwd(self):
+        with connect() as s:
+            rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size, target = pwd)
+            self.assertIsInstance(rwd0, str)
+        self.assertEqual(pwd,rwd0)
+
+        with connect() as s:
+            rwd = sphinx.get(s, pwd, user, host)
+        self.assertIsInstance(rwd, str)
+
+        self.assertEqual(rwd,rwd0)
+
+    def test_predefined_raw(self):
+        target = b'A' * 32
+        with connect() as s:
+            rwd0 = sphinx.create(s, pwd, 'raw://'+user, host, '', '', 0, target = target)
+        self.assertEqual(target,rwd0)
+
+        with connect() as s:
+            rwd = sphinx.get(s, pwd, 'raw://'+user, host)
+
+        self.assertEqual(rwd,rwd0)
 
 class TestEndToEndNoUserlist(TestEndToEnd):
   def setUp(self):
