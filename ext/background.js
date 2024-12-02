@@ -27,7 +27,6 @@ var nativeport = browser.runtime.connectNative(APP_NAME);
 var changeData = true;
 
 nativeport.onMessage.addListener((response) => {
-  console.log("MSG FROM WEBSPHINX", response);
   // internal error handling
   if (browser.runtime.lastError) {
     var error = browser.runtime.lastError.message;
@@ -77,10 +76,8 @@ nativeport.onMessage.addListener((response) => {
 
   // handle webauthn create
   if(response.results.cmd == 'webauthn-create') {
-    console.log("WEBAUTHN_CREATE FROM WEBSPHINX", response.results);
     const tabId = Number(response.results.tabId);
     browser.tabs.sendMessage(tabId, response);
-    console.log("WEBAUTHN_CREATE SENT TO CS", response.results);
     return;
   }
 
@@ -170,9 +167,7 @@ browser.runtime.onConnect.addListener(function(p) {
 	  });
   }
   if(p.name == 'content-script') {
-      console.log("CONN FROM CS TO BGJS HUH?");
 	  p.onMessage.addListener(function(request, sender, sendResponse) {
-        console.log("MSG FROM CS TO BGJS, MEH?!", request);
 		let msg = {
 			cmd: request.action,
 			mode: request.mode,
@@ -189,12 +184,10 @@ browser.runtime.onConnect.addListener(function(p) {
 // handle "synchronous" calls for webauthn
 chrome.runtime.onMessage.addListener(
 	function(request, sender, sendResponse) {
-        console.log("MSG TO BGJS AS RUNTIME.POSTMSG", request);
         if(!request.action || !request.action.startsWith('webauthn')) {
             return;
         }
         const tabId = sender.tab.id;
-        console.log("MSG FROM CS TO BGJS", request);
 		let msg = {
 			cmd: request.action,
 			mode: request.mode,

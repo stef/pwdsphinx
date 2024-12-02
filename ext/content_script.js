@@ -13,7 +13,6 @@
 	window.addEventListener('message', webauthnEventHandler);
 
     br.runtime.onMessage.addListener((m) => {
-        console.log("MSG FROM BG TO CS", m);
         let port = pagePorts[m.results.id];
         port.postMessage(m.results);
         delete pagePorts[m.results.id];
@@ -24,7 +23,6 @@
     }
 
     function webauthnEventHandler(msg) {
-        console.log("MSGRECV", msg);
         let options = msg.data;
         if(!options.type || options.type != "sphinxWebauthnEvent") {
             return;
@@ -33,7 +31,6 @@
             console.log("invalid webauthnEvent sender");
             return;
         }
-        console.log("MSG DBG", msg, options);
         const site = window.location.hostname;
         // TODO
         let bgMsg = {
