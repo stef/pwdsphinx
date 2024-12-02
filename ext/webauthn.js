@@ -39,9 +39,10 @@ navigator.credentials.get = async function(options) {
         // not webauthn call
         return await browserCredentials.get(options);
     }
+    console.log("GET webauth", options);
     const pubKey = options.publicKey;
-    const host = window.location.hostname;
     const response = await createEvent("webauthn-get", {});
+    response.clientDataJSON = JSON.stringify(options);
     console.log("GET RESP", response);
     return createGetCredentialsResponse(response);
 };
