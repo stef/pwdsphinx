@@ -25,6 +25,7 @@ from zxcvbn import zxcvbn
 from SecureString import clearmem
 from pyoprf.multiplexer import Multiplexer
 from binascii import b2a_base64
+from base64 import b64decode
 try:
     from pwdsphinx import sphinx, bin2pass
     from pwdsphinx.config import getcfg
@@ -216,7 +217,7 @@ def webauthn_create(data):
     pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
     clearmem(rand_bytes)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
-    challenge_sig =  pysodium.crypto_sign_detached(data['challenge'], sk)
+    challenge_sig =  pysodium.crypto_sign_detached(b64decode(data['challenge']), sk)
     res = {
         'pk': b2a_base64(pk).decode('utf8'),
         'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
@@ -242,6 +243,26 @@ def webauthn_create(data):
       send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
       #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
 
+def webauthn_get(data):
+    def callback(arg):
+        challenge_sig = pysodium.crypto_sign_detached(b64decode(data['challenge']), arg)
+        res = {
+            'name': data['name'],
+            'site': data['site'],
+            'cmd': 'webauthn-get',
+            'id': data['id'],
+            'tabId': data['tabId'],
+            'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
+        }
+        send_message({'results': res})
+    try:
+        pwd=getpwd("get password for user \"%s\" at host \"%s\"" % (data['name'], data['site']))
+        handler(callback, sphinx.get, pwd, 'raw://'+b64decode(data['pk']).hex(), data['site'])
+    except Exception as e:
+        send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
+        #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
+
+
 func_map = {
     'login': get,
     'list': users,
@@ -252,6 +273,7 @@ func_map = {
     'qrcode': qrcode,
     'echo': echo,
     'webauthn-create': webauthn_create,
+    'webauthn-get': webauthn_get,
 }
 
 

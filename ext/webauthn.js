@@ -13,6 +13,16 @@ navigator.credentials.create = async function(args) {
         // TODO throw popop warning
         return await browserCredentials.create(options);
     }
+    let hasSupportedAlgo = false;
+    for(let a of options.pubKeyCredParams) {
+        if(a.alg == -8) {
+            hasSupportedAlgo = true;
+            break;
+        }
+    }
+    if(!hasSupportedAlgo) {
+        return await browserCredentials.create(options);
+    }
     const host = window.location.hostname;
     // Required response fields
     const params = {
