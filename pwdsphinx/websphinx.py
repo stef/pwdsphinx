@@ -219,8 +219,8 @@ def webauthn_create(data):
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
     challenge_sig =  pysodium.crypto_sign_detached(b64decode(data['challenge']), sk)
     res = {
-        'pk': b2a_base64(pk).decode('utf8'),
-        'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
+        'pk': b2a_base64(pk).decode('utf8').strip(),
+        'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
         'name': data['name'],
         'site': data['site'],
         'cmd': 'webauthn-create',
@@ -252,7 +252,7 @@ def webauthn_get(data):
             'cmd': 'webauthn-get',
             'id': data['id'],
             'tabId': data['tabId'],
-            'challenge_sig': b2a_base64(challenge_sig).decode('utf8'),
+            'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
         }
         send_message({'results': res})
     try:
