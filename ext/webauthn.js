@@ -13,6 +13,10 @@ navigator.credentials.create = async function(args) {
         // TODO throw popop warning
         return await browserCredentials.create(options);
     }
+    //algos:
+    // -8: Ed25519 <- only supported
+    // -7: ES256
+    // -257: RS256
     let hasSupportedAlgo = false;
     for(let a of options.pubKeyCredParams) {
         if(a.alg == -8) {
@@ -29,17 +33,11 @@ navigator.credentials.create = async function(args) {
         'challenge': arrayBufferToBase64(options.challenge),
         'username': options.user.name,
         'userid': arrayBufferToBase64(options.user.id),
-        //algos:
-        // -8: Ed25519 !!
-		// -7: ES256
-		// -257: RS256
-        'algos': options.pubKeyCredParams,
     };
-    console.log("SENDING PARAMS TO CS", params);
     let response = await createEvent("webauthn-create", params);
     response.clientDataJSON = JSON.stringify(options);
-    console.log("CREATE RESP", response);
     let createObj = createCreateCredentialsResponse(response);
+    console.log("CREATE RESP", response, createObj);
     return createObj;
 };
 
@@ -84,17 +82,20 @@ function createCreateCredentialsResponse(res) {
     if(res.error) {
         return;
     }
+    console.log("RESRESERS", res);
     const credential = {
-        id: res.id, // base64 encoded raw id
-        rawId: stringToBuffer(res.id, true), // decode id
+        id: res.id,
+        rawId: stringToBuffer(res.id),
         type: "public-key",
         response: {
-            authenticatorData: stringToBuffer(res.authenticatorData),
-            clientDataJSON: stringToBuffer(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
-            signature: stringToBuffer(res.signature),
-            userHandle: stringToBuffer(res.userHandle),
+            authenticatorData: stringToBuffer(res.authenticatorData, true),
+            clientDataJSON: res.clientDataJSON, // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
+            signature: stringToBuffer(res.challenge_sig, true),
+            userHandle: stringToBuffer(res.name),
+            publicKeyAlgorithm: -8,
         },
         authenticatorAttachment: "cross-platform",
+        key: stringToBuffer(res.pk, true),
     };
     Object.setPrototypeOf(credential.response, AuthenticatorAssertionResponse.prototype);
     Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
@@ -113,7 +114,7 @@ function stringToBuffer(s, isB64) {
     if(isB64) {
         s = atob(s.replaceAll('-', '+').replaceAll('_', '/'));
     }
-    const arr = Uint8Array.from(str, c => c.charCodeAt(0));
+    const arr = Uint8Array.from(s, c => c.charCodeAt(0));
     return arr.buffer;
 }
 
