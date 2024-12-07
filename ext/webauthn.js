@@ -28,13 +28,16 @@ navigator.credentials.create = async function(args) {
         return await browserCredentials.create(options);
     }
     const host = window.location.hostname;
+    options.challenge = arrayBufferToBase64(options.challenge);
     // Required response fields
     const params = {
-        'challenge': arrayBufferToBase64(options.challenge),
+        'challenge': options.challenge,
         'username': options.user.name,
         'userid': arrayBufferToBase64(options.user.id),
     };
     let response = await createEvent("webauthn-create", params);
+    options["type"] = "webauthn.create";
+    options["origin"] = window.location.origin;
     response.clientDataJSON = JSON.stringify(options);
     let createObj = createCreateCredentialsResponse(response);
     console.log("CREATE RESP", response, createObj);
@@ -50,6 +53,8 @@ navigator.credentials.get = async function(options) {
     console.log("GET webauth", options);
     const pubKey = options.publicKey;
     const response = await createEvent("webauthn-get", {});
+    options["type"] = "webauthn.get";
+    options["origin"] = window.location.origin;
     response.clientDataJSON = JSON.stringify(options);
     console.log("GET RESP", response);
     return createGetCredentialsResponse(response);
@@ -82,23 +87,28 @@ function createCreateCredentialsResponse(res) {
     if(res.error) {
         return;
     }
-    console.log("RESRESERS", res);
+    res.pk = res.pk.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    const enc = new TextEncoder();
     const credential = {
-        id: res.id,
-        rawId: stringToBuffer(res.id),
+        id: res.pk,
+        rawId: stringToBuffer(res.pk, true),
         type: "public-key",
+        authenticatorAttachment: "platform",
         response: {
-            authenticatorData: stringToBuffer(res.authenticatorData, true),
-            clientDataJSON: res.clientDataJSON, // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
-            signature: stringToBuffer(res.challenge_sig, true),
-            userHandle: stringToBuffer(res.name),
+            // TODO attestationObject https://developer.mozilla.org/en-US/docs/Web/API/AuthenticatorAttestationResponse/attestationObject
+            // attestationObject: res.attestationObject,
+            clientDataJSON: enc.encode(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
             publicKeyAlgorithm: -8,
+            //getPublicKey: () => stringToBuffer(res.pk, true),
+            //getPublicKeyAlgorithm: () => -8,
+            //getTransport: () => "",
+            //getAuthenticatorData: () => "",
         },
-        authenticatorAttachment: "cross-platform",
         key: stringToBuffer(res.pk, true),
+        getClientExtensionResults: () => {},
     };
-    Object.setPrototypeOf(credential.response, AuthenticatorAssertionResponse.prototype);
-    Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
+    //Object.setPrototypeOf(credential.response, AuthenticatorAttestationResponse.prototype);
+    //Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
     return credential;
 }
 
@@ -124,5 +134,9 @@ function arrayBufferToBase64(buffer) {
 	for (let i = 0; i < bytes.byteLength; i++) {
 		binary += String.fromCharCode(bytes[i]);
 	}
-	return window.btoa(binary);
+	return toBase64(binary);
+}
+
+function toBase64(s) {
+	return window.btoa(s).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }

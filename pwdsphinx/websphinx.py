@@ -217,10 +217,10 @@ def webauthn_create(data):
     pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
     clearmem(rand_bytes)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
-    challenge_sig =  pysodium.crypto_sign_detached(b64decode(data['challenge']), sk)
+    #challenge_sig =  pysodium.crypto_sign_detached(b64decode(data['challenge'] + '=' * (-len(data['challenge']) % 4)), sk)
     res = {
         'pk': b2a_base64(pk).decode('utf8').strip(),
-        'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
+        #'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
         'name': data['name'],
         'site': data['site'],
         'cmd': 'webauthn-create',
@@ -240,12 +240,12 @@ def webauthn_create(data):
     clearmem(sk)
     send_message({'results': res})
   except Exception as e:
-      send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
-      #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
+      #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
+      send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
 
 def webauthn_get(data):
     def callback(arg):
-        challenge_sig = pysodium.crypto_sign_detached(b64decode(data['challenge']), arg)
+        challenge_sig = pysodium.crypto_sign_detached(b64decode(data['challenge'] + '=='), arg)
         res = {
             'name': data['name'],
             'site': data['site'],
@@ -257,7 +257,7 @@ def webauthn_get(data):
         send_message({'results': res})
     try:
         pwd=getpwd("get password for user \"%s\" at host \"%s\"" % (data['name'], data['site']))
-        handler(callback, sphinx.get, pwd, 'raw://'+b64decode(data['pk']).hex(), data['site'])
+        handler(callback, sphinx.get, pwd, 'raw://'+b64decode(data['pk'] + '==').hex(), data['site'])
     except Exception as e:
         send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
         #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
