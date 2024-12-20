@@ -18,7 +18,7 @@ import pyoprf, ctypes
 # python3 -m unittest discover --start-directory ../tests
 
 # disable the output of sphinx
-#sphinx.print = Mock()
+sphinx.print = Mock()
 
 N = 3
 data_dir = 'data/'
