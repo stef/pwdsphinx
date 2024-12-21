@@ -15,6 +15,7 @@ except ImportError:
 from equihash import solve
 from itertools import permutations
 from pyoprf.multiplexer import Multiplexer
+import ostore
 try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
@@ -826,14 +827,48 @@ def qrcode(output, key):
   else:
     print(qr.to_svg_str(2))
 
+def ostore_handler(m, pwd, params, newpwd=None):
+    op, keyid, args = ostore.parse(params)
+    user = keyid
+    host = 'opaque store'
+
+    if op == ostore.changepwd:
+        args.insert(0, {'m': Multiplexer,
+                        'servers': servers,
+                        'change': change,
+                        'commit': commit,
+                        'user': user,
+                        'host': host,
+                        'pwd': pwd,
+                        'newpwd': newpwd})
+    elif op == ostore.erase:
+        args.insert(0, {'m': Multiplexer,
+                        'servers': servers,
+                        'delete': delete,
+                        'pwd': pwd,
+                        'user': user,
+                        'host': host})
+
+    if op == ostore.store:
+        rwd = create(m, pwd, user, host)
+    else:
+        rwd = get(m, pwd, user, host)
+    op(rwd, keyid, *args)
+
+    return True
+
 def usage(params, help=False):
-  print("usage: %s init" % params[0])
+  print("usage:")
+  print("SPHINX style passwords")
+  print("       %s init" % params[0])
   print("       echo -n 'password' | %s <create|change> <user> <site> <[u][l][d][s] [<size>] [<symbols>]> | [<target password>]" % params[0])
   print("       echo -n 'password' | %s get <user> <site>" % params[0])
-  print("       %s <commit|undo|delete> <user> <site> # if rwd_keys is false in your config" % params[0])
-  print("       echo -n 'password' | %s <commit|undo|delete> <user> <site> # if rwd_keys is true in your config" % params[0])
+  if rwd_keys: print("       echo -n 'password' | %s <commit|undo|delete> <user> <site>" % params[0])
+  else: print("       %s <commit|undo|delete> <user> <site>" % params[0])
   if userlist: print("       %s list <site>" % params[0])
   print("       %s qr [svg] [key]" % params[0])
+  if ostore.available:
+      ostore.usage(params)
   if help: sys.exit(0)
   sys.exit(100)
 
@@ -945,20 +980,26 @@ def main(params=sys.argv):
     if params[2:]: usage(params)
     qrcode(output, key)
     return
+  elif ostore.available and ostore.is_cmd(params):
+    cmd = ostore_handler
+    args = [params]
   else:
     usage(params)
 
   error = None
   if cmd != users:
     pwd = ''
-    if (rwd_keys or cmd in {create,change,get}):
+    if (rwd_keys or cmd in {create,change,get, ostore_handler}):
       pwd = getpwd()
-      if cmd == change:
+      if cmd == change or (cmd == ostore_handler and params[1] == 'changepwd'):
         newpwd = getpwd()
         if not newpwd:
           newpwd = pwd
         test_pwd(newpwd)
-        args=(newpwd,) + args
+        if cmd == change:
+            args=(newpwd,) + args
+        else:
+            args=args + [newpwd]
       if cmd == create:
         test_pwd(pwd)
     try:
@@ -967,7 +1008,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      #raise # only for dbg
+      raise # only for dbg
     clearmem(pwd)
   else:
     try:
@@ -976,7 +1017,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      #raise # only for dbg
+      raise # only for dbg
   m.close()
 
   if not ret:
@@ -988,7 +1029,7 @@ def main(params=sys.argv):
       sys.exit(2) # bad check digit
     sys.exit(1) # generic errors
 
-  if cmd not in {delete, undo, commit}:
+  if cmd not in {delete, undo, commit, ostore_handler}:
     print(ret)
     sys.stdout.flush()
     clearmem(ret)
