@@ -3,13 +3,14 @@ from os import listdir, makedirs, environ, path
 from shutil import rmtree, copyfile
 from tempfile import mkdtemp
 from unittest.mock import Mock
-from io import BytesIO
+from io import BytesIO, StringIO
 import sys, pysodium, subprocess, time
 import tracemalloc
 from pyoprf import multiplexer
-from pwdsphinx import sphinx, bin2pass
-from binascii import b2a_base64
+from pwdsphinx import sphinx, bin2pass, ostore
+from binascii import b2a_base64, a2b_base64
 import pyoprf, ctypes
+import contextlib
 
 # to get coverage, run
 # PYTHONPATH=.. coverage run ../tests/test.py
@@ -36,10 +37,13 @@ servers = {'zero': {'host': 'localhost', 'port': 10000, 'ssl_cert': 'cert.pem'},
            'eris': {'host': 'localhost', 'port': 10004, 'ssl_cert': 'cert.pem'}
            }
 corrupt_dkg_lib = environ.get('CORRUPT_DKG_LIB')
+ostore_server = environ.get('OPAQUESTORE_SERVER')
 orig_servers=sphinx.servers
+max_recovery_tokens = 2
+ostore_max_fails = 3
 
 class Input:
-  def __init__(self, txt = None):
+  def __init__(self, txt = None, pwd = pwd):
     if txt:
       self.buffer = BytesIO('\n'.join((pwd, txt)).encode())
     else:
@@ -68,6 +72,7 @@ class TestEndToEnd(unittest.TestCase):
       #cstderr = ctypes.c_void_p.in_dll(libc, 'stderr')
       #log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
       #log_file.value = cstderr.value
+      cls._validate_password = sphinx.validate_password
 
       cls._root = mkdtemp(prefix='sphinx-oracle-root.')
       root = cls._root
@@ -111,6 +116,45 @@ class TestEndToEnd(unittest.TestCase):
         log.close()
       if corrupt_dkg_lib is not None:
         del env["BYZANTINE_DKG"]
+
+      if ostore.available and ostore_server is not None and path.isfile(ostore_server):
+        cls._ostore_root = mkdtemp(prefix='opaquestore-server-root.')
+        root = cls._ostore_root
+        pks = []
+        for idx in range(len(servers)):
+          makedirs(f"{root}/servers/{idx}")
+          copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
+          copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
+          pk, sk = pysodium.crypto_sign_keypair()
+          with open(f"{root}/servers/{idx}/ltsig.key", 'wb') as fd:
+            fd.write(sk)
+          #pks.append(b2a_base64(pk).decode("utf8")[:-1])
+          pks.append(pk)
+          with open(f"{root}/servers/{idx}/opaque-stored.cfg", 'w') as fd:
+            fd.write(f'[server]\n'
+                     f'verbose = true\n'
+                     f'address = "127.0.0.1"\n'
+                     f'port={23000+idx}\n'
+                     f'timeout = 30\n'
+                     f'max_kids = 5\n'
+                     f'ssl_key= "key.pem"\n'
+                     f'ssl_cert= "cert.pem"\n'
+                     f'ltsigkey = "ltsig.key"\n'
+                     f'record_salt = "some random string to salt the record ids"\n'
+                     f'max_blob_size = 8192\n'
+                     f'max_recovery_tokens = {max_recovery_tokens}\n'
+                     f'max_fails = {ostore_max_fails}\n'
+                     f'datadir = "data"\n\n')
+        # lt sig pubkeys
+        for idx in range(len(servers)):
+          for pk, name in zip(pks, servers.keys()):
+            with open(f"data/os_{name}.pub",'wb') as fd:
+              fd.write(pk)
+        for idx in range(len(servers)):
+          log = open(f"{root}/servers/{idx}/log", "w")
+          cls._oracles.append(
+            (subprocess.Popen([ostore_server], cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()]), log))
+          log.close()
       time.sleep(0.8)
 
     @classmethod
@@ -123,14 +167,19 @@ class TestEndToEnd(unittest.TestCase):
       time.sleep(0.4)
 
     def tearDown(self):
+      sphinx.validate_password=self._validate_password
       sphinx.servers = orig_servers
       #cleanup()
+      roots = [self._root]
+      if hasattr(self, '_ostore_root'):
+        roots.append(self._ostore_root)
       for idx in range(len(servers)):
-        ddir = f"{self._root}/servers/{idx}/data/"
-        if not path.exists(ddir): continue
-        for f in listdir(ddir):
-          if f == 'key': continue
-          rmtree(ddir+f)
+        for root in roots:
+          ddir = f"{root}/servers/{idx}/data/"
+          if not path.exists(ddir): continue
+          for f in listdir(ddir):
+            if f == 'key': continue
+            rmtree(ddir+f)
 
     def test_create_user(self):
         with connect() as s:
@@ -498,6 +547,230 @@ class TestEndToEnd(unittest.TestCase):
             rwd = sphinx.get(s, pwd, 'raw://'+user, host)
 
         self.assertEqual(rwd,rwd0)
+
+    def test_ostore_store(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+    def test_ostore_read(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+    def test_ostore_read_invpwd(self):
+      if not ostore.available or ostore_server is None: return
+      vp = sphinx.validate_password
+      sphinx.validate_password = False
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input(pwd='qwer')
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+      sphinx.validate_password = vp
+
+    def test_ostore_replace(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'replace', user, 'sphinx.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('sphinx.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+    def test_ostore_replace_invpwd(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+      vp = sphinx.validate_password
+      sphinx.validate_password = False
+
+      sys.stdin = Input(pwd='qwer')
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'replace', user, 'sphinx.cfg'))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+    def test_ostore_erase(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'erase', user)))
+
+      sys.stdin = Input()
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+
+    def test_ostore_erase_invpwd(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+      vp = sphinx.validate_password
+      sphinx.validate_password = False
+
+      sys.stdin = Input(pwd='qwer')
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'erase', user))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+    def test_ostore_recoverytokens(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      tokens = {i: set() for i in range(len(ostore.client.config['servers']))}
+      for _ in range(max_recovery_tokens * 3):
+        sys.stdin = Input()
+        f = StringIO()
+        with contextlib.redirect_stdout(f):
+          self.assertIsNone(sphinx.main(('sphinx.py', 'recovery-tokens', user)))
+        lines = f.getvalue().split('\n')
+        self.assertTrue(len(lines)==3)
+        self.assertTrue(lines[0]=='Store the following recovery token, in case this record is locked')
+        self.assertTrue(lines[2]=='')
+        self.assertTrue(len(a2b_base64(lines[1])) == 16 * len(ostore.client.config['servers']))
+        stoks = sphinx.split_by_n(a2b_base64(lines[1]), 16)
+        for i in range(len(ostore.client.config['servers'])):
+          if len(tokens)<max_recovery_tokens and stoks[i] not in tokens[i]:
+            tokens[i].add(stoks[i])
+          if (len(tokens[i])==max_recovery_tokens):
+            self.assertTrue(stoks[i] in tokens[i])
+
+    def test_ostore_recoverytokens_invpwd(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      vp = sphinx.validate_password
+      sphinx.validate_password = False
+
+      sys.stdin = Input(pwd="qwer")
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'recovery-tokens', user))
+
+    def test_ostore_unlock(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+      lines = f.getvalue().split('\n')
+      self.assertTrue(lines[0] == 'successfully created opaque store record. Store the following recovery token, in case this record is locked')
+      token = lines[1]
+
+      vp = sphinx.validate_password
+      sphinx.validate_password = False
+
+      for i in range(ostore_max_fails+1):
+        sys.stdin = Input(pwd="qwer")
+        self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+
+      sys.stdin = Input()
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'unlock', user, token)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+    def test_ostore_changepwd(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input(txt='qwer')
+      self.assertIsNone(sphinx.main(('sphinx.py', 'changepwd', user)))
+
+      sys.stdin = Input(pwd='qwer')
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        cfg = fd.read()
+      self.assertTrue(cfg in f.getvalue())
+
+      sys.stdin = Input()
+      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+
+    def test_ostore_edit(self):
+      if not ostore.available or ostore_server is None: return
+      sys.stdin = Input()
+      self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
+
+      sys.stdin = Input()
+      environ['EDITOR']=path.dirname(path.abspath(__file__)) + '/editor.py'
+      self.assertIsNone(sphinx.main(('sphinx.py', 'edit', user)))
+
+      sys.stdin = Input()
+      f = StringIO()
+      with contextlib.redirect_stdout(f):
+        self.assertIsNone(sphinx.main(('sphinx.py', 'read', user)))
+      with open('opaque-store.cfg','r') as fd:
+        sorted_cfg = '\n'.join(sorted(fd.read().split('\n')))
+      self.assertTrue(sorted_cfg == f.getvalue()[:-1] )
 
 class TestEndToEndNoUserlist(TestEndToEnd):
   def setUp(self):
