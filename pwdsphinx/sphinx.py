@@ -15,7 +15,7 @@ except ImportError:
 from equihash import solve
 from itertools import permutations
 from pyoprf.multiplexer import Multiplexer
-import ostore
+
 try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
@@ -23,8 +23,9 @@ try:
   from pwdsphinx.utils import split_by_n
   from pwdsphinx.ext import init_browser_ext
   from pwdsphinx.converter import convert
+  from pwdsphinx import ostore
 except ImportError:
-  import bin2pass
+  import bin2pass, ostore
   from config import getcfg
   from consts import *
   from utils import split_by_n
