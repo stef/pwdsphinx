@@ -32,6 +32,16 @@ install also an X11 variant of pinentry from the gnupg project:
 
 (or anything equivalent to `apt-get install` on your OS)
 
+If you want to store other "secrets" that are longer than just 30-40 bytes, you
+can install 
+
+ - opaque-store: https://github.com/stef/opaque-store/
+   using `pip3 install opaquestore`
+
+which depends additionally on 
+
+ - libopaque: https://github.com/stef/libopaque
+
 ## Installation
 
 `pip3 install pwdsphinx` should get you started.
@@ -294,6 +304,163 @@ code is displayed on your screen.
 
 If for whatever reason you want to display the QR code as an SVG, just append
 the `svg` keyword to the end of the `sphinx qr` command.
+
+## OPAQUE-Store client-integration
+
+If you have opaque-store installed and configured correctly you get a number of
+additional operations, which allow you to store traditionally encrypted blobs
+of information. For a gentle introduction how this works using OPAQUE, have a
+look at this post:
+
+`https://www.ctrlc.hu/~stef/blog/posts/How_to_recover_static_secrets_using_OPAQUE.html`
+
+The following operations will be available if opaque-store is setup correctly:
+
+```sh
+echo -n 'password' | sphinx store <keyid> file-to-store
+echo -n 'password' | sphinx read <keyid>
+echo -n 'password' | sphinx replace [force] <keyid> file-to-store
+echo -n 'password' | sphinx edit [force] <keyid>
+echo -n 'password' | sphinx changepwd [force] <keyid>
+echo -n 'password' | sphinx erase [force] <keyid>
+echo -n 'password' | sphinx recovery-tokens <keyid>
+echo -n 'password' | sphinx unlock <keyid> <recovery-token>
+```
+
+### How does OPAQUE-Store SPHINX integration work
+
+In all OPAQUE-Store operations we first execute a SPHINX get
+operation, that calculates the password which is used with
+OPAQUE. This means that the input passwords for OPAQUE will be the
+strongest possible and essentially un-bruteforcable on their own
+(without SPHINX). Of course online bruteforce attacks are still
+possible going through SPHINX. But OPAQUE is able to detect wrong
+passwords and thus can lock your record after a pre-configured amount
+of failed attempts. Of course this does not apply to the operator of
+an OPAQUE server, who can circumvent the locking of records. And thus:
+
+### A Warning: don't let one entity control your SPHINX and OPAQUE-Store servers
+
+As you can see every opaque-store op needs a password on standard
+input. This password is run through SPHINX, and the output password is
+used in the OPAQUE protocol as the input password. This also means,
+that if you use a single server setup for both SPHINX and
+OPAQUE-Store, the two servers should not be controlled by the same
+entity, otherwise this entity is able to offline-bruteforce your
+SPHINX master password. If you use either of these services in a
+threshold setup, and these threshold servers are controlled by
+different entities, you should be ok, as long as noone controls a
+threshold number of oracles/servers.
+
+
+### OPAQUE-Store CLI Parameters
+
+#### KeyId
+
+Every operation provided by the OPAQUE-Storage (O-S) integration needs
+a "keyid" parameter, this references your record stored by
+O-S. Internally the client uses the configuration value `id_salt`,
+together with the name of the O-S server to hash the keyid parameter
+into a record id for the O-S Server. This means, that if you lose or
+change your `id_salt` parameter or the name of the O-S server, all
+your record ids will be different and inaccessible. So it is a good
+idea to make a backup of your configuration file containing these.
+
+#### Forced operations
+
+In the case that you are using a threshold setup, some operations
+(`replace`, `edit`, `changepwd` and `erase`) require that all servers
+successfully participate in the operation. This is to avoid, that the
+records on temporarily unavailable servers remain unchanged and lead
+later possibly to corruption. If you are sure however that this is ok,
+you can provide a `force` parameter on the CLI which reduces the
+number of servers successfully participating to the value of your
+`threshold` configuration setting.
+
+
+### Store an encrypted blob
+
+```sh
+getpwd | sphinx store <keyid> file-to-store
+```
+
+This simply does what it promises, stores the `file-to-store`
+encrypted on the OPAQUE-Store server, using a password derived from
+SPHINX. Note that this command outputs also a recovery-token, which
+you should keep safe in case your record gets locked.
+
+### Retrieving an encrypted blob
+
+```sh
+getpwd | sphinx read <keyid>
+```
+
+Straightforward, no surprise.
+
+### Overwrite an encrypted blob
+
+```sh
+getpwd | sphinx replace [force] <keyid> file-to-store
+```
+
+Whatever has been stored at `keyid` is now overwritten by an encrypted
+`file-to-store`. This only works, if there is already something stored
+at `keyid`. All servers must cooperate in this, if one or more are
+unavailable this will fail, unless `force` is specified and the
+threshold is matched, in which case the servers unavailable will be
+corrupted from this point on.
+
+### Edit a file
+
+```sh
+getpwd | sphinx edit [force] <keyid>
+```
+
+This operation fetches the file stored at `keyid` loads it into your
+editor (specified by the `EDITOR` environment variable) and stores the
+changes and saved file back on the same `keyid` overwriting the
+original.
+
+### Change your password
+
+```sh
+getpwd | sphinx changepwd [force] <keyid>
+```
+
+This operation does a full change of passwords and keys. Even if you
+don't change your own password that you provide to getpwd, SPHINX will
+change it's own key, and thus change the output password which will be
+used for the password in OPAQUE-store finally resulting in a whole new
+and fresh encryption key for your file which gets re-encrypted with
+that.
+
+### Delete a stored file
+
+```sh
+getpwd | sphinx erase [force] <keyid>
+```
+
+Nothing surprising here, does what is written on the package.
+
+### Get a recovery token
+
+```sh
+getpwd | sphinx recovery-tokens <keyid>
+```
+
+If your record is not locked, this operation gets you an additional
+recovery token, that you can use later to unlock your record, should
+it become locked.
+
+### Unlock a locked record
+
+```sh
+getpwd | sphinx unlock <keyid> <recovery-token>
+```
+
+If for some reason (someone online-bruteforcing your record, or you
+forgetting your master password) your record becomes locked by the
+servers, you can unlock it using a recovery token.
 
 ## X11 frontend
 
