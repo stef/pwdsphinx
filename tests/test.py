@@ -438,6 +438,8 @@ class TestEndToEnd(unittest.TestCase):
                     'ltsigkey': "data/eris.pub"}
         }
 
+        if isinstance(self, TestEndToEndSingleMode):
+          return
         if corrupt_dkg_lib is None:
           # skipping since we don't have the byzantine peers lib
           return
