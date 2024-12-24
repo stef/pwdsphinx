@@ -349,9 +349,8 @@ OPAQUE-Store, the two servers should not be controlled by the same
 entity, otherwise this entity is able to offline-bruteforce your
 SPHINX master password. If you use either of these services in a
 threshold setup, and these threshold servers are controlled by
-different entities, you should be ok, as long as noone controls a
+different entities, you should be ok, as long as no one controls a
 threshold number of oracles/servers.
-
 
 ### OPAQUE-Store CLI Parameters
 
