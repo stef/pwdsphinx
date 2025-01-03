@@ -21,11 +21,12 @@
 
 import subprocess
 import sys, struct, json, pysodium
+import cbor2
 from zxcvbn import zxcvbn
 from SecureString import clearmem
 from pyoprf.multiplexer import Multiplexer
 from binascii import b2a_base64
-from base64 import b64decode
+from base64 import urlsafe_b64decode
 try:
     from pwdsphinx import sphinx, bin2pass
     from pwdsphinx.config import getcfg
@@ -217,10 +218,35 @@ def webauthn_create(data):
     pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
     clearmem(rand_bytes)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
-    #challenge_sig =  pysodium.crypto_sign_detached(b64decode(data['challenge'] + '=' * (-len(data['challenge']) % 4)), sk)
+    auth_data = pysodium.crypto_hash_sha256(data['site'].encode('utf8')) + ( # rpIdHash
+        b'\x4d' + # flags https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API/Authenticator_data
+        b'\x00' * 4 + # signCount
+        b'\x00' * 16 + # attestedCredentialData->AAGUID
+        struct.pack('>H', len(pk)) + # attestedCredentialData->pk length
+        pk + # attestedCredentialData->credentialId (pk)
+        cbor2.dumps({ # cose encoded public key https://datatracker.ietf.org/doc/html/rfc8152#section-13
+            1: 1, # key type => okp
+            3: -8, # algorithm => Ed25519 (-8)
+            -1: 6, # curve => ed25519
+            -2: pk, # x => pubkey
+            # no y required (y is -3)
+    })) # attestedCredentialData->credentialPublicKey
+
+    att_sig =  pysodium.crypto_sign_detached(auth_data + pysodium.crypto_hash_sha256(data['clientDataJSON'].encode('utf-8')), sk)
+
+    attestation = cbor2.dumps({
+        'fmt': 'packed',
+        'attStmt': {
+            'alg': -8,
+            'sig': att_sig,
+        },
+        'authData': auth_data
+    })
+
     res = {
         'pk': b2a_base64(pk).decode('utf8').strip(),
-        #'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
+        'attestationObject': b2a_base64(attestation).decode('utf-8').strip(),
+        'authData': b2a_base64(auth_data).decode('utf-8').strip(),
         'name': data['name'],
         'site': data['site'],
         'cmd': 'webauthn-create',
@@ -245,7 +271,7 @@ def webauthn_create(data):
 
 def webauthn_get(data):
     def callback(arg):
-        challenge_sig = pysodium.crypto_sign_detached(b64decode(data['challenge'] + '=='), arg)
+        challenge_sig = pysodium.crypto_sign_detached(urlsafe_b64decode(data['challenge']+"=="), arg)
         res = {
             'name': data['name'],
             'site': data['site'],
@@ -257,7 +283,7 @@ def webauthn_get(data):
         send_message({'results': res})
     try:
         pwd=getpwd("get password for user \"%s\" at host \"%s\"" % (data['name'], data['site']))
-        handler(callback, sphinx.get, pwd, 'raw://'+b64decode(data['pk'] + '==').hex(), data['site'])
+        handler(callback, sphinx.get, pwd, 'raw://'+urlsafe_b64decode(data['pk']+"==").hex(), data['site'])
     except Exception as e:
         send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
         #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})

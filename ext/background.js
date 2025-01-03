@@ -192,6 +192,7 @@ chrome.runtime.onMessage.addListener(
 			cmd: request.action,
 			mode: request.mode,
 			site: request.site,
+			clientDataJSON: request.params.clientDataJSON,
 			challenge: request.params.challenge,
 			name: request.params.username,
 			id: request.id,

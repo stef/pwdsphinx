@@ -34,6 +34,7 @@ navigator.credentials.create = async function(args) {
         'challenge': options.challenge,
         'username': options.user.name,
         'userid': arrayBufferToBase64(options.user.id),
+        'clientDataJSON': JSON.stringify(options),
     };
     let response = await createEvent("webauthn-create", params);
     options["type"] = "webauthn.create";
@@ -88,7 +89,6 @@ function createCreateCredentialsResponse(res) {
         return;
     }
     res.pk = res.pk.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-    const enc = new TextEncoder();
     const credential = {
         id: res.pk,
         rawId: stringToBuffer(res.pk, true),
@@ -96,9 +96,10 @@ function createCreateCredentialsResponse(res) {
         authenticatorAttachment: "platform",
         response: {
             // TODO attestationObject https://developer.mozilla.org/en-US/docs/Web/API/AuthenticatorAttestationResponse/attestationObject
-            // attestationObject: res.attestationObject,
-            clientDataJSON: enc.encode(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
+            attestationObject: stringToBuffer(res.attestationObject, true),
+            clientDataJSON: stringToBuffer(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
             publicKeyAlgorithm: -8,
+            transports: ["internal"],
             //getPublicKey: () => stringToBuffer(res.pk, true),
             //getPublicKeyAlgorithm: () => -8,
             //getTransport: () => "",
@@ -107,8 +108,12 @@ function createCreateCredentialsResponse(res) {
         key: stringToBuffer(res.pk, true),
         getClientExtensionResults: () => {},
     };
-    //Object.setPrototypeOf(credential.response, AuthenticatorAttestationResponse.prototype);
-    //Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
+    Object.setPrototypeOf(credential.response, AuthenticatorAttestationResponse.prototype);
+    Object.setPrototypeOf(credential, PublicKeyCredential.prototype);
+    credential.response.getTransports = () => credential.response.transports;
+    credential.response.getPublicKey = () => credential.rawId;
+    credential.response.getPublicKeyAlgorithm = () => -8;
+    credential.response.getAuthenticatorData = () => stringToBuffer(res.authData, true);
     return credential;
 }
 
