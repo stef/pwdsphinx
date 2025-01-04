@@ -236,6 +236,7 @@ def webauthn_create(data):
             # no y required (y is -3)
     })) # attestedCredentialData->credentialPublicKey
 
+    # TODO use opaque
     with open(webauthn_data_dir + "/" + pk.hex(), "wb") as wf:
         wf.write(urlsafe_b64decode(data['userid']+"=="))
 
@@ -276,21 +277,15 @@ def webauthn_create(data):
     clearmem(rand_bytes)
     send_message({'results': res})
   except Exception as e:
-      #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
-      send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
+      send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
+      #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
 
 def webauthn_get(data):
     def callback(rand_bytes):
         pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
         clearmem(rand_bytes)
-        #log.flush()
-        #log.write(("WOAOA\n").encode('utf-8'))
-        #log.write((repr(len(sk))+"\n").encode('utf-8'))
-        #log.write((sk.hex()+"\n").encode('utf-8'))
-        #log.flush()
-        #pk = urlsafe_b64decode(data['pk']+"==")
-        #challenge_sig = pysodium.crypto_sign_detached(urlsafe_b64decode(data['challenge']+"=="), sk)
 
+        # TODO use opaque
         with open(webauthn_data_dir + "/" + pk.hex(), "rb") as wf:
             userid = wf.read()
 
@@ -322,19 +317,12 @@ def webauthn_get(data):
         }
         send_message({'results': res})
     try:
-        log.write(("YOHO\n").encode('utf-8'))
-        log.write((repr(data)+"\n").encode('utf-8'))
-        log.flush()
         pwd=getpwd("get webauthn password at host \"%s\"" % data['site'])
         pk = urlsafe_b64decode(data['pk']+"==")
         handler(callback, sphinx.get, pwd, 'raw://'+pk.hex(), data['site'])
     except Exception as e:
-        log.write(("MEH\n").encode('utf-8'))
-        import traceback
-        log.write((repr(traceback.format_exc())+"\n").encode('utf-8'))
-        log.flush()
-        #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get'})
-        send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get', 'exception': str(e)})
+        send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get'})
+        #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get', 'exception': str(e)})
 
 
 func_map = {
