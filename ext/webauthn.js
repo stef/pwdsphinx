@@ -29,6 +29,8 @@ navigator.credentials.create = async function(args) {
     }
     const host = window.location.hostname;
     options.challenge = arrayBufferToBase64(options.challenge);
+    options["type"] = "webauthn.create";
+    options["origin"] = window.location.origin;
     // Required response fields
     const params = {
         'challenge': options.challenge,
@@ -37,8 +39,6 @@ navigator.credentials.create = async function(args) {
         'clientDataJSON': JSON.stringify(options),
     };
     let response = await createEvent("webauthn-create", params);
-    options["type"] = "webauthn.create";
-    options["origin"] = window.location.origin;
     response.clientDataJSON = JSON.stringify(options);
     let createObj = createCreateCredentialsResponse(response);
     console.log("CREATE RESP", response, createObj);

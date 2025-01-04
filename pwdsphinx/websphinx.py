@@ -242,6 +242,8 @@ def webauthn_create(data):
         },
         'authData': auth_data
     })
+    #log.write((data['clientDataJSON']+"\n").encode('utf-8'))
+    #log.write((auth_data.hex() + "\n").encode('utf-8'))
 
     res = {
         'pk': b2a_base64(pk).decode('utf8').strip(),
