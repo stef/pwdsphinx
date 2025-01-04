@@ -41,7 +41,6 @@ navigator.credentials.create = async function(args) {
     let response = await createEvent("webauthn-create", params);
     response.clientDataJSON = JSON.stringify(options);
     let createObj = createCreateCredentialsResponse(response);
-    console.log("CREATE RESP", response, createObj);
     return createObj;
 };
 
@@ -51,14 +50,25 @@ navigator.credentials.get = async function(options) {
         // not webauthn call
         return await browserCredentials.get(options);
     }
-    console.log("GET webauth", options);
-    const pubKey = options.publicKey;
-    const response = await createEvent("webauthn-get", {});
+    const pubKeyObj = options.publicKey;
+    if(pubKeyObj['allowCredentials'].length == 0) {
+        return await browserCredentials.get(options);
+    }
+    const key = pubKeyObj['allowCredentials'][0].id;
     options["type"] = "webauthn.get";
     options["origin"] = window.location.origin;
+    options["challenge"] = arrayBufferToBase64(pubKeyObj.challenge);
+    // Required response fields
+    const params = {
+        'pk': arrayBufferToBase64(key),
+        'challenge': arrayBufferToBase64(pubKeyObj.challenge),
+        'clientDataJSON': JSON.stringify(options),
+    };
+    const response = await createEvent("webauthn-get", params);
+    response.challenge = pubKeyObj.challenge;
     response.clientDataJSON = JSON.stringify(options);
-    console.log("GET RESP", response);
-    return createGetCredentialsResponse(response);
+    let getObj = createGetCredentialsResponse(response);
+    return getObj;
 };
 
 // initiate messaging with the backend
@@ -119,7 +129,25 @@ function createCreateCredentialsResponse(res) {
 
 // create the response object of credentials.get
 function createGetCredentialsResponse(res) {
-    // TODO
+    if(res.error) {
+        return;
+    }
+    res.pk = res.pk.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    const credential = {
+        id: res.pk,
+        rawId: stringToBuffer(res.pk, true),
+        challenge: res.challenge,
+        response: {
+            clientDataJSON: stringToBuffer(res.clientDataJSON), // A JSON string in an ArrayBuffer, representing the client data that was passed to CredentialsContainer.create()
+            authenticatorData: stringToBuffer(res.authData, true),
+            signature: stringToBuffer(res.sig, true),
+            userHandle: res.userid,
+        },
+        type: "public-key",
+        authenticatorAttachment: null,
+    }
+    credential.getClientExtensionResults = () => {};
+    return credential;
 }
 
 function stringToBuffer(s, isB64) {

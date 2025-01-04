@@ -38,6 +38,11 @@ cfg = getcfg('sphinx')
 pinentry = cfg['websphinx']['pinentry']
 log = cfg['websphinx'].get('log')
 
+if 'webauthn_data_dir' not in cfg['websphinx']:
+    raise Exception("Cannot find webauthn user directory (webauthn_data_dir). Add it to your config file")
+
+webauthn_data_dir = cfg['websphinx']['webauthn_data_dir']
+
 def handler(cb, cmd, *args):
     m = Multiplexer(sphinx.servers)
     m.connect()
@@ -216,7 +221,6 @@ def webauthn_create(data):
     # TODO use webauthn:// instead of raw:// - don't forget to rewrite it in handle()
     rand_bytes = pysodium.randombytes(32)
     pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
-    clearmem(rand_bytes)
     # signed_challenge = pysodium.crypto_sign(data['challenge'], sk)
     auth_data = pysodium.crypto_hash_sha256(data['site'].encode('utf8')) + ( # rpIdHash
         b'\x4d' + # flags https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API/Authenticator_data
@@ -231,6 +235,9 @@ def webauthn_create(data):
             -2: pk, # x => pubkey
             # no y required (y is -3)
     })) # attestedCredentialData->credentialPublicKey
+
+    with open(webauthn_data_dir + "/" + pk.hex(), "wb") as wf:
+        wf.write(urlsafe_b64decode(data['userid']+"=="))
 
     att_sig =  pysodium.crypto_sign_detached(auth_data + pysodium.crypto_hash_sha256(data['clientDataJSON'].encode('utf-8')), sk)
 
@@ -262,33 +269,72 @@ def webauthn_create(data):
     # TODO add optional argument to create() to skip extending the userlist
     orig_userlist = sphinx.userlist
     sphinx.userlist = False
-    sphinx.create(m, pwd, 'raw://'+pk.hex(), data['site'], '', '', target = sk)
+    sphinx.create(m, pwd, 'raw://'+pk.hex(), data['site'], '', '', target = rand_bytes)
     sphinx.userlist = orig_userlist
     m.close()
     clearmem(sk)
+    clearmem(rand_bytes)
     send_message({'results': res})
   except Exception as e:
       #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
       send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
 
 def webauthn_get(data):
-    def callback(arg):
-        challenge_sig = pysodium.crypto_sign_detached(urlsafe_b64decode(data['challenge']+"=="), arg)
+    def callback(rand_bytes):
+        pk, sk = pysodium.crypto_sign_seed_keypair(rand_bytes)
+        clearmem(rand_bytes)
+        #log.flush()
+        #log.write(("WOAOA\n").encode('utf-8'))
+        #log.write((repr(len(sk))+"\n").encode('utf-8'))
+        #log.write((sk.hex()+"\n").encode('utf-8'))
+        #log.flush()
+        #pk = urlsafe_b64decode(data['pk']+"==")
+        #challenge_sig = pysodium.crypto_sign_detached(urlsafe_b64decode(data['challenge']+"=="), sk)
+
+        with open(webauthn_data_dir + "/" + pk.hex(), "rb") as wf:
+            userid = wf.read()
+
+        auth_data = pysodium.crypto_hash_sha256(data['site'].encode('utf8')) + ( # rpIdHash
+            b'\x4d' + # flags https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API/Authenticator_data
+            b'\x00' * 4 + # signCount
+            b'\x00' * 16 + # attestedCredentialData->AAGUID
+            struct.pack('>H', len(pk)) + # attestedCredentialData->pk length
+            pk + # attestedCredentialData->credentialId (pk)
+            cbor2.dumps({ # cose encoded public key https://datatracker.ietf.org/doc/html/rfc8152#section-13
+                1: 1, # key type => okp
+                3: -8, # algorithm => Ed25519 (-8)
+                -1: 6, # curve => ed25519
+                -2: pk, # x => pubkey
+                # no y required (y is -3)
+        })) # attestedCredentialData->credentialPublicKey
+        sig = pysodium.crypto_sign_detached(auth_data + pysodium.crypto_hash_sha256(data['clientDataJSON'].encode('utf-8')), sk)
+        clearmem(sk)
+
         res = {
-            'name': data['name'],
+            'userid': b2a_base64(userid).decode('utf-8').strip(),
+            'sig': b2a_base64(sig).decode('utf8').strip(),
+            'authData': b2a_base64(auth_data).decode('utf-8').strip(),
             'site': data['site'],
             'cmd': 'webauthn-get',
             'id': data['id'],
             'tabId': data['tabId'],
-            'challenge_sig': b2a_base64(challenge_sig).decode('utf8').strip(),
+            'pk': b2a_base64(pk).decode('utf-8').strip(),
         }
         send_message({'results': res})
     try:
-        pwd=getpwd("get password for user \"%s\" at host \"%s\"" % (data['name'], data['site']))
-        handler(callback, sphinx.get, pwd, 'raw://'+urlsafe_b64decode(data['pk']+"==").hex(), data['site'])
+        log.write(("YOHO\n").encode('utf-8'))
+        log.write((repr(data)+"\n").encode('utf-8'))
+        log.flush()
+        pwd=getpwd("get webauthn password at host \"%s\"" % data['site'])
+        pk = urlsafe_b64decode(data['pk']+"==")
+        handler(callback, sphinx.get, pwd, 'raw://'+pk.hex(), data['site'])
     except Exception as e:
-        send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create'})
-        #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-create', 'exception': str(e)})
+        log.write(("MEH\n").encode('utf-8'))
+        import traceback
+        log.write((repr(traceback.format_exc())+"\n").encode('utf-8'))
+        log.flush()
+        #send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get'})
+        send_message({ 'results': 'fail', 'id': data.get('id', ''), 'tabId': data.get('tabId', -1), 'cmd': 'webauthn-get', 'exception': str(e)})
 
 
 func_map = {

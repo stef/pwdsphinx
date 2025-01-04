@@ -619,9 +619,9 @@ def create_challenge(conn):
 
   challenge = b''.join([bytes([n, k]), struct.pack('Q', int(now))])
 
-  key = load_blob('', "key", 33)
+  key = load_blob('', "key", 32)
   if not key:
-    key=b'\x01' + pysodium.randombytes(32)
+    key=pysodium.randombytes(32)
     save_blob('','key',key)
 
   state = pysodium.crypto_generichash_init(32, key)
@@ -655,7 +655,7 @@ def verify_challenge(conn):
     if len(payload)!=64: fail(conn)
   req = req_type + payload
   # read mac key
-  key = load_blob('', "key", 33)
+  key = load_blob('', "key", 32)
   if not key:
     fail(conn)
 

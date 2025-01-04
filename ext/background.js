@@ -187,17 +187,35 @@ chrome.runtime.onMessage.addListener(
         if(!request.action || !request.action.startsWith('webauthn')) {
             return;
         }
+        let msg = {}
         const tabId = sender.tab.id;
-		let msg = {
-			cmd: request.action,
-			mode: request.mode,
-			site: request.site,
-			clientDataJSON: request.params.clientDataJSON,
-			challenge: request.params.challenge,
-			name: request.params.username,
-			id: request.id,
-            tabId: tabId,
-		};
+        if(request.action == "webauthn-create") {
+            msg = {
+                cmd: request.action,
+                mode: request.mode,
+                site: request.site,
+                clientDataJSON: request.params.clientDataJSON,
+                challenge: request.params.challenge,
+                name: request.params.username,
+                userid: request.params.userid,
+                id: request.id,
+                tabId: tabId,
+            };
+        }
+        if(request.action == "webauthn-get") {
+            msg = {
+                cmd: request.action,
+                mode: request.mode,
+                site: request.site,
+                clientDataJSON: request.params.clientDataJSON,
+                challenge: request.params.challenge,
+                pk: request.params.pk,
+                name: request.params.username,
+                userid: request.params.userid,
+                id: request.id,
+                tabId: tabId,
+            };
+        }
 		nativeport.postMessage(msg);
 	}
 );
