@@ -235,7 +235,7 @@ def dkg(s, msg0, aux):
       else:
         msg = b''
 
-      cur_step = peer[0].step
+      cur_step = pyoprf.tpdkg_peerstate_step(peer)
       try:
         out = pyoprf.tpdkg_peer_next(peer, msg)
       except Exception as e:
@@ -244,7 +244,7 @@ def dkg(s, msg0, aux):
       if(len(out)>0):
         s.send(out)
 
-    share = bytes(peer[0].share)
+    share = pyoprf.tpdkg_peerstate_share(peer)
 
     return share
 

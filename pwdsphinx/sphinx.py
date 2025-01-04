@@ -406,12 +406,12 @@ def dkg(m, op, threshold, keyids, alpha):
          peer_msgs = [m[i].read(s) if s>0 else b'' for i, s in enumerate(sizes)]
      msgs = b''.join(peer_msgs)
 
-     cur_step = tp[0].step
+     cur_step = pyoprf.tpdkg_tpstate_step(tp)
      try:
        out = pyoprf.tpdkg_tp_next(tp, msgs)
      except Exception as e:
        m.close()
-       if tp[0].cheater_len > 0:
+       if pyoprf.tpdkg_tpstate_cheater_len(tp) > 0:
          cheaters, cheats = pyoprf.tpdkg_get_cheaters(tp)
          msg=[f"Warning during the distributed key generation the peers misbehaved: {sorted(cheaters)}"]
          for k, v in cheats:
@@ -421,7 +421,7 @@ def dkg(m, op, threshold, keyids, alpha):
        else:
          raise ValueError(f"{e} | tp step {cur_step}")
      if(len(out)>0):
-       for i in range(tp[0].n):
+       for i in range(pyoprf.tpdkg_tpstate_n(tp)):
          msg = pyoprf.tpdkg_tp_peer_msg(tp, out, i)
          m.send(i, msg)
 
