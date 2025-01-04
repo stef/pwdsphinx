@@ -9,8 +9,8 @@ except:
     client = None
     available = False
 
-
-client.config = client.processcfg(client.getcfg('opaque-store'))
+if available:
+    client.config = client.processcfg(client.getcfg('opaque-store'))
 
 def usage(params):
   print("\nOPAQUE Store style blobs")
