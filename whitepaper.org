@@ -70,7 +70,7 @@ Let's recap how the SPHINX query works:
 
 #+BEGIN_SRC
  r = random(32)
- alpha = (r*hash(pwd))
+ alpha = (r * hash(pwd))
 #+END_SRC
 
 The * operation denotes scalar multiplication over an elliptic curve
@@ -82,7 +82,7 @@ hash-to-curve operation.
 blinded hash of the users password:
 
 #+BEGIN_SRC
- beta = seed*alfa
+ beta = seed * alpha
 #+END_SRC
 
 The server returns the calculated beta value to the client.
@@ -96,7 +96,7 @@ and hashes it again with the master password, which results in
 the rwd:
 
 #+BEGIN_SRC
- rwd = hash(pwd,pwd_k)
+ rwd = hash(pwd, pwd_k)
 #+END_SRC
 
 In our implementation `rwd` results in a high entropy 32 byte array.
@@ -327,7 +327,7 @@ pubkey is generated as such:
 #+BEGIN_SRC
   key0 = blake2b("sphinx signing key", masterkey)
   seed = blake2b(key0, id)
-  pk, sk = e25519_keypair(seed)
+  pk, sk = ed25519_keypair(seed)
 #+END_SRC
 
 The parameter id used to calculate key1 is the record id, we use this
@@ -350,7 +350,7 @@ added to the key:
   key0 = blake2b("sphinx signing key", masterkey)
   key1 = blake2b(key0, id)
   seed = blake2b(key1, rwd)
-  pk, sk = e25519_keypair(seed)
+  pk, sk = ed25519_keypair(seed)
 #+END_SRC
 
 The rwd is the raw output of the SPHINX protocol, and by mixing it
