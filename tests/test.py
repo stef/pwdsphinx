@@ -168,6 +168,7 @@ class TestEndToEnd(unittest.TestCase):
 
     def tearDown(self):
       sphinx.validate_password=self._validate_password
+      time.sleep(0.1)
       sphinx.servers = orig_servers
       #cleanup()
       roots = [self._root]
