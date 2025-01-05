@@ -168,6 +168,19 @@ def getid(host, user, m):
     ids.append(getid1(host,user,peer.name,salt))
   return ids
 
+def oprf2rwd(r, beta, pwd, host, user):
+  rwd = pyoprf.unblind_finalize(r, beta, pwd)
+  salt = pysodium.crypto_generichash(getsalt()
+                                     + struct.pack('!H', len(user.encode('utf8')))
+                                     + user.encode('utf8')
+                                     + struct.pack('!H', len(host.encode('utf8')))
+                                     + host.encode('utf8'),
+                                     outlen=pysodium.crypto_pwhash_SALTBYTES)
+  # note oprf results in 64B output. we could in theory deploy that, and enlarge the size of predefined secrets,
+  # but that also means we need to enlarge the xorpad.
+  # so close to release of v2.0, not sure about that.
+  return pysodium.crypto_pwhash(32, rwd, salt, pysodium.crypto_pwhash_OPSLIMIT_INTERACTIVE, pysodium.crypto_pwhash_MEMLIMIT_INTERACTIVE)
+
 def unpack_rule(ct):
   version, packed = decrypt_blob(ct)
   xor_mask = packed[-32:]
@@ -215,7 +228,7 @@ def commit_undo(m, op, pwd, user, host):
   r, alpha = pyoprf.blind(pwd)
   msgs = [b''.join([op, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
-  if not auth(m,ids,alpha,pwd,r):
+  if not auth(m,ids,host,user,alpha,pwd,r):
     m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
   if set(m.gather(2))!={b'ok'}:
@@ -279,7 +292,7 @@ def update_rec(s, id, item): # this is only for user blobs. a UI feature offerin
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(m,ids,alpha=None,pwd=None,r=None):
+def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
   if r is None:
     nonces = m.gather(32)
     if nonces is None:
@@ -296,7 +309,8 @@ def auth(m,ids,alpha=None,pwd=None,r=None):
     if len(msgs) < len(m):
         raise ValueError("auth: not all peers answered or authenticated")
     beta = pyoprf.thresholdmult([resp[0] for resp in msgs][:threshold])
-    rwd = pyoprf.unblind_finalize(r, beta, pwd)
+    #rwd = pyoprf.unblind_finalize(r, beta, pwd)
+    rwd = oprf2rwd(r, beta, pwd, host, user)
 
   for idx, nonce in nonces:
     sk, pk = get_signkey(ids[idx], rwd)
@@ -481,7 +495,8 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
       # both of these less probable causes point at corruption during transport
     beta = beta[0][1:]
 
-  rwd = pyoprf.unblind_finalize(r, beta, pwd)
+  #rwd = pyoprf.unblind_finalize(r, beta, pwd)
+  rwd = oprf2rwd(r, beta, pwd, host, user)
 
   # second phase, derive new auth signing pubkey
   sign_keys=[]
@@ -578,7 +593,8 @@ def get(m, pwd, user, host):
     beta = resp[1:33]
     rules = resp[33:]
 
-  rwd = pyoprf.unblind_finalize(r, beta, pwd)
+  #rwd = pyoprf.unblind_finalize(r, beta, pwd)
+  rwd = oprf2rwd(r, beta, pwd, host, user)
 
   m.close()
   try:
@@ -598,11 +614,11 @@ def get(m, pwd, user, host):
 
   return ret
 
-def read_blob(m, ids, rwd = b''):
+def read_blob(m, ids, host, rwd = b''):
   msgs = [b''.join([READ, id]) for id in ids]
   m = ratelimit(m, msgs)
 
-  if auth(m,ids) is False:
+  if auth(m,ids,host,'') is False:
     m.close()
     return
 
@@ -639,7 +655,7 @@ def read_blob(m, ids, rwd = b''):
   return blob
 
 def users(m, host):
-  res = read_blob(m, getid(host, '', m))
+  res = read_blob(m, getid(host, '', m), host)
   if not res: return "no users found"
   version, res = res
   users = set(res.decode().split('\x00'))
@@ -655,7 +671,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     msgs = [b''.join([CHANGE, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
   # auth: do sphinx with current seed, use it to sign the nonce
-  if not auth(m,ids,alpha,oldpwd,r):
+  if not auth(m,ids,host,user,alpha,oldpwd,r):
     m.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
@@ -669,7 +685,8 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
       m.close()
       raise ValueError("ERROR: changing password failed due to corruption during transport.")
     beta = beta[0][1:]
-  rwd = pyoprf.unblind_finalize(r, beta, newpwd)
+  #rwd = pyoprf.unblind_finalize(r, beta, newpwd)
+  rwd = oprf2rwd(r, beta, newpwd, host, user)
 
   if validate_password:
       checkdigit = pysodium.crypto_generichash(CHECK_CTX, rwd, 1)[0]
@@ -715,7 +732,7 @@ def delete(m, pwd, user, host):
   msgs = [b''.join([DELETE, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
   #print("solved ratelimit puzzles")
-  rwd = auth(m,ids,alpha,pwd,r)
+  rwd = auth(m,ids,host,user,alpha,pwd,r)
   if not rwd:
     m.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
