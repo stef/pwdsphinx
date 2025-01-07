@@ -28,9 +28,9 @@ An account password is the password that authenticates the user with a
 service. It is derived from the SPHINX key in a way that makes the
 output compatible with the password rules mandated by the service.
 *** rwd (Random word)
-High entropy 32 bytes derived from the SPHINX protocol by calculating:
-hash(pwd||hash2curve(pwd)*k), where k is a server seed contributed by the
-sphinx server.
+High entropy 64 bytes derived from the SPHINX protocol by calculating:
+argon2i(hash(pwd||hash2curve(pwd)*k),salt), where k is a server seed 
+contributed by the sphinx server.
 *** Master Password
 The master password is the password which is used in SPHINX to query
 and derive the account password for a service. Unlike other password
@@ -108,8 +108,18 @@ the rwd:
  rwd = hash(pwd,pwd_k)
 #+END_SRC
 
-In our implementation `rwd` results in a high entropy array of 32
-bytes.
+So far this is regular a regular generic OPRF, as specified by RFC9497 and
+implemented by liboprf.
+
+For a final hardening step SPHINX applies a final argon2i password hash over
+the rwd, using the user, host, and client master key as a secret:
+
+#+BEGIN_SRC
+ rwd = argon2i(rwd,hash(salt_ctx,master_key) | len(user) | user | len(host) | host)
+#+END_SRC
+
+With this final step in our implementation `rwd` results in a high entropy
+array of 64 bytes.
 
 ** Threshold SPHINX protocol
 
@@ -240,7 +250,7 @@ core Sphinx Protocol and why we did so.
 ** Password rules
 
 The output of the core sphinx protocol (at least in our instantiation)
-is an array of 32 random bytes. Most services are not expecting binary
+is an array of 64 random bytes. Most services are not expecting binary
 data (although they should!) and the worse ones even have some rules
 of what kind of character classes to expect or forbid, or how long the
 password should be. In order to store these per-service password rules
@@ -273,12 +283,15 @@ Rules are compacted in the following way:
 | @ | [ | \ | ] | ^ | _ | ` | { | | | } | ~ |    check-digit    |
 |---------------------------+---+---+---+---+-------------------|
 
-and a 32 byte long xor mask.
+and a 64 byte long xor mask.
 #+END_EXAMPLE
 
-The longest password we can derive out of 32 bytes, is only 76 chars
-long if only digits are allowed. Thus 7 bits are enough to encode the
-size of a password.
+The longest password we can derive out of 64 bytes, is 155 chars long if only
+digits are allowed, but maximum 109 for only lower-case or upper-case letters
+only, and max 86 chars for all alphanumerical characters. Thus 7 bits are
+enough to encode the size of a password, if you really need to store an
+all-numeric password that is longer than 128 chars, you might want to review
+the reasons for this...
 
 The bits 7-9 encode the character classes: upper-case, lower-case,
 digits.
@@ -299,8 +312,8 @@ such:
 
 *** rwd to ASCII conversion
 
-The conversion from the 32 byte array to an ASCII printable string
-containing only the characters allowed by the rules interprets the 32
+The conversion from the 64 byte array to an ASCII printable string
+containing only the characters allowed by the rules interprets the 64
 bytes as an integer in big-endian order and then encodes it base-n,
 where n is the number of characters allowed by the rules. The digits
 are in the order - if allowed -: upper-case, lower-case, digits, and
@@ -347,7 +360,7 @@ following example pseudo-code:
 #+BEGIN_SRC python
     le_str = string[::-1]
     result = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
-    return int.to_bytes(result, 32, 'big')
+    return int.to_bytes(result, 64, 'big')
 #+END_SRC
 
 Xor masks (can) have another purpose, they can ensure that in fact all
