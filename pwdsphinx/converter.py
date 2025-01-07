@@ -37,7 +37,7 @@ def convert(rwd, user, *opts):
     return bin2pass.derive(rwd, *opts)
 
   schema, _ = user.split("://",1)
-  return converters[schema](rwd)
+  return converters[schema](rwd, *opts)
 
 if __name__ == "__main__":
   convert(b'\xaa' * 32, 'asdf', 'uld', 0, '')

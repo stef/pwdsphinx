@@ -49,11 +49,11 @@ def pass2bin(string, chars = allchars):
         chars=''.join(chars)
 
     le_str = string[::-1]
-    logbase = int(math.log(1<<256, len(chars)))
+    logbase = int(math.log(1<<512, len(chars)))
     r = sum(chars.find(le_str[i]) * len(chars)**i for i in range(len(le_str)))
     # add padding
     r += sum(chars.find(random.choice(chars)) * len(chars)**i for i in range(len(le_str), logbase))
-    return int.to_bytes(r, 32, 'big'), ''.join(classes), sym
+    return int.to_bytes(r, 64, 'big'), ''.join(classes), sym
 
 def derive(rwd, rule, size, syms=symbols):
     chars = tuple(c.decode('utf8') for x in (sets[c] for c in ('u','l','d') if c in rule) for c in x) + tuple(x for x in symbols if x in set(syms))
@@ -75,7 +75,7 @@ def main():
       return
 
   size = 0
-  raw = sys.stdin.buffer.read(32)
+  raw = sys.stdin.buffer.read(64)
   syms = symbols
   rule = ''
 

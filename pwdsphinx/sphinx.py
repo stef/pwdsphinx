@@ -176,15 +176,12 @@ def oprf2rwd(r, beta, pwd, host, user):
                                      + struct.pack('!H', len(host.encode('utf8')))
                                      + host.encode('utf8'),
                                      outlen=pysodium.crypto_pwhash_SALTBYTES)
-  # note oprf results in 64B output. we could in theory deploy that, and enlarge the size of predefined secrets,
-  # but that also means we need to enlarge the xorpad.
-  # so close to release of v2.0, not sure about that.
-  return pysodium.crypto_pwhash(32, rwd, salt, pysodium.crypto_pwhash_OPSLIMIT_INTERACTIVE, pysodium.crypto_pwhash_MEMLIMIT_INTERACTIVE)
+  return pysodium.crypto_pwhash(pyoprf.OPRF_BYTES, rwd, salt, pysodium.crypto_pwhash_OPSLIMIT_INTERACTIVE, pysodium.crypto_pwhash_MEMLIMIT_INTERACTIVE)
 
 def unpack_rule(ct):
   version, packed = decrypt_blob(ct)
-  xor_mask = packed[-32:]
-  v = int.from_bytes(packed[:-32], "big")
+  xor_mask = packed[-64:]
+  v = int.from_bytes(packed[:-64], "big")
 
   size = v & ((1<<7) - 1)
   rule = {c for i,c in enumerate(('u','l','d')) if (v >> 7) & (1 << i)}
@@ -207,9 +204,9 @@ def pack_rule(char_classes, syms, size, check_digit, xor_mask=None, with_schema=
   if not with_schema and (xor_mask is None and (char_classes == '' and len(syms)<2)):
     raise ValueError("ERROR: no char classes and not enough symbols specified.")
   if xor_mask is None:
-      xor_mask = b'\x00' * 32
-  elif len(xor_mask)!=32:
-    raise ValueError("ERROR: xor_mask must be 32bytes, is instead: %d." % len(xor_mask))
+      xor_mask = b'\x00' * 64
+  elif len(xor_mask)!=64:
+    raise ValueError("ERROR: xor_mask must be 64bytes, is instead: %d." % len(xor_mask))
   if size<0 or size>127:
     raise ValueError("ERROR: invalid max password size: %d." % size)
 
@@ -318,6 +315,8 @@ def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
     clearmem(sk)
     m.send(idx, sig)
 
+  clearmem(rwd)
+
   responses = m.gather(6)
   if responses is None:
     m.close()
@@ -336,7 +335,7 @@ def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
   if fails > 0:
       raise ValueError("some peers have failed to authenticate us")
 
-  return rwd
+  return True
 
 def ratelimit(m,reqs):
   for i, req in enumerate(reqs):
@@ -512,21 +511,23 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
   if target and not user.startswith('raw://'):
     trwd, char_classes, symbols = bin2pass.pass2bin(target, None)
-    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),trwd)
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),trwd)
     size = len(target)
     #char_classes = 'uld'
     #symbols = bin2pass.symbols
   elif target and user.startswith('raw://'):
-    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),target)
+    size = len(target)
+    target = target + pysodium.randombytes(64 - len(target))
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),target)
   else:
     _uppers = set([x.decode('utf8') for x in bin2pass.sets['u']])
     _lowers = set([x.decode('utf8') for x in bin2pass.sets['l']])
     _digits = set([x.decode('utf8') for x in bin2pass.sets['d']])
     _symbols = set(symbols)
     while True:
-        xormask = pysodium.randombytes(32)
+        xormask = pysodium.randombytes(64)
         candidate = convert(
-            xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask),
+            xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask),
             user,
             char_classes,size,symbols)
         if 1 <= size < 8: break # too much of a bias especially for ulsd when size < 5
@@ -554,7 +555,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
      update_rec(p.fd, id, user)
      p.close()
 
-  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
 
   ret = convert(rwd,user,char_classes,size,symbols)
   clearmem(rwd)
@@ -607,7 +608,7 @@ def get(m, pwd, user, host):
     m.close()
     raise ValueError("ERROR: bad checkdigit")
 
-  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
 
   ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
@@ -695,10 +696,11 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   if target:
     trwd, classes, symbols = bin2pass.pass2bin(target, None)
-    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd),trwd)
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),trwd)
+    print('asdf', len(trwd), len(xormask))
     size = len(target)
   else:
-    xormask = pysodium.randombytes(32)
+    xormask = pysodium.randombytes(64)
 
   rule = pack_rule(classes, symbols, size, checkdigit, xormask)
 
@@ -713,7 +715,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     raise ValueError("ERROR: failed to update password rules on the server during changing of password.")
 
   m.close()
-  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
+  rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
   ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
 
@@ -732,8 +734,7 @@ def delete(m, pwd, user, host):
   msgs = [b''.join([DELETE, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
   #print("solved ratelimit puzzles")
-  rwd = auth(m,ids,host,user,alpha,pwd,r)
-  if not rwd:
+  if auth(m,ids,host,user,alpha,pwd,r) is False:
     m.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
   #print("authenticated")
@@ -805,7 +806,6 @@ def delete(m, pwd, user, host):
        raise ValueError("ERROR: server failed to save updated list of user names for host: %s." % host)
 
   m.close()
-  clearmem(rwd)
   return True
 
 def print_qr(qrcode: QrCode) -> None:

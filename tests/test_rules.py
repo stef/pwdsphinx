@@ -33,20 +33,20 @@ def powerset(iterable):
 class TestRules(unittest.TestCase):
     def test_rules(self):
        for cls in powerset('uld'):
-           equ(''.join(cls), bin2pass.symbols, 64, 31, b'\x00'*32)
+           equ(''.join(cls), bin2pass.symbols, 64, 31, b'\x00'*64)
            if cls!=tuple():
-               equ(''.join(cls), '', 64, 31, b'\x00'*32)
+               equ(''.join(cls), '', 64, 31, b'\x00'*64)
 
-       equ('uld', bin2pass.symbols[:16], 64, 31, b'\x00'*32)
-       equ('uld', bin2pass.symbols[16:], 64, 31, b'\x00'*32)
+       equ('uld', bin2pass.symbols[:16], 64, 31, b'\x00'*64)
+       equ('uld', bin2pass.symbols[16:], 64, 31, b'\x00'*64)
 
-       equ('uld', bin2pass.symbols, 64, 31, b'\xff'*32)
-       equ('uld', bin2pass.symbols, 64, 31, b'\xaa'*32)
+       equ('uld', bin2pass.symbols, 64, 31, b'\xff'*64)
+       equ('uld', bin2pass.symbols, 64, 31, b'\xaa'*64)
 
        for i in range(128):
-           equ('uld', bin2pass.symbols, i, 31, b'\xaa'*32)
+           equ('uld', bin2pass.symbols, i, 31, b'\xaa'*64)
        for i in range(32):
-           equ('uld', bin2pass.symbols, 64, i, b'\xaa'*32)
+           equ('uld', bin2pass.symbols, 64, i, b'\xaa'*64)
 
 if __name__ == '__main__':
     unittest.main()

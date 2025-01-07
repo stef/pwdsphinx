@@ -21,7 +21,7 @@ class TestConverters(unittest.TestCase):
 
   def test_raw(self):
     rwd = b'\xaa' * 32
-    pwd = convert(rwd, "raw://asdf", char_classes, size, symbols)
+    pwd = convert(rwd, "raw://asdf", char_classes, len(rwd), symbols)
     self.assertEqual(pwd, rwd)
 
 
