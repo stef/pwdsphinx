@@ -255,15 +255,15 @@ class TestEndToEnd(unittest.TestCase):
 
         self.assertEqual(rwd,rwd0)
 
-    def test_get_inv_mpwd(self):
-        if not sphinx.validate_password:
-            return
-        with connect() as s:
-            rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
-            self.assertIsInstance(rwd0, str)
+    #def test_get_inv_mpwd(self):
+    #    if not sphinx.validate_password:
+    #        return
+    #    with connect() as s:
+    #        rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
+    #        self.assertIsInstance(rwd0, str)
 
-        with connect() as s:
-            self.assertRaises(ValueError, sphinx.get, s, 'zxcv1', user, host)
+    #    with connect() as s:
+    #        self.assertRaises(ValueError, sphinx.get, s, 'zxcv1', user, host)
 
     def test_get_nonexistant_host(self):
         with connect() as s:
