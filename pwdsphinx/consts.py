@@ -13,7 +13,7 @@ DELETE      =b'\xff' # sphinx+blobs
 CHALLENGE_CREATE = b'\x5a'
 CHALLENGE_VERIFY = b'\xa5'
 
-VERSION = b'\x00'
+VERSION = b'\x01'
 
 RULE_SIZE = 79+32
 
