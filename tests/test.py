@@ -244,6 +244,13 @@ class TestEndToEnd(unittest.TestCase):
             self.assertRaises(ValueError, sphinx.create,s, pwd, user, host, char_classes, syms, size)
             s.close()
 
+    def test_get_nonexistant_record(self):
+        for i in [0, 1,2]:
+          try: makedirs(f"{self._root}/servers/{i}/data/")
+          except: pass
+        with connect() as s:
+            self.assertRaises(ValueError, sphinx.get, s, pwd, user, host)
+
     def test_get(self):
         with connect() as s:
             rwd0 = sphinx.create(s, pwd, user, host, char_classes, syms, size)
