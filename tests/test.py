@@ -7,7 +7,7 @@ from io import BytesIO, StringIO
 import sys, pysodium, subprocess, time
 import tracemalloc
 from pyoprf import multiplexer
-from pwdsphinx import sphinx, bin2pass, ostore
+from pwdsphinx import sphinx, bin2pass, ostore, v1sphinx
 from binascii import b2a_base64, a2b_base64
 import pyoprf, ctypes
 import contextlib
@@ -261,6 +261,60 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIsInstance(rwd, str)
 
         self.assertEqual(rwd,rwd0)
+
+    def test_v1get(self):
+        # synthetically create a v1 record
+        id = v1sphinx.getid(host,user)
+        for i in [1,2]:
+          try: makedirs(f"{self._root}/servers/{i}/data/")
+          except: pass
+        ddir = f"{self._root}/servers/0/data/{id.hex()}"
+        k = b'\x55' * 32
+        #calculate rwd
+        h0 = pysodium.crypto_generichash(pwd.encode(), outlen=pysodium.crypto_core_ristretto255_HASHBYTES);
+        H0 = pysodium.crypto_core_ristretto255_from_hash(h0)
+        H0_k = pysodium.crypto_scalarmult_ristretto255(k, H0)
+        rwd0 = pysodium.crypto_generichash(pwd.encode()+H0_k, outlen=pysodium.crypto_core_ristretto255_BYTES);
+        rwd0 = pysodium.crypto_pwhash(pysodium.crypto_core_ristretto255_BYTES,
+                                      rwd0, id[:pysodium.crypto_pwhash_SALTBYTES],
+                                      pysodium.crypto_pwhash_OPSLIMIT_INTERACTIVE,
+                                      pysodium.crypto_pwhash_MEMLIMIT_INTERACTIVE)
+        # create a rules blob
+        if sphinx.validate_password:
+            check_digit = pysodium.crypto_generichash(v1sphinx.CHECK_CTX, rwd0, 1)[0]
+        else:
+            check_digit = 0
+        xor_mask = b'\x55' * 32
+        packed = 30
+        packed = packed + (sum(1<<i for i, c in enumerate(('u','l','d'))) << 7)
+        packed = packed + (sum(1<<i for i, c in enumerate(bin2pass.symbols)) << (7 + 3))
+        packed = packed + ((check_digit & ((1<<5) - 1)) << (7 + 3 + 33) )
+        pt = packed.to_bytes(6,"big") + xor_mask
+        rules = v1sphinx.encrypt_blob(pt)
+
+        makedirs(ddir)
+        with open(ddir+"/key", 'wb') as fd:
+            fd.write(k)
+        with open(ddir+"/pub", 'wb') as fd:
+            sk, pk = v1sphinx.get_signkey(id, rwd0)
+            fd.write(pk)
+        with open(ddir+"/rules", 'wb') as fd:
+            fd.write(rules)
+
+        with connect() as s:
+            rwd = sphinx.get(s, pwd, user, host)
+
+        self.assertIsInstance(rwd, str)
+        self.assertEqual(rwd,'_HO; <Yk)KA:G.q@8\\6zVHtDttCRA\\')
+
+        # delete v1 record
+        rmtree(ddir)
+
+        # try to get the value now from the uplifted v2 record
+        with connect() as s:
+            rwd1 = sphinx.get(s, pwd, user, host)
+
+        self.assertEqual(rwd,rwd1)
 
     #def test_get_inv_mpwd(self):
     #    if not sphinx.validate_password:

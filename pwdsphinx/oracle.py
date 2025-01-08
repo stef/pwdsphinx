@@ -345,6 +345,34 @@ def get(conn, msg):
 
     conn.send(k[:1]+beta+rules)
 
+# msg format: 0x69|id[32]|alpha[32]
+def v1get(conn, msg):
+    _, msg = pop(msg,1)
+    id, msg = pop(msg,32)
+    alpha, msg = pop(msg,32)
+    if msg!=b'':
+      if verbose: print('invalid get msg, trailing content %r' % msg)
+      fail(conn)
+
+    id = binascii.hexlify(id).decode()
+    k = load_blob(id,'key',32)
+    if k is None:
+      # maybe execute protocol with static but random value to not leak which host ids exist?
+      fail(conn)
+
+    rules = load_blob(id,'rules', V1RULE_SIZE)
+    if rules is None:
+        fail(conn)
+
+    try:
+        if not pysodium.crypto_core_ristretto255_is_valid_point(alpha):
+            raise ValueError("invalid alpha")
+        beta = pysodium.crypto_scalarmult_ristretto255(k, alpha)
+    except:
+      fail(conn)
+
+    conn.send(beta+rules)
+
 def auth(s,id,alpha):
   pk = load_blob(id,'pub',32)
   if pk is None:
@@ -545,6 +573,8 @@ def handler(conn, data):
 
    if data[0:1] == GET:
      get(conn, data)
+   elif data[0:1] == V1GET:
+     v1get(conn, data)
    elif data[0:1] == CHANGE:
      change(conn, data)
    elif data[0:1] == CHANGE_DKG:

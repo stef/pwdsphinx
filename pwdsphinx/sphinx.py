@@ -17,7 +17,7 @@ from itertools import permutations
 from pyoprf.multiplexer import Multiplexer
 
 try:
-  from pwdsphinx import bin2pass
+  from pwdsphinx import bin2pass, v1sphinx
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
   from pwdsphinx.utils import split_by_n
@@ -25,7 +25,7 @@ try:
   from pwdsphinx.converter import convert
   from pwdsphinx import ostore
 except ImportError:
-  import bin2pass, ostore
+  import bin2pass, ostore, v1sphinx
   from config import getcfg
   from consts import *
   from utils import split_by_n
@@ -351,7 +351,7 @@ def ratelimit(m,reqs):
   puzzles = []
   with concurrent.futures.ProcessPoolExecutor() as executor:
     for idx, challenge in enumerate(challenges):
-        if challenge is None: continue
+        if challenge in {None, b''}: continue
         n = challenge[0]
         k = challenge[1]
 
@@ -567,9 +567,21 @@ def get(m, pwd, user, host):
 
   msgs = [b''.join([GET, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
+  connected = sum([1 for p in m if p.state == 'connected'])
+  if connected < threshold:
+    raise ValueError(f"Failed to get enough shareholders to respond: {connected} responded")
 
   if len(servers) > 1:
-    resps = m.gather(33+RULE_SIZE, threshold)
+    try:
+      resps = m.gather(33+RULE_SIZE, threshold)
+    except ValueError:
+      rwd = v1sphinx.get(pwd, user, host)
+      # lift to v2
+      m = Multiplexer(servers)
+      m.connect()
+      crwd = create(m, pwd, user, host, target=rwd)
+      assert rwd == crwd
+      return rwd
     if resps is None:
       m.close()
       raise ValueError("Failed to get any answers from shareholders")
@@ -582,7 +594,16 @@ def get(m, pwd, user, host):
     rules = resps[0][1]
     beta = pyoprf.thresholdmult([resp[0] for resp in resps if resp])
   else:
-    resp = m.gather(33+RULE_SIZE, 1)[0] # beta + sealed rules
+    try:
+        resp = m.gather(33+RULE_SIZE, 1)[0] # beta + sealed rules
+    except ValueError:
+      rwd = v1sphinx.get(pwd, user, host)
+      # lift to v2
+      m = Multiplexer(servers)
+      m.connect()
+      crwd = create(m, pwd, user, host, target=rwd)
+      assert rwd == crwd
+      return rwd
     if resp is None:
       m.close()
       raise ValueError("Failed to get answers from sphinx server")
