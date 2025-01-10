@@ -263,6 +263,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(rwd,rwd0)
 
     def test_v1get(self):
+        if not v1sphinx.enabled: return
         # synthetically create a v1 record
         id = v1sphinx.getid(host,user)
         for i in [1,2]:
