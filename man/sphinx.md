@@ -259,6 +259,16 @@ In this case you cannot specify neither the accepted character
 classes, nor the size, nor symbols, these will be deducted from the
 predetermined password itself.
 
+## Backward compatibility with v1 SPHINX servers/records
+
+If you still have SPHINX records on the server that were generated using v1,
+- and you want to use them -, you have to specify this server also in the
+
+client section like you had to in v1. If there is no record found with v2 get
+operations sphinx will attempt a get request for a v1 style record.  If a v1
+style record is found a new v2 style record is created, so no need to check for v1
+style records in this particular case anymore.
+
 ## OUTPUT PLUGINS (TOTP & AGE)
 
 It is possible to "store" TOTP secrets and age secret keys using
@@ -456,6 +466,14 @@ The `userlist` option (default: True) can disable the usage of userlists. This
 prohibits the server to correlate all the records that belong to the same
 sphinx user relating to the same host. The cost of this, is that the user has
 to remember themselves which usernames they have at which host.
+
+If you still have SPHINX records on the server that were generated using v1,
+and you want to use them, you have to specify this server also in the client
+section like you had to in v1. Simply specify `address` and `port` and if there
+is no record found with v2 get operations sphinx will attempt a v1 style
+get request and see if the record is available from "old times". If a v1 record
+is found a new v2 style record is created, so no need to call v1 for this
+particular record anymore.
 
 The `threshold` option must specify the number of servers necessary to operate
 sphinx. If the `[servers]` section contains more than two entries, this value

@@ -23,16 +23,19 @@ RULE_SIZE = 79
 #### config ####
 
 cfg = getcfg('sphinx')
-
+enabled=False
 verbose = cfg['client'].get('verbose', False)
-hostname = cfg['client'].get('address','127.0.0.1')
-address = socket.gethostbyname(hostname)
-port = int(cfg['client'].get('port',2355))
+hostname = cfg['client'].get('address')
+if hostname is not None:
+   enabled = True
+   address = socket.gethostbyname(hostname)
+   port = int(cfg['client'].get('port',2355))
+   try:
+     ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
+   except TypeError: # ignore exception in case ssl_cert is not set, thus None is attempted to expand.
+     ssl_cert = None
+
 datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
-try:
-  ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
-except TypeError: # ignore exception in case ssl_cert is not set, thus None is attempted to expand.
-  ssl_cert = None
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
@@ -40,15 +43,11 @@ rwd_keys = cfg['client'].get('rwd_keys', False)
 validate_password = cfg['client'].get('validate_password',True)
 userlist = cfg['client'].get('userlist', True)
 
-if verbose:
-    print("hostname:", hostname, file=sys.stderr)
-    print("address:", address, file=sys.stderr)
-    print("port:", port, file=sys.stderr)
-    print("datadir:", datadir, file=sys.stderr)
-    print("ssl_cert:", ssl_cert, file=sys.stderr)
-    print("rwd_keys:", rwd_keys, file=sys.stderr)
-    print("validate_password:", validate_password, file=sys.stderr)
-    print("userlist:", userlist, file=sys.stderr)
+if verbose and enabled:
+   print("v1 hostname:", hostname, file=sys.stderr)
+   print("v1 address:", address, file=sys.stderr)
+   print("v1 port:", port, file=sys.stderr)
+   print("v1 ssl_cert:", ssl_cert, file=sys.stderr)
 
 #### consts ####
 

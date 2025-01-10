@@ -80,9 +80,8 @@ if verbose:
     print("validate_password:", validate_password, file=sys.stderr)
     print("userlist:", userlist, file=sys.stderr)
     print("threshold:", threshold, file=sys.stderr)
-    print("servers", servers)
     for name, server in servers.items():
-      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)}")
+      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)} {server['ltsigkey']} cert: {server.get('ssl_cert')}")
 
 #### consts ####
 
@@ -561,12 +560,26 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   clearmem(rwd)
   return ret
 
+def try_v1get(pwd, host, user):
+   rwd = v1sphinx.get(pwd, user, host)
+   # lift to v2
+   m = Multiplexer(servers)
+   m.connect()
+   crwd = create(m, pwd, user, host, target=rwd)
+   assert rwd == crwd
+   return rwd
+
 def get(m, pwd, user, host):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
 
   msgs = [b''.join([GET, id, alpha]) for id in ids]
-  m = ratelimit(m, msgs)
+  try:
+      m = ratelimit(m, msgs)
+  except ValueError:
+    if v1sphinx.enabled: return try_v1get(pwd, host, user)
+    raise
+
   connected = sum([1 for p in m if p.state == 'connected'])
   if connected < threshold:
     raise ValueError(f"Failed to get enough shareholders to respond: {connected} responded")
@@ -575,13 +588,8 @@ def get(m, pwd, user, host):
     try:
       resps = m.gather(33+RULE_SIZE, threshold)
     except ValueError:
-      rwd = v1sphinx.get(pwd, user, host)
-      # lift to v2
-      m = Multiplexer(servers)
-      m.connect()
-      crwd = create(m, pwd, user, host, target=rwd)
-      assert rwd == crwd
-      return rwd
+      if v1sphinx.enabled: return try_v1get(pwd, host, user)
+      raise
     if resps is None:
       m.close()
       raise ValueError("Failed to get any answers from shareholders")
@@ -597,13 +605,8 @@ def get(m, pwd, user, host):
     try:
         resp = m.gather(33+RULE_SIZE, 1)[0] # beta + sealed rules
     except ValueError:
-      rwd = v1sphinx.get(pwd, user, host)
-      # lift to v2
-      m = Multiplexer(servers)
-      m.connect()
-      crwd = create(m, pwd, user, host, target=rwd)
-      assert rwd == crwd
-      return rwd
+      if v1sphinx.enabled: return try_v1get(pwd, host, user)
+      raise
     if resp is None:
       m.close()
       raise ValueError("Failed to get answers from sphinx server")

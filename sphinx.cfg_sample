@@ -27,6 +27,10 @@
 # [servers] section
 # threshold = 3
 
+# if you still need to consult a v1 server
+# address = "127.0.0.1"
+# port = 2355
+
 # the servers used by the client
 [servers]
 # you need at least one server. the name is freely chosen (in this case it is
