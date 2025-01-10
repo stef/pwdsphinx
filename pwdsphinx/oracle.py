@@ -830,21 +830,21 @@ def parse_params():
     debug = True
   if not 'init' in sys.argv:
     main(debug)
+  else:
+    # init
+    pk, sk = pysodium.crypto_sign_keypair()
+    with open(ltsigkey_path, 'xb') as fd:
+      fd.write(sk)
 
-  # init
-  pk, sk = pysodium.crypto_sign_keypair()
-  with open(ltsigkey_path, 'xb') as fd:
-    fd.write(sk)
+    with open(f"{ltsigkey_path}.pub", 'xb') as fd:
+      fd.write(pk)
 
-  with open(f"{ltsigkey_path}.pub", 'xb') as fd:
-    fd.write(pk)
-
-  print(f"successfully created long-term signature key pair at:")
-  print(f"{ltsigkey_path}")
-  print(f"and the public key - which you should make available to all clients -, is at:")
-  print(f"{ltsigkey_path}.pub")
-  print(f"The following is the base64 encoded public key that you can also share:")
-  print(f"{binascii.b2a_base64(pk).strip().decode('utf8')}")
+    print(f"successfully created long-term signature key pair at:")
+    print(f"{ltsigkey_path}")
+    print(f"and the public key - which you should make available to all clients -, is at:")
+    print(f"{ltsigkey_path}.pub")
+    print(f"The following is the base64 encoded public key that you can also share:")
+    print(f"{binascii.b2a_base64(pk).strip().decode('utf8')}")
 
 if __name__ == '__main__':
   parse_params()
