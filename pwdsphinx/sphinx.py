@@ -680,10 +680,13 @@ def read_blob(m, ids, host, rwd = b''):
   return blob
 
 def users(m, host):
-  res = read_blob(m, getid(host, '', m), host)
-  if not res: return "no users found"
-  version, res = res
-  users = set(res.decode().split('\x00'))
+  _, users = read_blob(m, getid(host, '', m), host) or (None, set())
+  if users:
+      users = set(users.decode().split('\x00'))
+  if v1sphinx.enabled:
+      users = users | v1sphinx.users(host)
+  if not users:
+      return "no users found"
   return '\n'.join(sorted(users))
 
 def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):

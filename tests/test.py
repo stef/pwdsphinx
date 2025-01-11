@@ -4,7 +4,7 @@ from shutil import rmtree, copyfile
 from tempfile import mkdtemp
 from unittest.mock import Mock
 from io import BytesIO, StringIO
-import sys, pysodium, subprocess, time
+import sys, pysodium, subprocess, time, struct
 import tracemalloc
 from pyoprf import multiplexer
 from pwdsphinx import sphinx, bin2pass, ostore, v1sphinx
@@ -316,6 +316,53 @@ class TestEndToEnd(unittest.TestCase):
             rwd1 = sphinx.get(s, pwd, user, host)
 
         self.assertEqual(rwd,rwd1)
+
+    def test_v1users(self):
+        if not v1sphinx.enabled: return
+        if sphinx.userlist == False: return
+
+        with connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user, host, char_classes, syms, size), str)
+
+        with connect() as s:
+            self.assertIsInstance(sphinx.create(s, pwd, user2, host, char_classes, syms, size), str)
+
+        with connect() as s:
+            users = sphinx.users(s, host)
+            self.assertIsInstance(users, str)
+            self.assertEqual(users, '\n'.join((user,user2)))
+
+        # synthetically create a v1 record
+        id = v1sphinx.getid(host,'')
+        for i in [1,2]:
+          try: makedirs(f"{self._root}/servers/{i}/data/")
+          except: pass
+        ddir = f"{self._root}/servers/0/data/{id.hex()}"
+        makedirs(ddir)
+
+        v1users = {'v1user1', 'v1user2', 'v1used'}
+        blob = ('\x00'.join(sorted(v1users))).encode()
+        # notice we do not add rwd to encryption of user blobs
+        blob = v1sphinx.encrypt_blob(blob)
+        print('blob', blob.hex())
+        bsize = len(blob)
+        if bsize >= 2**16:
+          s.close()
+          raise ValueError("ERROR: blob is bigger than 64KB.")
+        blob = struct.pack("!H", bsize) + blob
+        blob = v1sphinx.sign_blob(blob, id, b'')
+
+        with open(ddir+"/pub", 'wb') as fd:
+            sk, pk = v1sphinx.get_signkey(id, b'')
+            fd.write(pk)
+        with open(ddir+"/blob", 'wb') as fd:
+            fd.write(blob)
+
+        with connect() as s:
+            users = sphinx.users(s, host)
+            self.assertIsInstance(users, str)
+            users = set(users.split('\n'))
+            self.assertEqual(users, {'user1', 'user2'} | v1users)
 
     #def test_get_inv_mpwd(self):
     #    if not sphinx.validate_password:

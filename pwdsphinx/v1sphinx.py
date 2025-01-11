@@ -211,7 +211,9 @@ def auth(s,id,alpha=None,pwd=None,r=None):
   clearmem(sk)
   s.send(sig)
 
-  return True
+  resp = s.recv(6)
+  if resp==b'\x00\x04auth': return True
+  return False
 
 def challenge(pwd):
   h0 = pysodium.crypto_generichash(pwd, outlen=pysodium.crypto_core_ristretto255_HASHBYTES);
@@ -330,6 +332,28 @@ def delete(pwd, user, host):
 
   s.close()
   return True
+
+def read_blob(s, id):
+  msg = b''.join([READ, id])
+  s = ratelimit(s, msg)
+  if auth(s,id) is False:
+    s.close()
+    return
+  bsize = s.recv(2)
+  bsize = struct.unpack('!H', bsize)[0]
+  blob = s.recv(bsize)
+  s.close()
+  if blob == b'fail':
+    return
+  return decrypt_blob(blob)
+
+def users(host):
+  s = connect()
+  res = read_blob(s, getid(host, ''))
+  if not res: return set()
+  version, res = res
+  users = set(res.decode().split('\x00'))
+  return users
 
 #print(get(connect(), b'asdf','asdf','test'))
 #print(delete(connect(), b'asdf','asdf','test'))
