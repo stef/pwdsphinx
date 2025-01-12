@@ -6,7 +6,7 @@ oracle - server for the SPHINX password manager
 
 # SYNOPSIS
 
-`oracle`
+`oracle [init]`
 
 # DESCRIPTION
 
@@ -42,7 +42,7 @@ firewalls while 2355 is not.
 
 `ssl_key` and `ssl_cert` must be specified, they point at a traditional TLS
 certificate and secret key file. It is recommended to not use self-signed
-certs, but to use certs that signed by CAs that are recognised widely by
+certs, but to use certs that signed by CAs that are recognized widely by
 browsers and other TLS clients.
 
 `datadir` specifies the data directory where all the device "secrets"
@@ -110,7 +110,7 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO

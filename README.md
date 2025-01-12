@@ -33,14 +33,11 @@ install also an X11 variant of pinentry from the gnupg project:
 (or anything equivalent to `apt-get install` on your OS)
 
 If you want to store other "secrets" that are longer than just 30-40 bytes, you
-can install 
+can install opaque-store: https://github.com/stef/opaque-store/ using
 
- - opaque-store: https://github.com/stef/opaque-store/
-   using `pip3 install opaquestore`
+  `pip3 install opaquestore`
 
-which depends additionally on 
-
- - libopaque: https://github.com/stef/libopaque
+which depends additionally on libopaque: https://github.com/stef/libopaque
 
 ## Installation
 
@@ -48,9 +45,9 @@ which depends additionally on
 
 ## Server/Client
 
-Since the sphinx protocol only makes sense if the "device" is
+Since the SPHINX protocol only makes sense if the "device" is
 somewhere else than where you type your password, pwdsphinx
-comes with a server implemented in py3 which you can host off-site
+comes with a server implemented in python3 which you can host off-site
 from your usual desktop/smartphone. Also a client is supplied which is
 able to communicate with the server and manage passwords.
 
@@ -107,6 +104,8 @@ can be done simply by:
 oracle
 ```
 
+For more information see the man-page `oracle(1)`
+
 ### sphinx - the client
 
 This is the client that connects to the oracle to manage passwords
@@ -114,9 +113,8 @@ using the extended sphinx protocol.
 
 #### Client Configuration
 
-Like the server, the client can be configured changing the settings in
-the `[client]` section of the config file. The `host` and `port` should
-match what you set in the oracle.
+The client can be configured changing the settings in the `[client]`
+section of the config file.
 
 The datadir (default: `~/.sphinx`) variable holds the location for your client
 parameters. Particularly it contains a masterkey which is used to derive
@@ -145,6 +143,8 @@ decreasing security slightly.
 prohibits the server to correlate all the records that belong to the same
 sphinx user relating to the same host. The cost of this, is that the user has
 to remember themselves which usernames they have at which host.
+
+For more detailed information consult the man-page `sphinx(1)`
 
 #### Operations
 
@@ -376,7 +376,6 @@ you can provide a `force` parameter on the CLI which reduces the
 number of servers successfully participating to the value of your
 `threshold` configuration setting.
 
-
 ### Store an encrypted blob
 
 ```sh
@@ -477,3 +476,6 @@ This project was funded through the NGI0 PET Fund, a fund established
 by NLnet with financial support from the European Commission's Next
 Generation Internet programme, under the aegis of DG Communications
 Networks, Content and Technology under grant agreement No 825310.
+
+Everlasting gratuity to asciimoo, dnet, jonathan and hugo for their
+contributions, patience, and support.

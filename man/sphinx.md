@@ -48,7 +48,7 @@ qr code.
 `sphinx` not only handles passwords, it is also able to handle (T)OTP
 2FA and age keys. Additionally - if installed - `sphinx` also provides
 access to `opaquestore(1)`, a simple tool that allows to store secrets
-that are more sophisticated than strong passwords.
+that need encrypted storage (like keys, phrases, or other data).
 
 ## INITIALIZING A CLIENT
 
@@ -60,10 +60,10 @@ This creates a new master key for the client, which is used to address
 records on the sphinx server and authorize management operations on
 those records.
 
-You **should** back up and encrypt this master key.
+You **SHOULD** back up and encrypt this master key.
 
 If you want to use sphinx on a different device you want to copy this
-master key also there. For copying this (and other settigns) to the
+master key also there. For copying this (and other settings) to the
 android client `androsphinx` we have the `qr` operation, see below.
 
 ## CREATE PASSWORD
@@ -73,22 +73,25 @@ password on standard input to the client, and provide parameters like
 in this example:
 
 ```
-echo -n 'my master password' | sphinx create username example.com ulsd 0 ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
+echo -n 'my input password' | sphinx create username example.com ulsd 0 ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
 ```
 
 The parameters to the client are
 
-  - Your master password on standard input. Since the master password
-    is not used to encrypt anything, you can actually use different
-    "master" passwords for different user/site combinations.
+  - Your input password on standard input. Since the input password is
+    not used to input anything, you can actually use different input
+    passwords for different user/site combinations. (Unlike with
+    traditional password managers which have one master password that
+    encrypts the whole database)
   - `create` for the operation, then
   - `username` for the username on
   - the site `example.com` then
   - the password constraints, see sections `PASSWORD RULES` and
     `PREDETERMINED PASSWORDS` for more info
 
-If the command runs successfully - the resulting new high-entropy password
-according to the given rules is printed to the console.
+If the command runs successfully - the resulting new high-entropy
+output password according to the given rules is printed to the
+console.
 
 ## GET PASSWORD
 
@@ -143,9 +146,10 @@ echo -n 'my master password' | sphinx commit username example.com
 ```
 
 Depending on your `rwd_keys` configuration setting, you might have to
-provide your master password on standard input to this operation.
+provide your input password on standard input to this operation.
 
-If all goes well, there is no output expected.
+If all goes well, there is no output expected. If anything goes wrong,
+there is going to be an error message and a non-zero exit-code.
 
 ## UNDOING A PASSWORD COMMIT
 
@@ -159,7 +163,8 @@ echo -n 'my master password' | sphinx undo username example.com
 Depending on your `rwd_keys` configuration setting, you might have to
 provide your master password on standard input to this operation.
 
-If all goes well, there is no output expected.
+If all goes well, there is no output expected, otherwise there will be
+an error message and non-zero exit-code.
 
 ## DELETING PASSWORDS
 
@@ -172,8 +177,9 @@ echo -n "my master password" | sphinx delete username example.com
 
 You provide the `delete` operation as the first parameter to the
 client, your `username` as the 2nd and the `site` as the 3rd
-parameter. This command does not provide anything on standard output
-in case everything goes well.
+parameter. This command does not provide any output on the console in
+case everything goes well, otherwise an error message and an non-zero
+exit code will signal a problem.
 
 Depending on your `rwd_keys` configuration setting, you might have to
 provide your master password on standard input to this operation.
@@ -238,15 +244,28 @@ For examples how to use these see the section "CREATE PASSWORD" or
 
 ### DEFAULT RULES
 
-If you do not provide password rules, they will be defaulting to 'ulsd' and
-length as long as possible.
+If you do not provide password rules, they will be defaulting to
+'ulsd' and length as long as possible, which means 77 characters long
+passwords using all four character classes, providing 507 bits of
+entropy, way too much.
+
+### RECOMMENDED OUTPUT PASSWORD LENGTH
+
+It is recommended to set the output password size to maximum 12 chars
+in case of `ulsd` classes enabled. If you ever have to type in this
+output password on a TV remote, or in other stressful situations this
+will be a big relief. 12 character long passwords with full entropy
+and consisting of all possible printable ASCII chars are
+computationally impossible to bruteforce on current password cracking
+hardware, as they provide almost 80 bits of entropy, and 15 characters
+almost 99 bits of entropy.
 
 ## PREDETERMINED OUTPUT PASSWORDS
 
 In case for some reason you cannot use random passwords with your
 account, or you want to store a "password" that you cannot change,
 like a PIN code for example, or a passphrase shared with your
-colleagues, you can specify a maximuxm 38 character long password, that
+colleagues, you can specify a maximum 77 character long password, that
 will be generated by the SPHINX client for you. In that case the
 command line looks like this (note the same syntax also works for the
 `change` operation)
@@ -262,16 +281,19 @@ predetermined password itself.
 ## Backward compatibility with v1 SPHINX servers/records
 
 If you still have SPHINX records on the server that were generated using v1,
-- and you want to use them -, you have to specify this server also in the
-client section like you had to in v1. If there is no record found with v2 get
-operations sphinx will attempt a get request for a v1 style record.  If a v1
-style record is found a new v2 style record is created, so no need to check for v1
-style records in this particular case anymore.
+- and you want to use them -, you have to specify this server also in
+the client section like you had to in v1. If there is no record found
+with v2 get operations sphinx will attempt a get request for a v1
+style record. If a v1 style record is found, a new v2 style record is
+created automatically, so no need to check for v1 style records in
+this particular case anymore.
 
-Unless you use also other clients that are v1 onl (like androsphinx) v1 records
-that are upgraded to v2 can be automatically deleted after a succesful upgrade,
-for this set `delete_upgraded` to true in the `[client]` section of your sphinx
-configuration.
+Unless you use also other clients that are v1 onl (like androsphinx)
+v1 records that are upgraded to v2 can be automatically deleted after
+a succesful upgrade, for this set `delete_upgraded` to true in the
+`[client]` section of your sphinx configuration. This helps server
+administrators by keeping their "DB" clean, and having a means to see
+how many v1 records are still not upgraded.
 
 ## OUTPUT PLUGINS (TOTP & AGE)
 
@@ -279,16 +301,16 @@ It is possible to "store" TOTP secrets and age secret keys using
 `sphinx`. To store such a secret and have it automatically handled
 correctly (e.g. TOTP verification code output instead of the secret)
 just prefix your username with `otp://` for TOTP support and with
-`age://` for age key support. The latter when queried will output a
+`age://` for age key support. The latter, when queried will output a
 correctly formatted age private key.
 
 ## OPAQUE-Store INTEGRATION
 
-If you have opaque-store installed and configured (see
-`opaque-stored.cfg(5)`) correctly you get a number of additional
-operations, which allow you to store traditionally encrypted blobs of
-information.
-The following operations will be available if opaque-store is setup correctly:
+If you have opaque-store (see https://github.com/stef/opaque-store/)
+installed and configured (see `opaque-stored.cfg(5)`) correctly you
+get a number of additional operations, which allow you to store
+traditionally encrypted blobs of information. The following
+operations will be available if opaque-store is setup correctly:
 
 ```sh
 echo -n 'password' | sphinx store <keyid> file-to-store
@@ -313,7 +335,7 @@ passwords and thus can lock your record after a pre-configured amount
 of failed attempts. Of course this does not apply to the operator of
 an OPAQUE server, who can circumvent the locking of records. And thus:
 
-### A Warning: don't let one entity control your SPHINX and OPAQUE-Store servers
+### A WARNING: don't let one entity control enough of your SPHINX and OPAQUE-Store servers
 
 As you can see every opaque-store op needs a password on standard
 input. This password is run through SPHINX, and the output password is
@@ -337,7 +359,10 @@ together with the name of the O-S server to hash the keyid parameter
 into a record id for the O-S Server. This means, that if you lose or
 change your `id_salt` parameter or the name of the O-S server, all
 your record ids will be different and inaccessible. So it is a good
-idea to make a backup of your configuration file containing these.
+idea to make a backup of your configuration file containing
+these. Note this `id_salt` doesn't really have to be secret, although
+it does provide another layer of security-by-obscurity if you do
+so.
 
 #### Forced operations
 
@@ -367,7 +392,8 @@ you should keep safe in case your record gets locked.
 getpwd | sphinx read <keyid>
 ```
 
-Straightforward, no surprise.
+Straightforward, no surprise. This gets your previously stored record
+and displays it on standard output.
 
 ### Overwrite an encrypted opaquestore blob
 
@@ -412,7 +438,8 @@ that.
 getpwd | sphinx erase [force] <keyid>
 ```
 
-Nothing surprising here, does what is written on the package.
+Nothing surprising here, does what it promises, deletes the stored
+blob referenced by the keyid.
 
 ### Get a recovery token
 
@@ -421,8 +448,7 @@ getpwd | sphinx recovery-tokens <keyid>
 ```
 
 If your record is not locked, this operation gets you an additional
-recovery token, that you can use later to unlock your record, should
-it become locked.
+recovery token.
 
 ### Unlock a locked opaquestore blob
 
@@ -432,7 +458,9 @@ getpwd | sphinx unlock <keyid> <recovery-token>
 
 If for some reason (someone online-bruteforcing your record, or you
 forgetting your master password) your record becomes locked by the
-servers, you can unlock it using a recovery token.
+servers, you can unlock it using a recovery token. This will also
+automatically retrieve the record - unless you supply the wrong
+password again.
 
 # SPHINX CONFIGURATION
 
@@ -452,7 +480,7 @@ and the `[servers]` sections of the config file.
 The `datadir` (default: `~/.sphinx`) variable holds the location for
 your client parameters. Particularly it contains a masterkey which is
 used to derive secrets. The master key - if not available - is
-generated by issuing an `init` command. You **should** back up and
+generated by issuing an `init` command. You **SHOULD** back up and
 encrypt this master key.
 
 `rwd_keys` toggles if the master password is required for
@@ -471,13 +499,11 @@ prohibits the server to correlate all the records that belong to the same
 sphinx user relating to the same host. The cost of this, is that the user has
 to remember themselves which usernames they have at which host.
 
-If you still have SPHINX records on the server that were generated using v1,
-and you want to use them, you have to specify this server also in the client
-section like you had to in v1. Simply specify `address` and `port` and if there
-is no record found with v2 get operations sphinx will attempt a v1 style
-get request and see if the record is available from "old times". If a v1 record
-is found a new v2 style record is created, so no need to call v1 for this
-particular record anymore.
+Specify `address` and `port` for backward compatibility with an old v1
+server. If there is no record found with v2 get operations sphinx will
+attempt a v1 style get request and see if the record is available from
+"old times". If a v1 record is found a new v2 style record is created,
+so no need to send a v1 get request for this particular record anymore.
 
 `delete_upgraded` enables automatic deletion of v1 records after automatically
 upgrading them to v2 records. Unless you use also other clients that are v1
@@ -507,14 +533,17 @@ value is used together with other values to create unique record IDs. If you
 change the name the record IDs change, and you will not be able to access your
 old records.
 
-The `host` and `port` should match what you set in the `oracle(1)` server.  The
-`ltsigkey` is the servers long-term signing key for threshold operations. This
-key only needed for threshold operation, if you use SPHINX in a single-server
-setting you don't need this.
+The `host` and `port` should match what you set (or its admin
+publishes) in the `oracle(1)` server.  The `ltsigkey` is the servers
+long-term signing key for threshold operations. This key only needed
+for threshold operation, if you use SPHINX in a single-server setting
+you don't need this.
 
 # SECURITY CONSIDERATIONS
 
-You **should** back up and encrypt your master key.
+You **SHOULD** back up and encrypt your master key. Hint you could do
+this using the `qr key` operation, recording all the other important
+details as well.
 
 The `rwd_keys` configuration setting, if set to False protects against
 offline master password bruteforce attacks - which is also a security
@@ -563,7 +592,7 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO
@@ -572,4 +601,6 @@ https://www.ctrlc.hu/~stef/blog/posts/sphinx.html
 
 https://www.ctrlc.hu/~stef/blog/posts/oprf.html
 
-`oracle(1)`, `getpwd(1)`
+https://github.com/stef/opaque-store/
+
+`oracle(1)`, `getpwd(1)`, `opaquestore(1)`
