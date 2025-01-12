@@ -691,7 +691,9 @@ def users(m, host):
   if users:
       users = set(users.decode().split('\x00'))
   if v1sphinx.enabled:
-      users = users | v1sphinx.users(host)
+      try: v1users = v1sphinx.users(host)
+      except: v1users = set()
+      users = users | v1users
   if not users:
       return "no users found"
   return '\n'.join(sorted(users))
