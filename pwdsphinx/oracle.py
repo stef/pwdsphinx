@@ -251,7 +251,7 @@ def dkg(s, msg0, aux):
 # msg format: 0xf0|msg0[pyoprf.tpdkg_msg0_SIZE]|id[32]|alpha[32]]
 def create_dkg(s, msg):
     if len(msg)!=65+pyoprf.tpdkg_msg0_SIZE:
-      print(f"asdf {len(msg)} != {pyoprf.tpdkg_msg0_SIZE}",file=sys.stderr)
+      print(f"{len(msg)} != {pyoprf.tpdkg_msg0_SIZE}",file=sys.stderr)
       fail(s)
     if verbose: print('Data received:',msg.hex())
     op,    msg = pop(msg,1)
@@ -373,16 +373,21 @@ def v1get(conn, msg):
 
     conn.send(beta+rules)
 
-def auth(s,id,alpha):
+def auth(s,id,alpha, isv1=False):
   pk = load_blob(id,'pub',32)
   if pk is None:
     print('no pubkey found in %s' % id)
     fail(s)
   nonce=pysodium.randombytes(32)
-  k = load_blob(id,'key',33)
+  k = load_blob(id,'key',33 if not isv1 else 32)
   if k is not None:
     try:
-       beta = bytes([k[0]])+pyoprf.evaluate(k[1:], alpha)
+       if not isv1:
+           beta = bytes([k[0]])+pyoprf.evaluate(k[1:], alpha)
+       else:
+           if not pysodium.crypto_core_ristretto255_is_valid_point(alpha):
+               raise ValueError("invalid alpha")
+           beta = pysodium.crypto_scalarmult_ristretto255(k, alpha)
     except:
        fail(s)
   else:
@@ -489,10 +494,11 @@ def change_dkg(s, msg):
   save_blob(id,"pub.new", pk)
   s.send(b'ok')
 
-def delete(conn, msg):
+def delete(conn, msg, isv1=False):
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
+  # todo these checks of existence of the record before auth leak information. fixme
   if msg!=b'':
     if verbose: print('invalid get msg, trailing content %r' % msg)
     fail(conn)
@@ -502,8 +508,7 @@ def delete(conn, msg):
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
-
-  auth(conn, id, alpha)
+  auth(conn, id, alpha, isv1)
 
   update_blob(conn)
 
@@ -581,6 +586,8 @@ def handler(conn, data):
      change_dkg(conn, data)
    elif data[0:1] == DELETE:
      delete(conn, data)
+   elif data[0:1] == V1DELETE:
+     delete(conn, data, True)
    elif data[0:1] == COMMIT:
      commit_undo(conn, data, 'new', 'old')
    elif data[0:1] == UNDO:

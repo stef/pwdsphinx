@@ -23,6 +23,13 @@
 # if you disable this, you have to remember your usernames in other ways.
 #userlist=True
 
+# if you have still v1 passwords on the server, they get automatically upgraded
+# to v2 records. If you don't have any clients that can only do v1, then it is
+# safe and nice to delete the old v1 passwords automatically. If you use for
+# example androsphinx android client, it only supports v1, so you don't want to
+# delete the v1 records. Default is false.
+# delete_upgraded = false
+
 # the threshold - must specify at least this many servers in the
 # [servers] section
 # threshold = 3

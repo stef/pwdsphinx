@@ -263,11 +263,15 @@ predetermined password itself.
 
 If you still have SPHINX records on the server that were generated using v1,
 - and you want to use them -, you have to specify this server also in the
-
 client section like you had to in v1. If there is no record found with v2 get
 operations sphinx will attempt a get request for a v1 style record.  If a v1
 style record is found a new v2 style record is created, so no need to check for v1
 style records in this particular case anymore.
+
+Unless you use also other clients that are v1 onl (like androsphinx) v1 records
+that are upgraded to v2 can be automatically deleted after a succesful upgrade,
+for this set `delete_upgraded` to true in the `[client]` section of your sphinx
+configuration.
 
 ## OUTPUT PLUGINS (TOTP & AGE)
 
@@ -474,6 +478,12 @@ is no record found with v2 get operations sphinx will attempt a v1 style
 get request and see if the record is available from "old times". If a v1 record
 is found a new v2 style record is created, so no need to call v1 for this
 particular record anymore.
+
+`delete_upgraded` enables automatic deletion of v1 records after automatically
+upgrading them to v2 records. Unless you use also other clients that are v1
+only (like androsphinx) this is the recommended setting, it removes crust and
+enables server operators to see if their users are finally completely v2, and
+can disable v1 support.
 
 The `threshold` option must specify the number of servers necessary to operate
 sphinx. If the `[servers]` section contains more than two entries, this value

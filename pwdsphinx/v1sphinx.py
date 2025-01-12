@@ -282,6 +282,7 @@ def delete(pwd, user, host):
   msg = b''.join([V1DELETE, id, alpha])
   s = ratelimit(s, msg)
 
+  if isinstance(pwd, str): pwd = pwd.encode()
   if not auth(s,id,alpha,pwd,r):
     s.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")

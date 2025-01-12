@@ -58,6 +58,9 @@ userlist = cfg['client'].get('userlist', True)
 threshold = int(cfg['client'].get('threshold') or "1")
 ts_epsilon = 1200 # todo make configurable
 servers = cfg.get('servers',{})
+delete_upgraded = False
+if v1sphinx.enabled:
+    delete_upgraded = cfg['client'].get('delete_upgraded',False)
 
 if len(servers)>1:
     if threshold < 2:
@@ -567,6 +570,8 @@ def try_v1get(pwd, host, user):
    m.connect()
    crwd = create(m, pwd, user, host, target=rwd)
    assert rwd == crwd
+   if delete_upgraded:
+       v1sphinx.delete(pwd, user, host)
    return rwd
 
 def get(m, pwd, user, host):

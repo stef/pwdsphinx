@@ -302,15 +302,26 @@ class TestEndToEnd(unittest.TestCase):
         with open(ddir+"/rules", 'wb') as fd:
             fd.write(rules)
 
+        # create also a v1 users blob
+        blobid=v1sphinx.getid(host,'')
+        bddir = f"{self._root}/servers/0/data/{blobid.hex()}"
+        makedirs(bddir)
+        blob = user.encode()
+        blob = v1sphinx.encrypt_blob(blob)
+        blob = struct.pack("!H", len(blob)) + blob
+        with open(bddir+"/pub", 'wb') as fd:
+            sk, pk = v1sphinx.get_signkey(blobid, b'')
+            fd.write(pk)
+        with open(bddir+"/blob", 'wb') as fd:
+            fd.write(blob)
+
         with connect() as s:
             rwd = sphinx.get(s, pwd, user, host)
 
         self.assertIsInstance(rwd, str)
         self.assertEqual(rwd,'_HO; <Yk)KA:G.q@8\\6zVHtDttCRA\\')
 
-        # delete v1 record
-        rmtree(ddir)
-
+        self.assertTrue(not path.exists(ddir))
         # try to get the value now from the uplifted v2 record
         with connect() as s:
             rwd1 = sphinx.get(s, pwd, user, host)
@@ -344,11 +355,7 @@ class TestEndToEnd(unittest.TestCase):
         blob = ('\x00'.join(sorted(v1users))).encode()
         # notice we do not add rwd to encryption of user blobs
         blob = v1sphinx.encrypt_blob(blob)
-        print('blob', blob.hex())
         bsize = len(blob)
-        if bsize >= 2**16:
-          s.close()
-          raise ValueError("ERROR: blob is bigger than 64KB.")
         blob = struct.pack("!H", bsize) + blob
         blob = v1sphinx.sign_blob(blob, id, b'')
 
