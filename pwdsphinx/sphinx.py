@@ -570,8 +570,10 @@ def try_v1get(pwd, host, user):
    m.connect()
    crwd = create(m, pwd, user, host, target=rwd)
    assert rwd == crwd
+   print(f"updated v1 record to v2, for {user}@{host}", file=sys.stderr)
    if delete_upgraded:
        v1sphinx.delete(pwd, user, host)
+       print(f"deleted v1 for {user}@{host} record after update to v2", file=sys.stderr)
    return rwd
 
 def get(m, pwd, user, host):
@@ -864,7 +866,7 @@ def qrcode(output, key):
                  bytes([len(server.get('host','localhost'))]) + server.get('host','localhost').encode('utf8') +
                  struct.pack("!H", server.get('port', 2355)))
   hosts=zlib.compress(b''.join(hosts))
-  data = (bytes([1*key+2*rwd_keys + 4*validate_password + 8*userlist, threshold]) +
+  data = (bytes([1*key+2*rwd_keys + 4*validate_password + 8*userlist + 16+delete_upgraded, threshold]) +
           mk +
           hosts)
 
