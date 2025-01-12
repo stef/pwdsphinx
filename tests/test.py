@@ -322,6 +322,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(rwd,'_HO; <Yk)KA:G.q@8\\6zVHtDttCRA\\')
 
         self.assertTrue(not path.exists(ddir))
+        self.assertTrue(not path.exists(bddir))
         # try to get the value now from the uplifted v2 record
         with connect() as s:
             rwd1 = sphinx.get(s, pwd, user, host)

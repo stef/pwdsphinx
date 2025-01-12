@@ -167,6 +167,10 @@ def update_blob(s):
       except ValueError:
         print('invalid signature on msg')
         fail(s)
+      if bsize == 41: # version + nonce + mac
+        tdir = os.path.join(datadir,id)
+        shutil.rmtree(tdir)
+        return
     save_blob(id,'blob',blob)
 
 # msg format: 0x00|id[32]|alpha[32]
