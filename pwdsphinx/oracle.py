@@ -498,17 +498,17 @@ def delete(conn, msg, isv1=False):
   op,   msg = pop(msg,1)
   id,   msg = pop(msg,32)
   alpha,msg = pop(msg,32)
-  # todo these checks of existence of the record before auth leak information. fixme
   if msg!=b'':
     if verbose: print('invalid get msg, trailing content %r' % msg)
     fail(conn)
 
   id = binascii.hexlify(id).decode()
+  auth(conn, id, alpha, isv1)
+
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
-  auth(conn, id, alpha, isv1)
 
   update_blob(conn)
 
