@@ -29,7 +29,7 @@ service. It is derived from the SPHINX key in a way that makes the
 output compatible with the password rules mandated by the service.
 *** rwd (Random word)
 High entropy 64 bytes derived from the SPHINX protocol by calculating:
-argon2i(hash(pwd||hash2curve(pwd)*k),salt), where k is a server seed 
+argon2i(hash(pwd||hash2curve(pwd)*k),salt), where k is a server seed
 contributed by the sphinx server.
 *** Master Password
 The master password is the password which is used in SPHINX to query
@@ -68,6 +68,10 @@ https://eprint.iacr.org/2018/695 "SPHINX: A Password Store that
 Perfectly Hides Passwords from Itself" by Maliheh Shirvanian,
 Stanislaw Jarecki, Hugo Krawczyk, and Nitesh Saxena
 
+The underlying cryptographic primitive (the 2hashDH OPRF) has been
+rigorously specified by the IRTF/CFRG as RFC9497:
+https://datatracker.ietf.org/doc/rfc9497/
+
 The most essential operation in the Extended Sphinx Protocol is the
 Sphinx query. This is the basis for all other operations in the
 protocol - the only exception being the READ operation.
@@ -87,8 +91,8 @@ like curve 25519. Our concrete implementation uses ristretto255. It's
 also worth noting, that the hash operation here is really a
 hash-to-curve operation.
 
-2. The server has a secret seed which it contributes into the
-blinded hash of the users password:
+2. The server has a secret seed (aka key) which it contributes into
+the blinded hash of the users password:
 
 #+BEGIN_SRC
  beta = seed*alfa
@@ -348,12 +352,12 @@ Create or Change operations, we first calculate backwards the target
 rwd that would produce that pre-defined output, and then we xor this
 target-rwd with the rwd of the SPHINX query and store the result in the
 xor mask. It is important to notice, that the maximum length of such
-pre-definied output passwords is maximum 38 characters long.
+pre-definied output passwords is maximum 77 characters long.
 
-__Warning__ this mode generates passwords that violate the security guarantees
-of the SPHINX protocol and should be avoided if possible. This mode only
-exists as a convience function and a such a perfect example of convenience
-weakening security.
+__Warning__ this mode generates passwords that violate the security
+guarantees of the SPHINX protocol and should be avoided if
+possible. This mode only exists as a convience function and as such is
+a perfect example of convenience weakening security.
 
 Converting a base-n number back into an rwd is as simple as the
 following example pseudo-code:
@@ -395,7 +399,10 @@ Thus all encrypted blobs are prefixed with a 24
 bytes nonce and extended with a 16 bytes authentication tag.
 
 Blobs are prepended with an authenticated but unencrypted version
-byte.
+byte. The value 0x00 is representing v1 records, and the value 0x01 is
+representing v2 records, the most important difference between these
+two is that v2 records have 64 byte xormasks instead of 32 bytes as
+used by v1 records.
 
 ** The client master-key
 
@@ -410,20 +417,16 @@ the master password, and hence it is not possible to use SPHINX to
 authenticate with a SPHINX server directly without throwing out one of
 the most important security guarantees of the SPHINX protocol.
 
-One possibility would be to use a threshold-version of SPHINX to
-authenticate to a SPHINX server, however this brings up a few
-complications and availability issues.
-
-Another solution is to introduce state in the client, which can be
+A possible solution is to introduce state in the client, which can be
 used to create a simple and boring-crypto wrapper around SPHINX, and
 it also helps solve a few other challenges.
 
-We decided for the latter solution and thus our Extended Sphinx
-Protocol requires a master-key at the client. This key must be synched
-to other devices that belong to the same user in case the user wants
-to use the same accounts on multiple devices. This master-key can (and
-should) be backed up by the user to provide access to their passwords
-and to be able to manage them.
+We decided for this solution and thus our Extended Sphinx Protocol
+requires a master-key at the client. This key must be synched to other
+devices that belong to the same user in case the user wants to use the
+same accounts on multiple devices. This master-key can (and should) be
+backed up by the user to provide access to their passwords and to be
+able to manage them.
 
 It is important to note that the passwords themselves to not depend in
 any way on this master-key. The master-key is only used for generating
@@ -464,12 +467,33 @@ each of the compromised servers belongs to the same ID and thus can be
 used to reassemble a record, forcing the attacker to bruteforce-
 combine also the shares.
 
+** Authentication
+
+The following management operations require authentication: Change,
+Change DKG, Commit, Undo, Delete, Read.
+
+Authentication always starts with a basic Sphinx query, so that in
+case the client uses Authentication-keys with master passwords (see
+above) it can derive the correct key depending on the master
+password. Since this is always executed the server does not learn
+which kind of authentication key method the client uses.
+
+When the server sends back the `beta` value from it's part of the
+Sphinx query, it also sends along a random nonce to the client.
+
+The client derives its authentication key, and signs the nonce, then
+sends back the signature to the server. The server takes the
+authentication public key from the Sphinx record and verifies the
+signature over the nonce with this authentication public key. If this
+verification fails, the server aborts, otherwise it resumes control to
+the management operation requested.
+
 ** Authentication keys for management operations
 
 Management operations change the records stored at the sphinx server,
 these need to be somehow authenticated to prevent denial of service
 for legitimate users. The following operations are authenticated:
-Change, Commit, Undo, Delete, Read
+Change, Commit, Undo, Delete, Userlist
 
 Updates to user records need to be signed with the private key for
 which the corresponding pub key is already stored at the user record.
@@ -544,13 +568,13 @@ bruteforce attack against the master password.
 Sphinx records are referenced by the record ID. All Sphinx Records
 stored at the sphinx server have the following three components:
 
-   - the sphinx seed
+   - the sphinx seed (aka OPRF key)
    - authentication public key
    - encrypted password rules
 
-The seed (also referred to as simply the "key"), is the secret
+The seed (also referred to as simply the - OPRF - "key"), is the secret
 component which during the Sphinx Query is contributed by the server
-to the final rwd. This is a 33 byte array, with the first byte
+to the final rwd. In v2 this is a 33 byte array, with the first byte
 denoting the index of the share in the threshold setup, if this is a
 key for a non-threshold setup this value is 1. The index byte can only
 have valid values 1..128 inclusive, other values are invalid. The
@@ -673,10 +697,12 @@ CREATE     =  0x00
 READ       =  0x33
 UNDO       =  0x55
 GET        =  0x66
+V1GET      =  0x69
 COMMIT     =  0x99
 CHANGE_DKG =  0xa0
 CHANGE     =  0xaa
 CREATE_DKG =  0xf0
+V1DELETE   =  0xf9
 DELETE     =  0xff
 #+END_SRC
 
@@ -695,27 +721,6 @@ of the original SPHINX protocol. Using TLS provides confidentiality
 against passive attackers collecting statistics about which IDs are
 being used.
 
-** Authentication
-
-The following management operations require authentication: Change,
-Change DKG, Commit, Undo, Delete, Read.
-
-Authentication always starts with a basic Sphinx query, so that in
-case the client uses Authentication-keys with master passwords (see
-above) it can derive the correct key depending on the master
-password. Since this is always executed the server does not learn
-which kind of authentication key method the client uses.
-
-When the server sends back the `beta` value from it's part of the
-Sphinx query, it also sends along a random nonce to the client.
-
-The client derives its authentication key, and signs the nonce, then
-sends back the signature to the server. The server takes the
-authentication public key from the Sphinx record and verifies the
-signature over the nonce with this authentication public key. If this
-verification fails, the server aborts, otherwise it resumes control to
-the management operation requested.
-
 ** Management Operations
 
 *** Creation of records
@@ -731,10 +736,13 @@ Creation of a record is a quite straight-forward matter:
     password rules are encrypted and appended to the authentication
     public key. The auth pubkey and the encrypted rules are signed
     with the auth private key and sent to the server
- 3. The client updates the user record (see below) for this host,
-    requesting the current user record, decrypting it, and appending
-    the new user to this record, finally sending the encrypted blob
-    back to the server.
+ 3. If the userlist feature is enabled the client updates the user
+    record (see below) for this host, requesting the current user
+    record or the all-null record to signal skipping of this step if
+    userlists are disabled by the client. If userlists are enabled the
+    client decrypts the userlist received from the server, and
+    appending the new user to this record, finally sending the
+    encrypted blob back to the server.
  4. If everything went well, the server stores the pubkey and the
     password generation rules next to the seed already generated in
     the first step of the CREATE operation.
@@ -795,12 +803,12 @@ old password is still active until the user commits the change, which
 effectively replaces the current record with the new one.
 
 The Commit operation is a simple flow, it starts with an
-authentication using the current master password and if that succeeds
-the server replaces the current record. The old password,
-authentication public key and password rules are marked as old, in
-case the change of the password fails and the account is still stuck
-with the old password, the Commit operation can be reverted by the
-Undo operation.
+authentication using the current master password if required by the
+rwd_keys setting. And if this succeeds the server replaces the current
+record. The old password, authentication public key and password rules
+are marked as old, in case the change of the password fails and the
+account is still stuck with the old password, the Commit operation can
+be reverted by the Undo operation.
 
 *** Undo commit record
 
@@ -812,23 +820,28 @@ reason.
 
 Undoing is a simple flow and very similar to the Commit operation, it
 starts with and authentication using the currently active master
-password. If the authentication succeeds the server marks the current
-record as new. The current password, authentication public key and
-password rules are replaced bye the old one. The Undo operation can be
-redone by the Commit operation to accomodate confusion when updating
-an account password.
+password if this is required by the rwd_keys setting. If the
+authentication succeeds the server marks the current record as
+new. The current password, authentication public key and password
+rules are replaced bye the old one. The Undo operation can be redone
+by the Commit operation to accomodate confusion when updating an
+account password.
 
 *** Deletion of keys
 
 The Delete operation deletes a sphinx record and updates the user
 record. The operation starts with an authentication, if it succeeds it
-updates the user record and finally deletes the sphinx record.
+optionally - depending on the userlist configuration value - updates
+the user record and finally deletes the sphinx record.
 
 ** User Record Operations
 
 The record id for user ids is calculated similarly to sphinx record
 ids, with the only difference that the username is set to an empty
 string.
+
+The special user record id of all-nulls is reserved for skipping the
+operation on user records.
 
 *** Reading of user records
 
@@ -939,6 +952,11 @@ Given the following abstract model of the SPHINX protocol:
       ^                                  ^                            ^
        \----------------------------> Attacker <---------------------/
 #+END_EXAMPLE
+
+If SPHINX is deployed in a threshold setup the compromise of as much
+servers is necessary to reach the threshold. Compromising less servers
+than enough to reaching the threshold is equivalent to not
+compromising a server in the single-server setup.t
 
 ** None of the 3 parties are compromised
 
@@ -1079,10 +1097,11 @@ the kernel level, but also on application level there are solutions
 for this (e.g. haproxy). However the problem with ip-based
 rate-limiting is that it does not protect against botnets with many
 different ip addresses, and if the server to be protected also can be
-reached via IPv6, attackers can simply exploit a /64 address space or
-even more. On the other hand, IP based rate-limiting is
-computationally very cheap, and can be done without changing the
-sphinx protocol. It can be a simple defense-in-depth measure.
+reached via TOR or via IPv6, in the latter case attackers can simply
+exploit a /64 address space or even more. On the other hand, IP based
+rate-limiting is computationally very cheap, and can be done without
+changing the sphinx protocol. It can be a simple defense-in-depth
+measure.
 
 ** UserID based rate-limiting
 
