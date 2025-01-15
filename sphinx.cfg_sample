@@ -49,7 +49,9 @@ address="127.0.0.1"
 # the port where the server is running, 443 is nice to punch through firewalls.
 port=443
 # the long term signature key of the server.
-ltsigkey="first.pub"
+ltsigkey="32byteBase64EncodedValue=="
+# or alternatively if you want to store the raw binary public key in a file
+# ltsigkey_path = "path/to/ltsigkey.pub"
 
 # in case you want to use a threshold version of SPHINX you need at least 3
 # servers (and the threshold is then 2)

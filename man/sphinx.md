@@ -523,7 +523,7 @@ The `[servers]' section contains subsections for each server like this:
 [servers.zero]
 host="localhost"
 port=10000
-ltsigkey = "zero.pub"
+ltsigkey = "32byteBase64EncodedValue=="
 ```
 
 The subsections all have the the format [server.`name`]. This `name` can be
@@ -533,11 +533,12 @@ value is used together with other values to create unique record IDs. If you
 change the name the record IDs change, and you will not be able to access your
 old records.
 
-The `host` and `port` should match what you set (or its admin
-publishes) in the `oracle(1)` server.  The `ltsigkey` is the servers
-long-term signing key for threshold operations. This key only needed
-for threshold operation, if you use SPHINX in a single-server setting
-you don't need this.
+The `host` and `port` should match what you set (or its admin publishes) in the
+`oracle(1)` server.  The `ltsigkey` is the servers long-term signing key for
+threshold operations this should be a base64 encoded value. Alternatively you
+can also store the raw binary key in a file, which you then specify using the
+`ltsigkey_path` value instead. This key only needed for threshold operation, if
+you use SPHINX in a single-server setting you don't need this.
 
 # SECURITY CONSIDERATIONS
 
