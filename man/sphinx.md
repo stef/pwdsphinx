@@ -544,7 +544,8 @@ you use SPHINX in a single-server setting you don't need this.
 
 You **SHOULD** back up and encrypt your master key. Hint you could do
 this using the `qr key` operation, recording all the other important
-details as well.
+details as well. Backing up your `webauthn_data_dir` from the `[websphinx]`
+section is also a good idea, in case you use the webextension and webauthn.
 
 The `rwd_keys` configuration setting, if set to False protects against
 offline master password bruteforce attacks - which is also a security

@@ -75,7 +75,7 @@ ltsigkey="32byteBase64EncodedValue=="
 #port=2355
 
 # ssl key - no default must be specified
-ssl_key="server.der"
+ssl_key="key.pem"
 
 # ssl cert - no default must be specified
 ssl_cert="cert.pem"
@@ -117,3 +117,9 @@ pinentry=/usr/bin/pinentry
 
 # a file where websphinx logs, this is only for dev/debug purposes
 log=
+
+# in case you use webauthn, we need to store mappings between webauthn user ids
+# and webauthn public keys. it's lame, but no way around it. back up this
+# directory and sync it to other hosts where you want to use the webextension
+# with the same webauthn accounts. 
+webauthn_data_dir = "path/to/webauthn/data/dir"
