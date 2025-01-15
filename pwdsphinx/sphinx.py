@@ -69,6 +69,30 @@ if len(servers)>1:
     if len(servers)<threshold:
         print(f'threshold({threshold}) must be less or equal than the number of servers({len(servers)}) in your config')
         exit(1)
+    for name, server in servers.items():
+        if 'ltsigkey' not in server:
+           if not 'ltsigkey_path' in server:
+               print(f'sphinx server {name} has neither "ltsigkey" nor "ltsigkey_path" configured.\n'
+                     f'please obtain the servers public key, and store it as a file at "ltsigkey_path" or base64 encoded at "ltsigkey"')
+               exit(1)
+           with open(server.get('ltsigkey_path'),'rb') as fd:
+              ltsigkey = fd.read()
+              if(len(ltsigkey)!=pysodium.crypto_sign_PUBLICKEYBYTES):
+                 raise ValueError(f"long-term signature key for server {name} at {server['ltsigkey_path']} is of incorrect size")
+           server['ltsigkey']=ltsigkey
+        else:
+            server['ltsigkey'] = binascii.a2b_base64(server['ltsigkey'])
+            if 'ltsigkey_path' in server:
+               # oh we have both?
+               with open(server.get('ltsigkey_path'),'rb') as fd:
+                  ltsigkey = fd.read()
+                  if(len(ltsigkey)!=pysodium.crypto_sign_PUBLICKEYBYTES):
+                     raise ValueError(f"long-term signature key for server {name} at {server['ltsigkey_path']} is of incorrect size")
+               if ltsigkey!=server['ltsigkey']:
+                  print(f'sphinx server {name} has both "ltsigkey" and "ltsigkey_path" configured, and they are different!\n'
+                        f'please obtain the servers public key, and store it as a file at "ltsigkey_path" or base64 encoded aat "ltsigkey"\n'
+                        f"and don't forget to delete the other variable")
+                  exit(1)
 elif threshold > 1:
     print(f'threshold({threshold}) must be less or equal than the number of servers({len(servers)}) in your config')
     exit(1)
@@ -393,12 +417,7 @@ def dkg(m, op, threshold, keyids, alpha):
    # load peer long-term keys
    peer_lt_pks = []
    for name, server in servers.items():
-      with open(server.get('ltsigkey'),'rb') as fd:
-         peer_lt_pk = fd.read()
-         if(len(peer_lt_pk)!=pysodium.crypto_sign_PUBLICKEYBYTES):
-            raise ValueError(f"long-term signature key for server {name} is of incorrect size")
-         peer_lt_pks.append(peer_lt_pk)
-
+      peer_lt_pks.append(server.get('ltsigkey'))
 
    if op == CREATE_DKG:
      tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg create k", peer_lt_pks)
