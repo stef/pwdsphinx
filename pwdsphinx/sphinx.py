@@ -589,10 +589,14 @@ def try_v1get(pwd, host, user):
    m.connect()
    crwd = create(m, pwd, user, host, target=rwd)
    assert rwd == crwd
-   print(f"updated v1 record to v2, for {user}@{host}", file=sys.stderr)
+   print(f"updated v1 record for {user}@{host} to v2", file=sys.stderr)
    if delete_upgraded:
-       v1sphinx.delete(pwd, user, host)
-       print(f"deleted v1 for {user}@{host} record after update to v2", file=sys.stderr)
+       try:
+           v1sphinx.delete(pwd, user, host)
+       except:
+           print(f"failed to delete v1 record for {user}@{host}", file=sys.stderr)
+       else:
+           print(f"deleted v1 record for {user}@{host} record after update to v2", file=sys.stderr)
    return rwd
 
 def get(m, pwd, user, host):
