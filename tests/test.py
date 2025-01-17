@@ -12,6 +12,10 @@ from binascii import b2a_base64, a2b_base64
 import pyoprf, ctypes
 import contextlib
 
+#don't run with -b if you want log output from setup/teardown fns
+#import logging
+#logger = logging.getLogger(__name__)
+
 # to get coverage, run
 # PYTHONPATH=.. coverage run ../tests/test.py
 # coverage report -m
@@ -72,20 +76,26 @@ class TestEndToEnd(unittest.TestCase):
       #cstderr = ctypes.c_void_p.in_dll(libc, 'stderr')
       #log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
       #log_file.value = cstderr.value
+
       cls._validate_password = sphinx.validate_password
 
       cls._root = mkdtemp(prefix='sphinx-oracle-root.')
       root = cls._root
       pks = []
-      for idx in range(len(servers)):
+      for idx, k in enumerate(servers.keys()):
         makedirs(f"{root}/servers/{idx}")
         copyfile("cert.pem", f"{root}/servers/{idx}/cert.pem")
         copyfile("key.pem", f"{root}/servers/{idx}/key.pem")
         pk, sk = pysodium.crypto_sign_keypair()
         with open(f"{root}/servers/{idx}/ltsig.key", 'wb') as fd:
           fd.write(sk)
-        #pks.append(b2a_base64(pk).decode("utf8")[:-1])
-        pks.append(pk)
+        servers[k]['ltsigkey']=pk
+        if k in sphinx.servers:
+          sphinx.servers[k]['ltsigkey']=pk
+        # for reproducability, in case we want to run manual sphinx ops
+        with open(f"data/{k}.pub",'wb') as fd:
+          fd.write(pk)
+
         with open(f"{root}/servers/{idx}/sphinx.cfg", 'w') as fd:
           fd.write(f'[server]\n'
                    f'verbose = true\n'
@@ -99,11 +109,6 @@ class TestEndToEnd(unittest.TestCase):
                    f'datadir = "data"\n'
                    f'rl_decay=1800\n'
                    f'rl_threshold=10\n')
-      # lt sig pubkeys
-      for idx in range(len(servers)):
-        for pk, name in zip(pks, servers.keys()):
-          with open(f"data/{name}.pub",'wb') as fd:
-            fd.write(pk)
       cls._oracles = []
       env = environ
       for idx in range(len(servers)):
@@ -591,18 +596,9 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_corrupted_dkg(self):
         sphinx.servers = {
-          'zero': { 'host': "localhost",
-                    'port': 10000,
-                    'ssl_cert': "cert.pem",
-                    'ltsigkey': "data/zero.pub"},
-          'drei': { 'host': "localhost",
-                    'port': 10003,
-                    'ssl_cert': "cert.pem",
-                    'ltsigkey': "data/drei.pub"},
-          'eris': { 'host': "localhost",
-                    'port': 10004,
-                    'ssl_cert': "cert.pem",
-                    'ltsigkey': "data/eris.pub"}
+          'zero': servers['zero'],
+          'drei': servers['drei'],
+          'eris': servers['eris']
         }
 
         if isinstance(self, TestEndToEndSingleMode):
