@@ -35,6 +35,9 @@ def convert(rwd, user, *opts):
 
   if '://' not in user:
     return bin2pass.derive(rwd, *opts)
+  elif user.startswith('otp://'):
+    # need to recover the predefined base32 otp key
+    rwd = bin2pass.derive(rwd, *opts)
 
   schema, _ = user.split("://",1)
   return converters[schema](rwd, *opts)

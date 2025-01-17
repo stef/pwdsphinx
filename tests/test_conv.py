@@ -26,8 +26,9 @@ class TestConverters(unittest.TestCase):
 
 
   def test_otp(self):
-    rwd = b'A' * 16
-    pwd = convert(rwd, "otp://asdf", char_classes, size, symbols)
+    pwd = 'A' * 16
+    rwd, classes, symbols = bin2pass.pass2bin(pwd)
+    pwd = convert(rwd, "otp://asdf", classes, len(pwd), symbols)
     self.assertIsInstance(pwd, str)
     self.assertEqual(len(pwd), 6)
 

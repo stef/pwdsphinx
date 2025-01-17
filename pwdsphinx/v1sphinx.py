@@ -11,10 +11,12 @@ try:
   from pwdsphinx import bin2pass
   from pwdsphinx.config import getcfg
   from pwdsphinx.consts import *
+  from pwdsphinx.converter import convert
 except ImportError:
   import bin2pass
   from config import getcfg
   from consts import *
+  from converter import convert
 
 # override consts from consts.py
 VERSION = b'\x00'
@@ -269,7 +271,7 @@ def get(pwd, user, host):
     raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
-  ret = bin2pass.derive(rwd,classes,size,symbols)
+  ret = convert(rwd,user,classes,size,symbols)
   clearmem(rwd)
 
   return ret
