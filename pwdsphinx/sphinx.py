@@ -493,6 +493,10 @@ def init():
     print("you want to make a backup of the following masterkey, keep it safe and secure", binascii.b2a_base64(mk))
     print('this key is also stored - and must be available - at:', kfile)
     clearmem(mk)
+  # create health check record
+  m = Multiplexer(servers)
+  m.connect()
+  create(m, b"all ok?", "healthcheck", "sphinx servers", target="everything works fine")
   return 0
 
 def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
@@ -887,6 +891,9 @@ def print_qr(qrcode: QrCode) -> None:
     print()
   print()
 
+def healthcheck(m):
+  resp = get(m, b"all ok?", "healthcheck", "sphinx servers")
+  return resp
 
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
@@ -949,6 +956,7 @@ def usage(params, help=False):
   if rwd_keys: print("       echo -n 'password' | %s <commit|undo|delete> <user> <site>" % params[0])
   else: print("       %s <commit|undo|delete> <user> <site>" % params[0])
   if userlist: print("       %s list <site>" % params[0])
+  print("                            %s healthcheck" % params[0])
   print("       %s qr [svg] [key]" % params[0])
   if ostore.available:
       ostore.usage(params)
@@ -1024,6 +1032,9 @@ def main(params=sys.argv):
   elif params[1] == 'init':
     if len(params) != 2: usage(params)
     sys.exit(init())
+  elif params[1] == 'healthcheck':
+    cmd = healthcheck
+    args = tuple()
   elif params[1] == 'get':
     if len(params) != 4: usage(params)
     cmd = get
@@ -1070,7 +1081,7 @@ def main(params=sys.argv):
     usage(params)
 
   error = None
-  if cmd != users:
+  if cmd not in {users, healthcheck}:
     pwd = ''
     if (rwd_keys or cmd in {create,change,get, ostore_handler}):
       pwd = getpwd()
