@@ -271,10 +271,7 @@ def get(pwd, user, host):
     raise ValueError("ERROR: bad checkdigit")
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd),xormask)
-  ret = convert(rwd,user,classes,size,symbols)
-  clearmem(rwd)
-
-  return ret
+  return rwd, classes, size, symbols
 
 def delete(pwd, user, host):
   s = connect()

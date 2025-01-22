@@ -583,12 +583,18 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
   return ret
 
 def try_v1get(pwd, host, user):
-   rwd = v1sphinx.get(pwd, user, host)
+   rwd, classes, size, symbols = v1sphinx.get(pwd, user, host)
+   ret = convert(rwd,user,classes,size,symbols)
+   if not user.startswith("otp://"):
+       target = ret
+   else:
+       target = bin2pass.derive(rwd, classes, size, symbols)
+   clearmem(rwd)
    # lift to v2
    m = Multiplexer(servers)
    m.connect()
-   crwd = create(m, pwd, user, host, target=rwd)
-   assert rwd == crwd
+   cret = create(m, pwd, user, host, target=target)
+   assert ret == cret
    print(f"updated v1 record for {user}@{host} to v2", file=sys.stderr)
    if delete_upgraded:
        try:
@@ -597,7 +603,7 @@ def try_v1get(pwd, host, user):
            print(f"failed to delete v1 record for {user}@{host}", file=sys.stderr)
        else:
            print(f"deleted v1 record for {user}@{host} record after update to v2", file=sys.stderr)
-   return rwd
+   return ret
 
 def get(m, pwd, user, host):
   ids = getid(host, user, m)
