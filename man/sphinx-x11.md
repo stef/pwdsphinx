@@ -24,9 +24,9 @@ first and second parameter respectively.
     to the sphinx-script - into the currently focused X11 window.
   - `pwd`: gets a password using `getpwd(1)` and `sphinx(1)`, and
     types it into the currently focused X11 window.
-  - `otp`: gets a TOTP secret stored in `sphinx(1)` using `getpwd(1)`
-    and generates the TOTP pin using `oathtool(1)`, which is then
-    typed into the currently focused X11 window.
+  - `otp`: calculates the current TOTP pin code using the a TOTP secret stored
+    in `sphinx(1)` using `getpwd(1)` , which is then typed into the currently
+    focused X11 window.
   - `tab`: types a tabulator into the current X11 window, possibly
     advancing between form-fields.
   - `enter`: sends an enter key press to the currently focused X11
