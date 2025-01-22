@@ -44,7 +44,7 @@ pwd() {
 }
 
 otp() {
-    getpwd "$user@$host" | { sphinx get "otp://$user" "$host" || return ; } | /usr/bin/oathtool -b --totp - | xdotool type --clearmodifiers "$(head -1)"
+    getpwd "$user@$host" | { sphinx get "otp://$user" "$host" || return ; } | xdotool type --clearmodifiers "$(head -1)"
 }
 
 tab() {
