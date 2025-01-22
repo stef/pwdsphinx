@@ -22,6 +22,8 @@ echo -e "oldpassword\nnewpassword" | `sphinx` change \<user> \<site> [\<u\>\<l\>
 
 `sphinx` list \<site>
 
+`sphinx` healthcheck
+
 `sphinx` qr [\<svg>] [\<key>]
 
 In general if any operation requires a master(input) password, it is
@@ -65,6 +67,8 @@ You **SHOULD** back up and encrypt this master key.
 If you want to use sphinx on a different device you want to copy this
 master key also there. For copying this (and other settings) to the
 android client `androsphinx` we have the `qr` operation, see below.
+
+This operation also creates a fixed healthcheck record on the server(s).
 
 ## CREATE PASSWORD
 
@@ -210,6 +214,22 @@ code is displayed on your screen.
 
 If for whatever reason you want to display the QR code as an SVG, just append
 the `svg` keyword to the end of the `sphinx qr` command.
+
+## HEALTHCHECK
+
+If you have run the `sphinx init` command, then this also has created a fixed
+healthcheck record. You can simply check if your setup is ok, by running a
+`sphinx healthcheck` operation. You can also try doing the same by running a
+`get` operation like this: 
+
+```
+echo -n 'all ok?' |  env/bin/sphinx get healthcheck "sphinx servers"
+```
+
+It should output "everything works fine". The difference is, that the health
+check only fetches the ratelimiting challenges from all servers and then
+aborts. While the get request will affect your ratelimiting difficulty if done
+to frequently.
 
 ## PASSWORD RULES
 

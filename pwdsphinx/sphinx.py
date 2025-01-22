@@ -363,7 +363,7 @@ def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
 
   return True
 
-def ratelimit(m,reqs):
+def ratelimit_step1(m, reqs):
   for i, req in enumerate(reqs):
     pkt0 = b''.join([CHALLENGE_CREATE, req])
     m[i].send(pkt0)
@@ -373,6 +373,10 @@ def ratelimit(m,reqs):
     m.close()
     return False
   m.close()
+  return challenges
+
+def ratelimit(m,reqs):
+  challenges  = ratelimit_step1(m, reqs)
 
   puzzles = []
   with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -892,8 +896,13 @@ def print_qr(qrcode: QrCode) -> None:
   print()
 
 def healthcheck(m):
-  resp = get(m, b"all ok?", "healthcheck", "sphinx servers")
-  return resp
+  pwd = b"all ok?"
+  user = "healthcheck"
+  host = "sphinx servers"
+  ids = getid(host, user, m)
+  r, alpha = pyoprf.blind(pwd)
+  msgs = [b''.join([GET, id, alpha]) for id in ids]
+  return ratelimit_step1(m, msgs) != False
 
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
@@ -1123,7 +1132,7 @@ def main(params=sys.argv):
       sys.exit(2) # bad check digit
     sys.exit(1) # generic errors
 
-  if cmd not in {delete, undo, commit, ostore_handler}:
+  if cmd not in {delete, undo, commit, ostore_handler, healthcheck}:
     print(ret)
     sys.stdout.flush()
     clearmem(ret)
