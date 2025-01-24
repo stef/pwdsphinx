@@ -481,12 +481,22 @@ which kind of authentication key method the client uses.
 When the server sends back the `beta` value from it's part of the
 Sphinx query, it also sends along a random nonce to the client.
 
-The client derives its authentication key, and signs the nonce, then
-sends back the signature to the server. The server takes the
-authentication public key from the Sphinx record and verifies the
-signature over the nonce with this authentication public key. If this
-verification fails, the server aborts, otherwise it resumes control to
-the management operation requested.
+The client derives its authentication key, and signs the original
+request concatenated with the nonce, then sends back the signature to
+the server.
+
+#+BEGIN_SRC python
+  sig = detached_sign(privkey, (op+id+alpha+nonce))
+#+END_SRC
+
+Note, for READ operations there is no alpha value, and thus the signed
+payload is only ~op+id+nonce~.
+
+The server takes the authentication public key from the Sphinx record
+and verifies the signature over the the original request and the nonce
+with this authentication public key. If this verification fails, the
+server aborts, otherwise it resumes control to the management
+operation requested.
 
 ** Authentication keys for management operations
 
