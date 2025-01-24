@@ -377,7 +377,7 @@ def v1get(conn, msg):
 
     conn.send(beta+rules)
 
-def auth(s,id,alpha, isv1=False):
+def auth(s,op,id,alpha, isv1=False):
   pk = load_blob(id,'pub',32)
   if pk is None:
     print('no pubkey found in %s' % id)
@@ -399,7 +399,7 @@ def auth(s,id,alpha, isv1=False):
   s.send(b''.join([beta,nonce]))
   sig = s.recv(64)
   try:
-    pysodium.crypto_sign_verify_detached(sig, nonce, pk)
+    pysodium.crypto_sign_verify_detached(sig, op+nonce, pk)
   except:
     print('bad sig')
     fail(s)
@@ -407,20 +407,20 @@ def auth(s,id,alpha, isv1=False):
     s.send(b'\x00\x04auth') # plaintext :/ todo use ltsigkey?
 
 def change(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
+  op,   tmp = pop(msg,1)
+  id,   tmp = pop(tmp,32)
+  alpha,tmp = pop(tmp,32)
+  if tmp!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % tmp)
     fail(conn)
 
   id = binascii.hexlify(id).decode()
+  auth(conn, msg, id, alpha)
+
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
-
-  auth(conn, id, alpha)
 
   alpha = conn.recv(32)
   if(len(alpha)!=32):
@@ -451,22 +451,22 @@ def change(conn, msg):
   conn.send(b'ok')
 
 def change_dkg(s, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
+  op,   tmp = pop(msg,1)
+  id,   tmp = pop(tmp,32)
+  alpha,tmp = pop(tmp,32)
+  if tmp!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % tmp)
     fail(s)
+
+  id = binascii.hexlify(id).decode()
+  auth(s, msg, id, alpha)
 
   aux = b'%s%s' % (op, alpha)
 
-  id = binascii.hexlify(id).decode()
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(s)
-
-  auth(s, id, alpha)
 
   msg = s.recv(pyoprf.tpdkg_msg0_SIZE+32)
   alpha,msg0 = pop(msg,32)
@@ -499,15 +499,15 @@ def change_dkg(s, msg):
   s.send(b'ok')
 
 def delete(conn, msg, isv1=False):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
+  op,   tmp = pop(msg,1)
+  id,   tmp = pop(tmp,32)
+  alpha,tmp = pop(tmp,32)
+  if tmp!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % tmp)
     fail(conn)
 
   id = binascii.hexlify(id).decode()
-  auth(conn, id, alpha, isv1)
+  auth(conn, msg, id, alpha, isv1)
 
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
@@ -520,20 +520,20 @@ def delete(conn, msg, isv1=False):
   conn.send(b'ok')
 
 def commit_undo(conn, msg, new, old):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
-  if msg!=b'':
-    if verbose: print('invalid get msg, trailing content %r' % msg)
+  op,   tmp = pop(msg,1)
+  id,   tmp = pop(tmp,32)
+  alpha,tmp = pop(tmp,32)
+  if tmp!=b'':
+    if verbose: print('invalid get msg, trailing content %r' % tmp)
     fail(conn)
 
   id = binascii.hexlify(id).decode()
+  auth(conn, msg, id, alpha)
+
   tdir = os.path.join(datadir,id)
   if not os.path.exists(tdir):
     if verbose: print("%s doesn't exist" % tdir)
     fail(conn)
-
-  auth(conn, id, alpha)
 
   if (new_rules:=load_blob(id,'rules.%s' % new, RULE_SIZE)) is None:
     fail(conn)
@@ -565,11 +565,12 @@ def commit_undo(conn, msg, new, old):
   conn.send(b'ok')
 
 def read(conn, msg):
-  op,   msg = pop(msg,1)
-  id,   msg = pop(msg,32)
-  alpha,msg = pop(msg,32)
+  op,   tmp = pop(msg,1)
+  id,   tmp = pop(tmp,32)
+  alpha,tmp = pop(tmp,32)
+
   id = binascii.hexlify(id).decode()
-  auth(conn, id, alpha)
+  auth(conn, msg, id, alpha)
 
   blob = load_blob(id,'blob')
   if blob is None:

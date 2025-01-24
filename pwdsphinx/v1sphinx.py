@@ -193,7 +193,7 @@ def ratelimit(s,req):
   s.send(solution)
   return s
 
-def auth(s,id,alpha=None,pwd=None,r=None):
+def auth(s,op,id,alpha=None,pwd=None,r=None):
   if r is None:
     nonce = s.recv(32)
     if len(nonce)!=32:
@@ -209,7 +209,7 @@ def auth(s,id,alpha=None,pwd=None,r=None):
 
   sk, pk = get_signkey(id, rwd)
   clearmem(rwd)
-  sig = pysodium.crypto_sign_detached(nonce,sk)
+  sig = pysodium.crypto_sign_detached(op+nonce,sk)
   clearmem(sk)
   s.send(sig)
 
@@ -282,7 +282,7 @@ def delete(pwd, user, host):
   s = ratelimit(s, msg)
 
   if isinstance(pwd, str): pwd = pwd.encode()
-  if not auth(s,id,alpha,pwd,r):
+  if not auth(s,msg,id,alpha,pwd,r):
     s.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
 
@@ -336,7 +336,7 @@ def delete(pwd, user, host):
 def read_blob(s, id):
   msg = b''.join([READ, id])
   s = ratelimit(s, msg)
-  if auth(s,id) is False:
+  if auth(s,msg,id) is False:
     s.close()
     return
   bsize = s.recv(2)

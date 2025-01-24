@@ -251,7 +251,7 @@ def commit_undo(m, op, pwd, user, host):
   r, alpha = pyoprf.blind(pwd)
   msgs = [b''.join([op, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
-  if not auth(m,ids,host,user,alpha,pwd,r):
+  if not auth(m,msgs,ids,host,user,alpha,pwd,r):
     m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
   if set(m.gather(2))!={b'ok'}:
@@ -315,7 +315,7 @@ def update_rec(s, id, item): # this is only for user blobs. a UI feature offerin
       blob = sign_blob(blob, id, b'')
     s.send(blob)
 
-def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
+def auth(m,ops,ids,host,user,alpha=None,pwd=None,r=None):
   if r is None:
     nonces = m.gather(32)
     if nonces is None:
@@ -328,16 +328,19 @@ def auth(m,ids,host,user,alpha=None,pwd=None,r=None):
     if msgs is None:
       m.close()
       return False
-    nonces = [(idx,resp[1]) for idx, resp in enumerate(msgs)]
-    if len(msgs) < len(m):
+    nonces = [(idx,resp[1]) for idx, resp in enumerate(msgs) if resp is not None]
+    if sum(1 for m in msgs if m is not None) < len(m):
         raise ValueError("auth: not all peers answered or authenticated")
-    beta = pyoprf.thresholdmult([resp[0] for resp in msgs][:threshold])
+    if len(servers)>1:
+        beta = pyoprf.thresholdmult([resp[0] for resp in msgs if resp is not None][:threshold])
+    else:
+        beta = msgs[0][0][1:]
     #rwd = pyoprf.unblind_finalize(r, beta, pwd)
     rwd = oprf2rwd(r, beta, pwd, host, user)
 
-  for idx, nonce in nonces:
+  for (idx, nonce), op in zip(nonces, ops):
     sk, pk = get_signkey(ids[idx], rwd)
-    sig = pysodium.crypto_sign_detached(nonce,sk)
+    sig = pysodium.crypto_sign_detached(op+nonce,sk)
     clearmem(sk)
     m.send(idx, sig)
 
@@ -687,7 +690,7 @@ def read_blob(m, ids, host, rwd = b''):
   msgs = [b''.join([READ, id]) for id in ids]
   m = ratelimit(m, msgs)
 
-  if auth(m,ids,host,'') is False:
+  if auth(m,msgs,ids,host,'') is False:
     m.close()
     return
 
@@ -745,7 +748,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
     msgs = [b''.join([CHANGE, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
   # auth: do sphinx with current seed, use it to sign the nonce
-  if not auth(m,ids,host,user,alpha,oldpwd,r):
+  if not auth(m,msgs,ids,host,user,alpha,oldpwd,r):
     m.close()
     raise ValueError("ERROR: Failed to authenticate using old password to server while changing password on server or record doesn't exist")
 
@@ -807,7 +810,7 @@ def delete(m, pwd, user, host):
   msgs = [b''.join([DELETE, id, alpha]) for id in ids]
   m = ratelimit(m, msgs)
   #print("solved ratelimit puzzles")
-  if auth(m,ids,host,user,alpha,pwd,r) is False:
+  if auth(m,msgs,ids,host,user,alpha,pwd,r) is False:
     m.close()
     raise ValueError("ERROR: Failed to authenticate to server while deleting password on server or record doesn't exist")
   #print("authenticated")
