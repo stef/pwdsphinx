@@ -1,8 +1,8 @@
-% pipe2tmpfile(1) | simple tool that allows commands that expect files to work with data comming through a pipe
+% pipe2tmpfile(1) | simple tool that allows commands that expect files to work with data coming through a pipe
 
 # NAME
 
-pipe2tmpfile(1) - simple tool that allows commands that expect files to work with data comming through a pipe
+pipe2tmpfile(1) - simple tool that allows commands that expect files to work with data coming through a pipe
 
 # SYNOPSIS
 
