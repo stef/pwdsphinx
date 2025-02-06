@@ -141,20 +141,24 @@ def usage(help=False):
     if help: sys.exit(0)
     sys.exit(1)
 
-if __name__ == '__main__':
-    rwd = sys.stdin.buffer.readline().rstrip(b'\n')
+def main():
     if len(sys.argv)!=2:
         usage()
     op = sys.argv[1]
     if op in ('help', '-h', '--help'):
-        usage(True)
-    elif op == "pubkey":
+       usage(True)
+    if op not in ('pubkey', 'privkey'):
+       usage()
+
+    rwd = sys.stdin.buffer.readline().rstrip(b'\n')
+    if op == "pubkey":
         if rwd.startswith(b'AGE-SECRET-KEY-'):
           rwd = decode('age-secret-key-', rwd.decode('utf8'))
         pk = pysodium.crypto_scalarmult_base(rwd)
         ret = encode("age", pk)
     elif op == "privkey":
         ret = encode('age-secret-key-', rwd).upper()
-    else:
-        usage()
     print(ret)
+
+if __name__ == '__main__':
+    main()
