@@ -75,6 +75,10 @@ if len(servers)>1:
                print(f'sphinx server {name} has neither "ltsigkey" nor "ltsigkey_path" configured.\n'
                      f'please obtain the servers public key, and store it as a file at "ltsigkey_path" or base64 encoded at "ltsigkey"')
                exit(1)
+           if not os.path.exists(server.get('ltsigkey_path')):
+               # deferring errors until usage. maybe never needed, unittests generate these on the fly.
+               server['ltsigkey']=None
+               continue
            with open(server.get('ltsigkey_path'),'rb') as fd:
               ltsigkey = fd.read()
               if(len(ltsigkey)!=pysodium.crypto_sign_PUBLICKEYBYTES):
@@ -84,6 +88,9 @@ if len(servers)>1:
             server['ltsigkey'] = binascii.a2b_base64(server['ltsigkey'])
             if 'ltsigkey_path' in server:
                # oh we have both?
+               if not os.path.exists(server.get('ltsigkey_path')):
+                  print(f"server {name} has both ltsigkey and ltsigkey_path set, but the latter file doesn't exist, check your assumptions.")
+                  continue
                with open(server.get('ltsigkey_path'),'rb') as fd:
                   ltsigkey = fd.read()
                   if(len(ltsigkey)!=pysodium.crypto_sign_PUBLICKEYBYTES):
@@ -424,7 +431,13 @@ def dkg(m, op, threshold, keyids, alpha):
    # load peer long-term keys
    peer_lt_pks = []
    for name, server in servers.items():
-      peer_lt_pks.append(server.get('ltsigkey'))
+      k = server.get('ltsigkey')
+      if k is None:
+        print(f"Warning the ltsigkey for server: {name} is unset.")
+        continue
+      peer_lt_pks.append(k)
+   if len(peer_lt_pks) < len(servers.items()):
+       raise ValueError("cannot create record in threshold setup without having the long-term signing keys of all servers")
 
    if op == CREATE_DKG:
      tp, msg0 = pyoprf.tpdkg_start_tp(n, threshold, ts_epsilon, "threshold sphinx dkg create k", peer_lt_pks)
