@@ -1,0 +1,26 @@
+#!/bin/sh -e
+
+keyroot=/run/user/$(id -u)
+keyfile=$(mktemp -p ${keyroot})
+
+cleanup() {
+   rm -f "${keyfile}"
+}
+
+cat >$keyfile
+trap "cleanup" INT TERM QUIT EXIT
+
+replace() {
+for i do 
+   arg="$i"
+   if [ "x$arg" == "x@@keyfile@@" ]; then
+      arg="$keyfile"
+   fi
+   printf %s\\n "$arg" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/"
+done
+echo " "
+}
+
+newargs=$(replace "$@")
+eval "set -- $newargs"
+"${@}"

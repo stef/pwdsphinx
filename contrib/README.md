@@ -56,6 +56,17 @@ oracle - if only one then the next step is skipped: provides a choice
 which username to use. Then `type-pwd.sh` invoked using the selected
 user and hostname.
 
+## pipe2tmpfile 
+
+This is a simple tool that converts the output of a pipe into a temporary file
+and runs the command replacing the token `@@keyfile@@` with the filename of
+temporary file, which gets deleted after the command finishes running. A simple
+example to sign a file using a minisig key stored in sphinx:
+
+```sh
+  getpwd | env/bin/sphinx get minisig://user1 minisign-test-key | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
+```
+
 ## sphinx-x11
 
 This is a simple "script" language interpreter that integrates the

@@ -5,7 +5,7 @@ install: $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx $(DESTDIR)$(prefix)/usr/bin/ex
 	$(DESTDIR)$(prefix)/usr/bin/otp.sphinx $(DESTDIR)$(prefix)/usr/bin/pass.sphinx \
 	$(DESTDIR)$(prefix)/usr/bin/user-pass-otp.sphinx $(DESTDIR)$(prefix)/usr/bin/user-pass.sphinx \
    $(DESTDIR)$(prefix)/usr/bin/getacc-user-pass.sphinx \
-	$(DESTDIR)$(prefix)/usr/bin/sphinx-x11 $(DESTDIR)$(prefix)/usr/bin/sphage \
+	$(DESTDIR)$(prefix)/usr/bin/sphinx-x11 $(DESTDIR)$(prefix)/usr/bin/pipe2tmpfile \
 	$(DESTDIR)$(prefix)/usr/share/doc/pwdsphinx-tools/README.x11.md
 
 $(DESTDIR)$(prefix)/usr/bin/dmenu-sphinx: dmenu-sphinx
@@ -23,7 +23,7 @@ $(DESTDIR)$(prefix)/usr/bin/type-pwd: type-pwd
 $(DESTDIR)$(prefix)/usr/bin/sphinx-x11: sphinx-x11
 	install -D -m 0755 $< $@
 
-$(DESTDIR)$(prefix)/usr/bin/sphage: sphage
+$(DESTDIR)$(prefix)/usr/bin/pipe2tmpfile: pipe2tmpfile
 	install -D -m 0755 $< $@
 
 $(DESTDIR)$(prefix)/usr/bin/otp.sphinx: sphinx-scripts/otp.sphinx
