@@ -782,7 +782,6 @@ def main(debug=False):
 
             if verbose:
                 print('{} Connection from {}:{}'.format(datetime.datetime.now(), addr[0], addr[1]))
-            conn = ctx.wrap_socket(conn, server_side=True)
 
             while(len(kids)>max_kids):
                 pid, status = os.waitpid(0,0)
@@ -790,6 +789,7 @@ def main(debug=False):
 
             pid=os.fork()
             if pid==0:
+              conn = ctx.wrap_socket(conn, server_side=True)
               ssl.RAND_add(os.urandom(16),0.0)
               try:
                 ratelimit(conn)
