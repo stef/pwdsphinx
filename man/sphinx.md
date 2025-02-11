@@ -49,7 +49,7 @@ qr code.
 
 `sphinx` not only handles passwords, it is also able to handle (T)OTP
 2FA and age keys. Additionally - if installed - `sphinx` also provides
-access to `opaquestore(1)`, a simple tool that allows to store secrets
+access to `opaquestore(1)`, a simple tool that allows one to store secrets
 that need encrypted storage (like keys, phrases, or other data).
 
 ## INITIALIZING A CLIENT
@@ -310,7 +310,7 @@ this particular case anymore.
 
 Unless you use also other clients that are v1 onl (like androsphinx)
 v1 records that are upgraded to v2 can be automatically deleted after
-a succesful upgrade, for this set `delete_upgraded` to true in the
+a successful upgrade, for this set `delete_upgraded` to true in the
 `[client]` section of your sphinx configuration. This helps server
 administrators by keeping their "DB" clean, and having a means to see
 how many v1 records are still not upgraded.
@@ -323,6 +323,61 @@ correctly (e.g. TOTP verification code output instead of the secret)
 just prefix your username with `otp://` for TOTP support and with
 `age://` for age key support. The latter, when queried will output a
 correctly formatted age private key.
+
+Currently the following converters are supported:
+
+### TOTP
+
+Import a TOTP secret
+```sh
+% getpwd | sphinx create otp://username example.com ABCDEF1234567890
+```
+
+Get a TOTP PIN:
+```
+% getpwd | sphinx get otp://username example.com
+```
+
+### minisign
+
+Create a new key, and store the public key at /tmp/minisig.pub:
+```sh
+% getpwd | sphinx create minisig://user example.com | pipe2tmpfile minisign -R -s @@keyfile@@ -p /tmp/minisig.pub
+```
+
+Sign a file `filetosign`:
+```sh
+% getpwd | sphinx get minisig://user example.com | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
+```
+
+### Age
+
+Generate an AGE key and store the public key:
+```sh
+% getpwd | sphinx create age://user example.com | sphage pubkey >/tmp/age.pub
+```
+
+Decrypt a file using an AKE key from SPHINX:
+```sh
+getpwd | sphinx get age://user localhost | pipe2tmpfile age --decrypt -i @@keyfile@@ encryptedfile
+```
+
+### SSH-ED25519
+
+Create key and save public key:
+```sh
+% getpwd | sphinx create ssh-ed25519://test asdf | pipe2tmpfile ssh-keygen -e -f @@keyfile@@ >pubkey
+```
+
+Sign a file:
+```sh
+% getpwd | sphinx get ssh-ed25519://test asdf | pipe2tmpfile ssh-keygen -Y sign -n file -f @@keyfile@@ content.txt > content.txt.sig
+```
+
+Verify file with public key:
+```sh
+% ssh-keygen -Y check-novalidate -n file -f /tmp/ssh-ed.pubkey -s /tmp/content.txt.sig </tmp/content.txt
+```
 
 ## OPAQUE-Store INTEGRATION
 
