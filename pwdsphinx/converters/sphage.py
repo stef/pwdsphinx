@@ -131,7 +131,7 @@ def encode(hrp, data):
         return None
     return ret
 
-def convert(rwd, *opts):
+def convert(rwd, user, host, *opts):
     return encode('age-secret-key-', rwd[:32]).upper()
 
 schema = {'age': convert}

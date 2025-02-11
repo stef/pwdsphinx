@@ -4,7 +4,7 @@ import sys, base64, pysodium, binascii
 
 # usage
 # getpwd | env/bin/sphinx create minisig://test asdf | pipe2tmpfile minisign -R -s @@keyfile@@ -p /tmp/minisig.pub
-# getpwd | env/bin/sphinx get minisig://test asdf | ~/tasks/sphinx/pwdsphinx/contrib/pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
+# getpwd | env/bin/sphinx get minisig://test asdf | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
 
 """format is
 untrusted comment: sphinx generated minisign key\n
@@ -20,7 +20,7 @@ use crypto_sign_ed25519_sk_to_pk(unsigned char *pk, const unsigned char *sk);
 to derive pubkey from secret key
 """
 
-def convert(rwd, *opts):
+def convert(rwd, user, host, *opts):
     seed=rwd[:32]
     kid=rwd[32:40]
     pk,sk=pysodium.crypto_sign_seed_keypair(seed)

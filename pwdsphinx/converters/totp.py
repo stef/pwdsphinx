@@ -6,7 +6,7 @@ from struct import pack, unpack
 import sys
 from time import time
 
-def totp(key, *opts, time_step=30, digits=6, digest='sha1'):
+def totp(key, user, host, *opts, time_step=30, digits=6, digest='sha1'):
     if isinstance(key, bytes): key=key.decode('utf8')
     key = b32decode(key.upper() + '=' * ((8 - len(key)) % 8))
     ts = pack('>Q', int(time() / time_step))
