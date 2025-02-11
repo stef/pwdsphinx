@@ -22,7 +22,7 @@ try:
   from pwdsphinx.consts import *
   from pwdsphinx.utils import split_by_n
   from pwdsphinx.ext import init_browser_ext
-  from pwdsphinx.converter import convert
+  from pwdsphinx.converter import convert, convertedBy
   from pwdsphinx import ostore
 except ImportError:
   import bin2pass, ostore, v1sphinx
@@ -30,7 +30,7 @@ except ImportError:
   from consts import *
   from utils import split_by_n
   from ext import init_browser_ext
-  from converter import convert
+  from converter import convert, convertedBy
 
 win=False
 if platform.system() == 'Windows':
@@ -564,6 +564,8 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
     size = len(target)
     target = target + pysodium.randombytes(64 - len(target))
     xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),target)
+  elif convertedBy(user) is not None:
+    xormask = pysodium.randombytes(64)
   else:
     _uppers = set([x.decode('utf8') for x in bin2pass.sets['u']])
     _lowers = set([x.decode('utf8') for x in bin2pass.sets['l']])
@@ -573,7 +575,7 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
         xormask = pysodium.randombytes(64)
         candidate = convert(
             xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask),
-            user,
+            user, host,
             char_classes,size,symbols)
         if 1 <= size < 8: break # too much of a bias especially for ulsd when size < 5
         if 'u' in char_classes and len(_uppers.intersection(candidate)) == 0:
@@ -602,13 +604,13 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
 
-  ret = convert(rwd,user,char_classes,size,symbols)
+  ret = convert(rwd,user,host,char_classes,size,symbols)
   clearmem(rwd)
   return ret
 
 def try_v1get(pwd, host, user):
    rwd, classes, size, symbols = v1sphinx.get(pwd, user, host)
-   ret = convert(rwd,user,classes,size,symbols)
+   ret = convert(rwd,user,host,classes,size,symbols)
    if not user.startswith("otp://"):
        target = ret
    else:
@@ -694,7 +696,7 @@ def get(m, pwd, user, host):
 
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
 
-  ret = convert(rwd,user,classes,size,symbols)
+  ret = convert(rwd,user,host,classes,size,symbols)
   clearmem(rwd)
 
   return ret
@@ -805,7 +807,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   m.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
-  ret = convert(rwd,user,classes,size,symbols)
+  ret = convert(rwd,user,host,classes,size,symbols)
   clearmem(rwd)
 
   return ret
