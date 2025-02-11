@@ -31,7 +31,7 @@ def load_converters():
 
 load_converters()
 
-def convert(rwd, user, *opts):
+def convert(rwd, user, host, *opts):
 
   if '://' not in user:
     return bin2pass.derive(rwd, *opts)
@@ -39,8 +39,13 @@ def convert(rwd, user, *opts):
     # need to recover the predefined base32 otp key
     rwd = bin2pass.derive(rwd, *opts)
 
-  schema, _ = user.split("://",1)
-  return converters[schema](rwd, *opts)
+  schema, name = user.split("://",1)
+  return converters[schema](rwd, name, host, *opts)
+
+def convertedBy(user):
+  for k in converters.keys():
+    if user.startswith(f"{k}://"): return k
+  return None
 
 if __name__ == "__main__":
   convert(b'\xaa' * 32, 'asdf', 'uld', 0, '')
