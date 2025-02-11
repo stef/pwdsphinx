@@ -342,36 +342,48 @@ Get a TOTP PIN:
 
 Create a new key, and store the public key at /tmp/minisig.pub:
 ```sh
-% getpwd | sphinx create minisig://user example.com | pipe2tmpfile minisign -R -s @@keyfile@@ -p /tmp/minisig.pub
+% getpwd \
+    | sphinx create minisig://user example.com \
+    | pipe2tmpfile minisign -R -s @@keyfile@@ -p /tmp/minisig.pub
 ```
 
 Sign a file `filetosign`:
 ```sh
-% getpwd | sphinx get minisig://user example.com | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
+% getpwd \
+    | sphinx get minisig://user example.com \
+    | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
 ```
 
 ### Age
 
 Generate an AGE key and store the public key:
 ```sh
-% getpwd | sphinx create age://user example.com | sphage pubkey >/tmp/age.pub
+% getpwd \
+    | sphinx create age://user example.com \
+    | sphage pubkey >/tmp/age.pub
 ```
 
 Decrypt a file using an AKE key from SPHINX:
 ```sh
-getpwd | sphinx get age://user localhost | pipe2tmpfile age --decrypt -i @@keyfile@@ encryptedfile
+% getpwd \
+    | sphinx get age://user localhost \
+    | pipe2tmpfile age --decrypt -i @@keyfile@@ encryptedfile
 ```
 
 ### SSH-ED25519
 
 Create key and save public key:
 ```sh
-% getpwd | sphinx create ssh-ed25519://test asdf | pipe2tmpfile ssh-keygen -e -f @@keyfile@@ >pubkey
+% getpwd \
+   | sphinx create ssh-ed25519://test asdf \
+   | pipe2tmpfile ssh-keygen -e -f @@keyfile@@ >pubkey
 ```
 
 Sign a file:
 ```sh
-% getpwd | sphinx get ssh-ed25519://test asdf | pipe2tmpfile ssh-keygen -Y sign -n file -f @@keyfile@@ content.txt > content.txt.sig
+% getpwd \
+   | sphinx get ssh-ed25519://test asdf \
+   | pipe2tmpfile ssh-keygen -Y sign -n file -f @@keyfile@@ content.txt > content.txt.sig
 ```
 
 Verify file with public key:
