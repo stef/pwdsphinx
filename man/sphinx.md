@@ -353,7 +353,7 @@ Sign a file `filetosign`:
     | sphinx get minisig://user example.com \
     | pipe2tmpfile minisign -S -s @@keyfile@@ -m filetosign
 ```
-The `Get` SPHINX operations return a private key.
+The `Get` SPHINX operation returns a private key.
 
 ### Age
 
@@ -370,7 +370,7 @@ Decrypt a file using an AKE key from SPHINX:
     | sphinx get age://user localhost \
     | pipe2tmpfile age --decrypt -i @@keyfile@@ encryptedfile
 ```
-The `Get` SPHINX operations return a private key.
+The `Get` SPHINX operation returns a private key.
 
 ### SSH-ED25519
 
@@ -387,7 +387,7 @@ Sign a file:
    | sphinx get ssh-ed25519://test asdf \
    | pipe2tmpfile ssh-keygen -Y sign -n file -f @@keyfile@@ content.txt > content.txt.sig
 ```
-The `Get` SPHINX operations return a private key.
+The `Get` SPHINX operation returns a private key.
 
 Verify file with public key:
 ```sh
