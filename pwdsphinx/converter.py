@@ -31,7 +31,7 @@ def load_converters():
 
 load_converters()
 
-def convert(rwd, user, host, *opts):
+def convert(rwd, user, host, op, *opts):
 
   if '://' not in user:
     return bin2pass.derive(rwd, *opts)
@@ -40,7 +40,7 @@ def convert(rwd, user, host, *opts):
     rwd = bin2pass.derive(rwd, *opts)
 
   schema, name = user.split("://",1)
-  return converters[schema](rwd, name, host, *opts)
+  return converters[schema](rwd, name, host, op, *opts)
 
 def convertedBy(user):
   for k in converters.keys():

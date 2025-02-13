@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys, base64, pysodium, binascii, struct
+from pwdsphinx.consts import *
 
 # usage
 # create key and save pubkey
@@ -14,7 +15,7 @@ from itertools import zip_longest # for Python 3.x
 def split_by_n(iterable, n):
     return zip_longest(*[iter(iterable)]*n, fillvalue='')
 
-def convert(rwd, user, host, *opts):
+def privkey(rwd, user, host):
     seed=rwd[:32]
     pk,sk=pysodium.crypto_sign_seed_keypair(seed)
 
@@ -61,5 +62,21 @@ def convert(rwd, user, host, *opts):
     return ("-----BEGIN OPENSSH PRIVATE KEY-----\n" +
             '\n'.join(''.join(l) for l in split_by_n(base64.b64encode(raw).decode('utf8'), 70)) +
             "\n-----END OPENSSH PRIVATE KEY-----")
+
+def pubkey(rwd, user, host):
+    seed=rwd[:32]
+    pk,sk=pysodium.crypto_sign_seed_keypair(seed)
+
+    raw = (binascii.unhexlify("0000000b"                       # int length = 11
+                              "7373682d65643235353139"         # string key type = ssh-ed25519
+                              "00000020") +                    # int length = 32
+           pk)
+
+    return f"ssh-ed25519 {base64.b64encode(raw).decode('utf8')} {user}@{host}"
+
+def convert(rwd, user, host, op, *opts):
+    if op in {CREATE, CHANGE}:
+        return pubkey(rwd, user, host)
+    return privkey(rwd,user, host)
 
 schema = {'ssh-ed25519': convert}

@@ -28,6 +28,7 @@
 
 import sys, base64, pysodium
 from enum import Enum
+from pwdsphinx.consts import *
 
 class Encoding(Enum):
     """Enumeration type to list the various supported encodings."""
@@ -131,7 +132,10 @@ def encode(hrp, data):
         return None
     return ret
 
-def convert(rwd, user, host, *opts):
+def convert(rwd, user, host, op, *opts):
+    if op in {CREATE, CHANGE}:
+        pk = pysodium.crypto_scalarmult_base(rwd[:32])
+        return encode("age", pk)
     return encode('age-secret-key-', rwd[:32]).upper()
 
 schema = {'age': convert}

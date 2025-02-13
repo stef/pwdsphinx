@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys, base64, pysodium, binascii
+from pwdsphinx.consts import *
 
 # usage
 # getpwd | env/bin/sphinx create minisig://test asdf | pipe2tmpfile minisign -R -s @@keyfile@@ -p /tmp/minisig.pub
@@ -20,16 +21,24 @@ use crypto_sign_ed25519_sk_to_pk(unsigned char *pk, const unsigned char *sk);
 to derive pubkey from secret key
 """
 
-def convert(rwd, user, host, *opts):
-    seed=rwd[:32]
-    kid=rwd[32:40]
-    pk,sk=pysodium.crypto_sign_seed_keypair(seed)
-
+def privkey(sk, kid):
     raw = (binascii.unhexlify("456400004232") +
            b'\x00' * 48 +
            kid +
            sk +
            b'\x00' * 32)
-    return f"untrusted comment: minisign encrypted secret key\n{base64.b64encode(raw).decode('utf8')}"
+    return f"untrusted comment: minisign secret key\n{base64.b64encode(raw).decode('utf8')}"
+
+def pubkey(pk, kid):
+    raw = (b'Ed' + kid + pk)
+    return f"untrusted comment: minisign public key\n{base64.b64encode(raw).decode('utf8')}"
+
+def convert(rwd, user, host, op, *opts):
+    seed=rwd[:32]
+    kid=rwd[32:40]
+    pk,sk=pysodium.crypto_sign_seed_keypair(seed)
+    if op in {CREATE, CHANGE}:
+        return pubkey(pk, kid)
+    return privkey(sk, kid)
 
 schema = {'minisig': convert}
