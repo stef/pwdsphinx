@@ -753,7 +753,7 @@ def users(m, host):
       return "no users found"
   return '\n'.join(sorted(users))
 
-def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbols, size=0, target=None):
+def change(m, oldpwd, newpwd, user, host, char_classes='uld', symbols=bin2pass.symbols, size=0, target=None):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(oldpwd)
 
@@ -785,15 +785,41 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
   else:
       checkdigit = 0
 
-  if target:
-    trwd, classes, symbols = bin2pass.pass2bin(target, None)
+  if target and not user.startswith('raw://'):
+    trwd, char_classes, symbols = bin2pass.pass2bin(target, None)
     xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),trwd)
-    print('asdf', len(trwd), len(xormask))
     size = len(target)
-  else:
+    #char_classes = 'uld'
+    #symbols = bin2pass.symbols
+  elif target and user.startswith('raw://'):
+    size = len(target)
+    target = target + pysodium.randombytes(64 - len(target))
+    xormask = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),target)
+  elif convertedBy(user) is not None:
     xormask = pysodium.randombytes(64)
+  else:
+    _uppers = set([x.decode('utf8') for x in bin2pass.sets['u']])
+    _lowers = set([x.decode('utf8') for x in bin2pass.sets['l']])
+    _digits = set([x.decode('utf8') for x in bin2pass.sets['d']])
+    _symbols = set(symbols)
+    while True:
+        xormask = pysodium.randombytes(64)
+        candidate = convert(
+            xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask),
+            user, host, CREATE,
+            char_classes,size,symbols)
+        if 1 <= size < 8: break # too much of a bias especially for ulsd when size < 5
+        if 'u' in char_classes and len(_uppers.intersection(candidate)) == 0:
+            continue
+        if 'l' in char_classes and len(_lowers.intersection(candidate)) == 0:
+            continue
+        if 'd' in char_classes and len(_digits.intersection(candidate)) == 0:
+            continue
+        if len(_symbols) > 0 and len(_symbols.intersection(candidate)) == 0:
+            continue
+        break
 
-  rule = pack_rule(classes, symbols, size, checkdigit, xormask)
+  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
 
   for i, id in enumerate(ids):
     sk, pk = get_signkey(id, rwd)
@@ -807,7 +833,7 @@ def change(m, oldpwd, newpwd, user, host, classes='uld', symbols=bin2pass.symbol
 
   m.close()
   rwd = xor(pysodium.crypto_generichash(PASS_CTX, rwd, outlen=64),xormask)
-  ret = convert(rwd,user,host,CHANGE,classes,size,symbols)
+  ret = convert(rwd,user,host,CHANGE,char_classes,size,symbols)
   clearmem(rwd)
 
   return ret
