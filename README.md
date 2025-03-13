@@ -13,7 +13,7 @@ as described in https://eprint.iacr.org/2015/1099
 
 To clone this repo on [Radicle](https://radicle.xyz), simply run:
 
-  `rad clone rad:z3K5zSdfkoD6dytPhbk6v7mJLUojU`
+  `rad clone rad:z3rjK2hk7ckb1thexdsuyaM7e4FwS`
 
 ## Dependencies
 
