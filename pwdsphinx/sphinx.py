@@ -40,6 +40,7 @@ if platform.system() == 'Windows':
 
 cfg = getcfg('sphinx')
 
+debug = cfg['client'].get('debug', False)
 verbose = cfg['client'].get('verbose', False)
 hostname = cfg['client'].get('address','127.0.0.1')
 address = socket.gethostbyname(hostname)
@@ -257,7 +258,7 @@ def commit_undo(m, op, pwd, user, host):
   ids = getid(host, user,m)
   r, alpha = pyoprf.blind(pwd)
   msgs = [b''.join([op, id, alpha]) for id in ids]
-  m = ratelimit(m, msgs)
+  m = ratelimit(m, msgs, len(ids))
   if not auth(m,msgs,ids,host,user,alpha,pwd,r):
     m.close()
     raise ValueError("Failed to authenticate to server while %s" % "committing" if op == COMMIT else "undoing")
@@ -373,20 +374,20 @@ def auth(m,ops,ids,host,user,alpha=None,pwd=None,r=None):
 
   return True
 
-def ratelimit_step1(m, reqs):
+def ratelimit_step1(m, reqs, min_conns):
   for i, req in enumerate(reqs):
     pkt0 = b''.join([CHALLENGE_CREATE, req])
     m[i].send(pkt0)
 
-  challenges = m.gather(1+1+8+32) # n,k,ts,sig
+  challenges = m.gather(1+1+8+32, n=min_conns) # n,k,ts,sig
   if challenges is None:
     m.close()
     return False
   m.close()
   return challenges
 
-def ratelimit(m,reqs):
-  challenges  = ratelimit_step1(m, reqs)
+def ratelimit(m,reqs,min_conns):
+  challenges  = ratelimit_step1(m, reqs, min_conns)
 
   puzzles = []
   with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -637,7 +638,7 @@ def get(m, pwd, user, host):
 
   msgs = [b''.join([GET, id, alpha]) for id in ids]
   try:
-      m = ratelimit(m, msgs)
+      m = ratelimit(m, msgs, threshold)
   except ValueError:
     if v1sphinx.enabled: return try_v1get(pwd, host, user)
     raise
@@ -703,7 +704,7 @@ def get(m, pwd, user, host):
 
 def read_blob(m, ids, host, rwd = b''):
   msgs = [b''.join([READ, id]) for id in ids]
-  m = ratelimit(m, msgs)
+  m = ratelimit(m, msgs, threshold)
 
   if auth(m,msgs,ids,host,'') is False:
     m.close()
@@ -761,7 +762,7 @@ def change(m, oldpwd, newpwd, user, host, char_classes='uld', symbols=bin2pass.s
     msgs = [b''.join([CHANGE_DKG, id, alpha]) for id in ids]
   else:
     msgs = [b''.join([CHANGE, id, alpha]) for id in ids]
-  m = ratelimit(m, msgs)
+  m = ratelimit(m, msgs, len(ids))
   # auth: do sphinx with current seed, use it to sign the nonce
   if not auth(m,msgs,ids,host,user,alpha,oldpwd,r):
     m.close()
@@ -849,7 +850,7 @@ def delete(m, pwd, user, host):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
   msgs = [b''.join([DELETE, id, alpha]) for id in ids]
-  m = ratelimit(m, msgs)
+  m = ratelimit(m, msgs, len(ids))
   #print("solved ratelimit puzzles")
   if auth(m,msgs,ids,host,user,alpha,pwd,r) is False:
     m.close()
@@ -1155,7 +1156,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      raise # only for dbg
+      if debug: raise # only for dbg
     clearmem(pwd)
   else:
     try:
@@ -1164,7 +1165,7 @@ def main(params=sys.argv):
     except Exception as exc:
       error = exc
       ret = False
-      raise # only for dbg
+      if debug: raise # only for dbg
   m.close()
 
   if not ret:
@@ -1188,4 +1189,4 @@ if __name__ == '__main__':
     main(sys.argv)
   except Exception:
     print("fail", file=sys.stderr)
-    raise # only for dbg
+    if debug: raise # only for dbg

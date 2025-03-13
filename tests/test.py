@@ -688,7 +688,11 @@ class TestEndToEnd(unittest.TestCase):
       self.assertIsNone(sphinx.main(('sphinx.py', 'store', user, 'opaque-store.cfg')))
 
       sys.stdin = Input(pwd='qwer')
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'read', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
+
       sphinx.validate_password = vp
 
     def test_ostore_replace(self):
@@ -732,7 +736,10 @@ class TestEndToEnd(unittest.TestCase):
       sphinx.validate_password = False
 
       sys.stdin = Input(pwd='qwer')
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'replace', user, 'sphinx.cfg'))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'replace', user, 'sphinx.cfg'))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
       sys.stdin = Input()
       f = StringIO()
@@ -759,7 +766,10 @@ class TestEndToEnd(unittest.TestCase):
       self.assertIsNone(sphinx.main(('sphinx.py', 'erase', user)))
 
       sys.stdin = Input()
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'read', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
     def test_ostore_erase_invpwd(self):
       if not ostore.available or ostore_server is None: return
@@ -778,7 +788,10 @@ class TestEndToEnd(unittest.TestCase):
       sphinx.validate_password = False
 
       sys.stdin = Input(pwd='qwer')
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'erase', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'erase', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
       sys.stdin = Input()
       f = StringIO()
@@ -820,7 +833,10 @@ class TestEndToEnd(unittest.TestCase):
       sphinx.validate_password = False
 
       sys.stdin = Input(pwd="qwer")
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'recovery-tokens', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'recovery-tokens', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
     def test_ostore_unlock(self):
       if not ostore.available or ostore_server is None: return
@@ -837,11 +853,18 @@ class TestEndToEnd(unittest.TestCase):
 
       for i in range(ostore_max_fails+1):
         sys.stdin = Input(pwd="qwer")
-        self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+        with self.assertRaises(SystemExit) as cm:
+            ret = sphinx.main(('sphinx.py', 'read', user))
+            self.assertIsNone(ret)
+            self.assertEqual(cm.exception.code, 1)
 
       sys.stdin = Input()
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'read', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
+      time.sleep(3)
       sys.stdin = Input()
       f = StringIO()
       with contextlib.redirect_stdout(f):
@@ -867,7 +890,10 @@ class TestEndToEnd(unittest.TestCase):
       self.assertTrue(cfg in f.getvalue())
 
       sys.stdin = Input()
-      self.assertRaises(ValueError, sphinx.main, ('sphinx.py', 'read', user))
+      with self.assertRaises(SystemExit) as cm:
+          ret = sphinx.main(('sphinx.py', 'read', user))
+          self.assertIsNone(ret)
+          self.assertEqual(cm.exception.code, 1)
 
     def test_ostore_edit(self):
       if not ostore.available or ostore_server is None: return
