@@ -947,7 +947,7 @@ def healthcheck(m):
   ids = getid(host, user, m)
   r, alpha = pyoprf.blind(pwd)
   msgs = [b''.join([GET, id, alpha]) for id in ids]
-  return ratelimit_step1(m, msgs) != False
+  return ratelimit_step1(m, msgs, len(ids)) != False
 
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
