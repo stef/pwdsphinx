@@ -39,29 +39,32 @@ if platform.system() == 'Windows':
 #### config ####
 
 cfg = getcfg('sphinx')
-
-debug = cfg['client'].get('debug', False)
-verbose = cfg['client'].get('verbose', False)
-hostname = cfg['client'].get('address','127.0.0.1')
+if 'client' not in cfg:
+  print("Error: No configuration found. Check out man sphinx(1) to get started.\n"
+        "Look at https://sphinx.pm/servers.html to choose some servers.\n"
+        "Continuing with default values, which will probably not work", file=sys.stderr)
+debug = cfg.get('client',{}).get('debug', False)
+verbose = cfg.get('client',{}).get('verbose', False)
+hostname = cfg.get('client',{}).get('address','127.0.0.1')
 address = socket.gethostbyname(hostname)
-port = int(cfg['client'].get('port',2355))
-datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
+port = int(cfg.get('client',{}).get('port',2355))
+datadir = os.path.expanduser(cfg.get('client',{}).get('datadir','~/.config/sphinx'))
 try:
-  ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
+  ssl_cert = os.path.expanduser(cfg.get('client',{}).get('ssl_cert')) # only for dev, production system should use proper certs!
 except TypeError: # ignore exception in case ssl_cert is not set, thus None is attempted to expand.
   ssl_cert = None
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
-rwd_keys = cfg['client'].get('rwd_keys', False)
-validate_password = cfg['client'].get('validate_password',True)
-userlist = cfg['client'].get('userlist', True)
-threshold = int(cfg['client'].get('threshold') or "1")
+rwd_keys = cfg.get('client',{}).get('rwd_keys', False)
+validate_password = cfg.get('client',{}).get('validate_password',True)
+userlist = cfg.get('client',{}).get('userlist', True)
+threshold = int(cfg.get('client',{}).get('threshold') or "1")
 ts_epsilon = 1200 # todo make configurable
 servers = cfg.get('servers',{})
 delete_upgraded = False
 if v1sphinx.enabled:
-    delete_upgraded = cfg['client'].get('delete_upgraded',False)
+    delete_upgraded = cfg.get('client',{}).get('delete_upgraded',False)
 
 if len(servers)>1:
     if threshold < 2:
@@ -494,8 +497,7 @@ def dkg(m, op, threshold, keyids, alpha):
 
 #### OPs ####
 
-def init():
-  init_browser_ext()
+def create_masterkey():
   kfile = os.path.join(datadir,'masterkey')
   if os.path.exists(kfile):
     print("Already initialized.", file=sys.stderr)
@@ -514,6 +516,10 @@ def init():
     print("you want to make a backup of the following masterkey, keep it safe and secure", binascii.b2a_base64(mk))
     print('this key is also stored - and must be available - at:', kfile)
     clearmem(mk)
+
+def init():
+  init_browser_ext()
+  create_masterkey()
   # create health check record
   m = Multiplexer(servers)
   m.connect()

@@ -26,24 +26,24 @@ RULE_SIZE = 79
 
 cfg = getcfg('sphinx')
 enabled=False
-verbose = cfg['client'].get('verbose', False)
-hostname = cfg['client'].get('address')
+verbose = cfg.get('client',{}).get('verbose', False)
+hostname = cfg.get('client',{}).get('address')
 if hostname is not None:
    enabled = True
    address = socket.gethostbyname(hostname)
-   port = int(cfg['client'].get('port',2355))
+   port = int(cfg.get('client',{}).get('port',2355))
    try:
-     ssl_cert = os.path.expanduser(cfg['client'].get('ssl_cert')) # only for dev, production system should use proper certs!
+     ssl_cert = os.path.expanduser(cfg.get('client',{}).get('ssl_cert')) # only for dev, production system should use proper certs!
    except TypeError: # ignore exception in case ssl_cert is not set, thus None is attempted to expand.
      ssl_cert = None
 
-datadir = os.path.expanduser(cfg['client'].get('datadir','~/.config/sphinx'))
+datadir = os.path.expanduser(cfg.get('client',{}).get('datadir','~/.config/sphinx'))
 #  make RWD optional in (sign|seal)key, if it is b'' then this protects against
 #  offline master pwd bruteforce attacks, drawback that for known (host,username) tuples
 #  the seeds/blobs can be controlled by an attacker if the masterkey is known
-rwd_keys = cfg['client'].get('rwd_keys', False)
-validate_password = cfg['client'].get('validate_password',True)
-userlist = cfg['client'].get('userlist', True)
+rwd_keys = cfg.get('client',{}).get('rwd_keys', False)
+validate_password = cfg.get('client',{}).get('validate_password',True)
+userlist = cfg.get('client',{}).get('userlist', True)
 
 if verbose and enabled:
    print("v1 hostname:", hostname, file=sys.stderr)
