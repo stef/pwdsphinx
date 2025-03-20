@@ -14,7 +14,7 @@ except ImportError:
     zxcvbn = None
 from equihash import solve
 from itertools import permutations
-from pyoprf.multiplexer import Multiplexer
+from pyoprf.multiplexer import Peer, Multiplexer as origMultiplexer
 
 try:
   from pwdsphinx import bin2pass, v1sphinx
@@ -32,6 +32,17 @@ except ImportError:
   from ext import init_browser_ext
   from converter import convert, convertedBy
 
+# monkey patching multiplexer that did not set timeouts for peer network
+# connections - todo remove this when pyoprf with a fix is suitably deployed
+class Multiplexer(origMultiplexer):
+    def __init__(self, peers):
+        self.peers = [Peer(name
+						   ,(p['host'],p['port'])
+						   ,type=p.get("type", "SSL")
+						   ,ssl_cert = p.get('ssl_cert')
+						   ,timeout = p.get('timeout', timeout))
+                      for name, p in peers.items()]
+
 win=False
 if platform.system() == 'Windows':
   win=True
@@ -48,6 +59,7 @@ verbose = cfg.get('client',{}).get('verbose', False)
 hostname = cfg.get('client',{}).get('address','127.0.0.1')
 address = socket.gethostbyname(hostname)
 port = int(cfg.get('client',{}).get('port',2355))
+timeout = int(cfg.get('client',{}).get('timeout', '5'))
 datadir = os.path.expanduser(cfg.get('client',{}).get('datadir','~/.config/sphinx'))
 try:
   ssl_cert = os.path.expanduser(cfg.get('client',{}).get('ssl_cert')) # only for dev, production system should use proper certs!
@@ -74,6 +86,7 @@ if len(servers)>1:
         print(f'threshold({threshold}) must be less or equal than the number of servers({len(servers)}) in your config')
         exit(1)
     for name, server in servers.items():
+        if not server.get('timeout'): server['timeout'] = timeout
         if 'ltsigkey' not in server:
            if not 'ltsigkey_path' in server:
                print(f'sphinx server {name} has neither "ltsigkey" nor "ltsigkey_path" configured.\n'

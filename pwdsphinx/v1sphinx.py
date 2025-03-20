@@ -28,6 +28,7 @@ cfg = getcfg('sphinx')
 enabled=False
 verbose = cfg.get('client',{}).get('verbose', False)
 hostname = cfg.get('client',{}).get('address')
+timeout = int(cfg.get('client',{}).get('timeout', '5'))
 if hostname is not None:
    enabled = True
    address = socket.gethostbyname(hostname)
@@ -49,6 +50,7 @@ if verbose and enabled:
    print("v1 hostname:", hostname, file=sys.stderr)
    print("v1 address:", address, file=sys.stderr)
    print("v1 port:", port, file=sys.stderr)
+   print("v1 timeout:", timeout, file=sys.stderr)
    print("v1 ssl_cert:", ssl_cert, file=sys.stderr)
 
 #### consts ####
@@ -81,7 +83,7 @@ def connect():
       ctx.check_hostname = True
 
   s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  s.settimeout(5)
+  s.settimeout(timeout)
   s = ctx.wrap_socket(s, server_hostname=hostname)
   s.connect((address, port))
   return s

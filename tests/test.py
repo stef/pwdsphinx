@@ -60,7 +60,8 @@ class Input:
 def connect(peers=None):
   if peers == None:
     peers = dict(tuple(servers.items())[:N])
-  m = multiplexer.Multiplexer(peers)
+  #m = multiplexer.Multiplexer(peers)
+  m = sphinx.Multiplexer(peers)
   m.connect()
   return m
 
@@ -92,6 +93,7 @@ class TestEndToEnd(unittest.TestCase):
         servers[k]['ltsigkey']=pk
         if k in sphinx.servers:
           sphinx.servers[k]['ltsigkey']=pk
+          sphinx.servers[k]['timeout']=30
         # for reproducability, in case we want to run manual sphinx ops
         with open(f"data/{k}.pub",'wb') as fd:
           fd.write(pk)
