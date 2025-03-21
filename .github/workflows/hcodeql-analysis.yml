@@ -39,7 +39,7 @@ jobs:
 
     - run: |
        sudo apt update
-       sudo apt install -y libsodium-dev pkgconf # build-essential git
+       sudo apt install -y libsodium-dev pkgconf # build-essential git python3-pip
        # liboprf
        git clone https://github.com/stef/liboprf/
        cd liboprf/src
@@ -47,6 +47,8 @@ jobs:
        sudo PREFIX=/usr make install
        sudo ldconfig
        cd ../..
+       pip3 install liboprf/python
+       pip3 install .
        python3 -m unittest discover -fcb -v tests
 
     - name: Perform CodeQL Analysis
