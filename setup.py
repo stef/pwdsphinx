@@ -31,7 +31,7 @@ class BuildMakefilesBuild(SetuptoolsBuild):
         SetuptoolsBuild.run(self)
 
 setup(name = 'pwdsphinx',
-       version = '2.0.2',
+       version = '2.0.3',
        description = 'SPHINX password protocol',
        license = "GPLv3",
        author = 'Stefan Marsiske',
