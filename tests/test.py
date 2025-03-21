@@ -46,6 +46,10 @@ orig_servers=sphinx.servers
 max_recovery_tokens = 2
 ostore_max_fails = 3
 
+import random
+random.seed()
+unittest.TestLoader.sortTestMethodsUsing = lambda _, x, y: random.randint(-1,1)
+
 class Input:
   def __init__(self, txt = None, pwd = pwd):
     if txt:
@@ -175,7 +179,7 @@ class TestEndToEnd(unittest.TestCase):
 
     def tearDown(self):
       sphinx.validate_password=self._validate_password
-      time.sleep(0.1)
+      time.sleep(3)
       sphinx.servers = orig_servers
       #cleanup()
       roots = [self._root]
