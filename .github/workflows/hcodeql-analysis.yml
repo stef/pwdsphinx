@@ -2,7 +2,7 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [master, ]
+    branches: [master]
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [master]
@@ -37,9 +37,6 @@ jobs:
     #    and modify them (or add more) to build your code if your project
     #    uses a compiled language
 
-    #- run: |
-    #   make bootstrap
-    #   make release
     - run: |
        sudo apt update
        sudo apt install -y libsodium-dev pkgconf # build-essential git
@@ -52,7 +49,7 @@ jobs:
        cd ..
        sudo PREFIX=/usr make install
        sudo ldconfig
-		 cd ..
+       cd ..
        python3 -m unittest discover -fcb -v tests
 
     - name: Perform CodeQL Analysis
