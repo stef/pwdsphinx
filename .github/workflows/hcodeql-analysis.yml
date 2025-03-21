@@ -54,7 +54,8 @@ jobs:
        cd ..
        sudo ldconfig
        pip3 install .
-       python3 -m unittest discover -fcb -v tests
+       cd tests
+       python3 -m unittest discover -fcb -v .
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
