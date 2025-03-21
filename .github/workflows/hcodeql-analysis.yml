@@ -45,9 +45,14 @@ jobs:
        cd liboprf/src
        sudo mkdir -p /usr/include/oprf/
        sudo PREFIX=/usr make install
-       sudo ldconfig
+       pip3 install ../python/
        cd ../..
-       pip3 install liboprf/python
+       git clone https://github.com/stef/equihash
+       cd equihash
+       sudo PREFIX=/usr make install
+       pip3 install python/
+       cd ..
+       sudo ldconfig
        pip3 install .
        python3 -m unittest discover -fcb -v tests
 
