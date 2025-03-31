@@ -477,5 +477,10 @@ by NLnet with financial support from the European Commission's Next
 Generation Internet programme, under the aegis of DG Communications
 Networks, Content and Technology under grant agreement No 825310.
 
+This project was funded through the e-Commons Fund, a fund established by NLnet
+with financial support from the Netherlands Ministry of the Interior and
+Kingdom Relations.
+[<img src="https://nlnet.nl/image/logos/minbzk.logo.svg" alt="Logo The Netherlands Ministry of the Interior and Kingdom Relations" width="20%" />](https://www.rijksoverheid.nl/ministeries/ministerie-van-binnenlandse-zaken-en-koninkrijksrelaties)
+
 Everlasting gratuity to asciimoo, dnet, jonathan and hugo for their
 contributions, patience, and support.
