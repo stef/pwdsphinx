@@ -45,7 +45,7 @@
 # existing passwords.
 [servers.first]
 # the ip address of the server
-address="127.0.0.1"
+host="127.0.0.1"
 # the port where the server is running, 443 is nice to punch through firewalls.
 port=443
 # the long term signature key of the server.
@@ -56,12 +56,12 @@ ltsigkey="32byteBase64EncodedValue=="
 # in case you want to use a threshold version of SPHINX you need at least 3
 # servers (and the threshold is then 2)
 #[servers.2nd]
-#address="127.0.0.1"
+#host="127.0.0.1"
 #port=2355
 #ltsigkey="2nd.pub"
 #
 #[servers.3rd]
-#address="127.0.0.1"
+#host="127.0.0.1"
 #port=5523
 #ltsigkey="3rd.pub"
 

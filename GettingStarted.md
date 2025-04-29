@@ -24,11 +24,11 @@ But before skipping you might also want to install these optional dependencies:
 ```
 
 If you are not on debian derivates, you need to build two dependencies
-manually. Let's start with libsphinx:
+manually. Let's start with liboprf:
 
 ```
-% git clone https://github.com/stef/libsphinx
-% cd libsphinx/src
+% git clone https://github.com/stef/liboprf
+% cd liboprf/src
 % sudo apt install install python3 libsodium libsodium-dev
 % sudo PREFIX=/usr make install
 ```
