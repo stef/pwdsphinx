@@ -49,7 +49,7 @@ setup(name = 'pwdsphinx',
                    ],
        entry_points = {
            'console_scripts': [
-               'oracle = pwdsphinx.oracle:main',
+               'oracle = pwdsphinx.oracle:parse_params',
                'sphinx = pwdsphinx.sphinx:main',
                'websphinx = pwdsphinx.websphinx:main',
                'bin2pass = pwdsphinx.bin2pass:main',

@@ -740,7 +740,7 @@ def ratelimit(conn):
    elif op == CHALLENGE_VERIFY:
      verify_challenge(conn)
 
-def start_server(debug=False):
+def main(debug=False):
     if debug == True:
         import ctypes
         libc = ctypes.cdll.LoadLibrary('libc.so.6')
@@ -824,7 +824,7 @@ def missing_file(path):
     print(f"Aborting.")
     exit(1)
 
-def main():
+def parse_params():
   if not is_readable(ssl_key):
     missing_file(ssl_key)
   if not is_readable(ssl_cert):
@@ -841,7 +841,7 @@ def main():
   if 'debug' in sys.argv:
     debug = True
   if not 'init' in sys.argv:
-    start_server(debug)
+    main(debug)
   else:
     # init
     pk, sk = pysodium.crypto_sign_keypair()
@@ -859,4 +859,4 @@ def main():
     print(f"{binascii.b2a_base64(pk).strip().decode('utf8')}")
 
 if __name__ == '__main__':
-  main()
+  parse_params()
