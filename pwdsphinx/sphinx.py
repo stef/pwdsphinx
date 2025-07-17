@@ -35,12 +35,13 @@ except ImportError:
 # monkey patching multiplexer that did not set timeouts for peer network
 # connections - todo remove this when pyoprf with a fix is suitably deployed
 class Multiplexer(origMultiplexer):
-    def __init__(self, peers):
+    def __init__(self, peers, alpn_proto=None):
         self.peers = [Peer(name
-						   ,(p['host'],p['port'])
-						   ,type=p.get("type", "SSL")
-						   ,ssl_cert = p.get('ssl_cert')
-						   ,timeout = p.get('timeout', timeout))
+                           ,(p['host'],p['port'])
+                           ,type=p.get("type", "SSL")
+                           ,ssl_cert = p.get('ssl_cert')
+                           ,timeout = p.get('timeout', timeout)
+                           ,alpn_proto=alpn_proto or ['sphinx/1'])
                       for name, p in peers.items()]
 
 win=False
@@ -534,7 +535,7 @@ def init():
   init_browser_ext()
   create_masterkey()
   # create health check record
-  m = Multiplexer(servers)
+  m = Multiplexer(servers, ['sphinx/1'])
   m.connect()
   create(m, b"all ok?", "healthcheck", "sphinx servers", target="everything works fine")
   return 0
@@ -637,7 +638,7 @@ def try_v1get(pwd, host, user):
        target = bin2pass.derive(rwd, classes, size, symbols)
    clearmem(rwd)
    # lift to v2
-   m = Multiplexer(servers)
+   m = Multiplexer(servers, ['sphinx/1'])
    m.connect()
    cret = create(m, pwd, user, host, target=target)
    assert ret == cret
@@ -1091,7 +1092,7 @@ def main(params=sys.argv):
   #log_file.value = fdopen(2, 'w')
 
   if len(params) < 2: usage(params, True)
-  m = Multiplexer(servers)
+  m = Multiplexer(servers, ['sphinx/1'])
   cmd = None
   args = []
   if params[1] in ('help', '-h', '--help'):
