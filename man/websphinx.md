@@ -2,7 +2,7 @@
 
 # NAME
 
-websphinx - native-messaging backend for SPHINX browser webextensions 
+websphinx - native messaging backend for SPHINX browser webextensions
 
 # SYNOPSIS
 
@@ -10,14 +10,14 @@ websphinx - native-messaging backend for SPHINX browser webextensions
 
 # DESCRIPTION
 
-`websphinx` is a native-messaging backend for webextensions that expose the
-SPHINX password storage protocol in a browser. When a browser starts and the
-appropriate extension is installed it starts the native-messaging backend
-automatically.
+`websphinx` serves as the native messaging backend for web extensions
+that expose the SPHINX password storage protocol in a browser. When you
+install a SPHINX browser extension, the browser automatically launches
+this backend to handle password operations.
 
 # REPORTING BUGS
 
-https://github.com/stef/pwdsphinx/issues/
+<https://github.com/stef/pwdsphinx/issues/>
 
 # AUTHOR
 
@@ -30,8 +30,8 @@ This is free software: you are free to change and redistribute it.  There is NO 
 
 # SEE ALSO
 
-https://github.com/stef/websphinx-chrom/
+<https://github.com/stef/websphinx-chrom/>
 
-https://github.com/stef/websphinx-firefox/
+<https://github.com/stef/websphinx-firefox/>
 
-`sphinx(1)` 
+`sphinx(1)`

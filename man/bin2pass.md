@@ -12,33 +12,23 @@ bin2pass [d|u|l] [<max size>] [<symbols>] <binary
 
 # DESCRIPTION
 
-`bin2pass` reads standard input, and accepts three optional parameters (note
-this is the same syntax as accepted by `sphinx(1)`):
+`bin2pass` converts binary input from standard input into human-readable passwords. It accepts three optional parameters using the same syntax as `sphinx(1)`:
 
- - a combination of the letters "uld" enabling upper-, lower-case letters and
-   digits respectively. If this is not provided `bin2pass` defaults to "uld".
+- **Character set**: A combination of letters "uld" enabling upper-case letters, lower-case letters, and digits respectively. Defaults to "uld" if not specified.
 
- - a number setting the maximum length of the password to be converted to. Note
-   if you specify a larger number than is possible to generate from the input the
-   output will be padded by leading "A" characters. The default is the longest
-   possible output depending on the input
+- **Maximum length**: Sets the maximum password length. If you specify a length larger than possible from the input, the output will be padded with leading "A" characters. Defaults to the longest possible output from the input.
 
- - a string listing all the symbols allowed in the password. Any of the
-   following is allowed (and this is also the default if not specified):
+- **Symbol set**: A string listing all symbols allowed in the password. The default symbol set includes:
 
 ```
 | !"#$%&'()*+,-./:;<=>?@[\]^_`{}~
 ```
 
-Please note that <space> is allowed, and also be careful in quoting special
-characters that might be interpreted by your shell, such as `"`, `!`, `\`,
-etc...
+Note that spaces are allowed in the symbol set. Be careful to properly quote special characters that your shell might interpret, such as `"`, `!`, and `\`.
 
 # EXAMPLES
 
-Generate the longest possible random password from /dev/random, with the
-resulting password having characters from digits, lower- and upper-case letters
-and the <space> and * symbols.
+Generate the longest possible random password from `/dev/random`, with the resulting password having characters from digits, lowercase and uppercase letters, and the `space` and `*` symbols.
 
 ```
 dd if=/dev/random bs=1 count=32 | ./pwdsphinx/bin2pass.py " *"
@@ -46,7 +36,7 @@ dd if=/dev/random bs=1 count=32 | ./pwdsphinx/bin2pass.py " *"
 
 # REPORTING BUGS
 
-https://github.com/stef/pwdsphinx/issues/
+<https://github.com/stef/pwdsphinx/issues/>
 
 # AUTHOR
 
@@ -59,4 +49,4 @@ This is free software: you are free to change and redistribute it.  There is NO 
 
 # SEE ALSO
 
-`sphinx(1)` 
+`sphinx(1)`

@@ -7,23 +7,20 @@ dmenu-sphinx - dmenu-frontend for retrieving and inserting passwords from sphinx
 # SYNOPSIS
 
 ```
-type-pwd username hostname
+dmenu-sphinx [username] [hostname]
 ```
 
 # DESCRIPTION
 
-This tool builds on `type-pwd(1)`, it uses `dmenu(1)` in order to
-query a hostname, then depending if only one or more usernames are
-known by the oracle - if only one then the next step is skipped:
-provides a choice which username to use. Then `type-pwd(1)` is invoked
-using the selected user and hostname.
+`dmenu-sphinx` provides an interactive interface for retrieving SPHINX passwords and automatically typing them into X11 applications. It uses `dmenu(1)` to present hostname selection menus and builds on `type-pwd(1)` for password entry.
 
-This tool cashes the hostnames it was used with in the file
-`~/.sphinx-hosts`.
+The tool first displays cached hostnames from previous usage. If multiple usernames exist for the selected hostname, it presents a username selection menu. Otherwise, it proceeds directly to password generation. Finally, it invokes `type-pwd(1)` to type the password into the focused application.
+
+The hostname history is cached in the file `~/.sphinx-hosts`.
 
 # REPORTING BUGS
 
-https://github.com/stef/pwdsphinx/issues/
+<https://github.com/stef/pwdsphinx/issues/>
 
 # AUTHOR
 

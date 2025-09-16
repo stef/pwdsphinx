@@ -12,8 +12,7 @@ exec-on-click <command>
 
 # DESCRIPTION
 
-This is a simple tool which waits until a left-mouse click and then it
-executes whatever parameters the script has been called with.
+`exec-on-click` is a simple tool that waits for a left mouse click and then executes whatever parameters the script has been called with.
 
 # EXAMPLE
 
@@ -21,12 +20,11 @@ executes whatever parameters the script has been called with.
 echo -n "hello world" |  exec-on-click xdotool type --clearmodifiers '$(cat)'
 ```
 
-Types `hello world` into the current window using xdotool.
-
+Types `hello world` into the current window using [xdotool](https://github.com/jordansissel/xdotool), a program that lets you simulate keyboard input and mouse activity.
 
 # REPORTING BUGS
 
-https://github.com/stef/pwdsphinx/issues/
+<https://github.com/stef/pwdsphinx/issues/>
 
 # AUTHOR
 

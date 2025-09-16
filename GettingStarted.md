@@ -1,442 +1,599 @@
-# Getting started
+# Getting Started with SPHINX
 
-So you want to start using SPHINX for handling your passwords. Great, Welcome!
+So you want to start using SPHINX for handling your passwords. Great, welcome!
 
-First you need to decide if you want to host your own server (we call
-it oracle), or you want to use someone elses oracle. It's ok to use
-someone elses server, as we say the oracle can be hosted by your worst
-nightmare enemy, they will not learn anything about your passwords[1].
+SPHINX is a cryptographic password storage protocol that uses client-server architecture. The server (also called the *oracle*) stores only cryptographic blobs that are useless without your master password. Even if compromised, your actual passwords remain secure. The client combines your master password with the server's response to regenerate your actual passwords deterministically.
+You can either use an existing server, where the server operator learns nothing about your passwords or host your own server, giving you complete control over your infrastructure.
 
-It is important to note, that if you want to use sphinx, your client
-needs to be able to connect to the oracle.
+When using someone else's server, the only thing they can learn is the
+frequency of how often you interact with a certain password, and which
+passwords belong to the same user and host. For example, if you have an
+admin and a non-privileged account at the same host, the oracle user
+could find out that these two are related. Also, whoever is hosting the oracle can
+mount a denial-of-service attack against you by not responding or corrupting
+their answers. But your passwords would be safe, nevertheless. Even if
+their "database" leaks to the internet, or to criminals.
 
-## Installing the sphinx CLI client
+**Note:** To use SPHINX, your client needs to be able to connect to the oracle.
 
-If you are on debian or derivates a simple
+## Quick Start
+
+### Step 1. Install Your SPHINX Client
+
+**Debian/Ubuntu/Kali and derivatives:**
+
+```bash
+sudo apt install pwdsphinx
 ```
-% sudo apt install pwdsphinx
+
+On Debian or derivatives, the above command should suffice and
+you can skip over to the next section to learn how to configure the client.
+
+You might also want to install these optional dependencies, which help
+with supporting the browser extension:
+
+```bash
+apt install pinentry-gtk2 xdotool xinput
 ```
 
-should suffice and you can skip over to the next section to configure the client.
-But before skipping you might also want to install these optional dependencies:
+pinentry is a small collection of dialog programs
+that allows reading passphrases and PIN numbers in a secure manner.
+xdotool helps with keyboard/mouse automation, while xinput provides
+input device control.
+
+**Other Unix-like systems:**
+For non-Debian derivates, you need to build two dependencies
+manually, liboprf and libequihash.
+
+liboprf is a library for Oblivious Pseudorandom Functions (OPRFs), including
+support for threshold OPRFs. To install:
+
+```bash
+git clone https://github.com/stef/liboprf
+cd liboprf/src
+sudo apt install python3 python3-dev pkg-config libsodium libsodium-dev
+sudo PREFIX=/usr make install
+```
+
+libequihash provides memory-hard proof-of-work with fast verification.
+To install, run:
+
+```bash
+git clone https://github.com/stef/equihash
+cd equihash
+sudo PREFIX=/usr make install
+```
+
+And finally, install the client itself:
+
+```
+pip install pwdsphinx
+```
+
+Dependencies might also be needed for some things like
+browser extension support:
+
 ```
 % apt install pinentry-gtk2 xdotool xinput
 ```
 
-If you are not on debian derivates, you need to build two dependencies
-manually. Let's start with liboprf:
+Replace `apt install` and the package names with whatever equivalent
+your distro provides. pinentry is a small collection of dialog programs
+that allows reading passphrases and PIN numbers in a secure manner.
+xdotool helps with keyboard/mouse automation, while xinput provides
+input device control.
 
-```
-% git clone https://github.com/stef/liboprf
-% cd liboprf/src
-% sudo apt install python3 python3-dev pkg-config libsodium libsodium-dev
-% sudo PREFIX=/usr make install
-```
+### Step 2: Configure Your Client
 
-We also need libequihash:
-
-```
-% git clone https://github.com/stef/equihash
-% cd equihash
-% sudo PREFIX=/usr make install
-```
-
-And finally install the client itself:
-
-```
-% pip install pwdsphinx
-```
-
-Dependencies might also needed for some things:
-
-```
-% apt install pinentry-gtk2 xdotool xinput
-```
-
-(replace `apt install` and the package names with whatever equivalent
-your distro provides)
-
-## Configuring the sphinx CLI client
-
-Create a config file `~/.sphinxrc` and insert the correct address and
+Create a configuration file `~/.sphinxrc` and insert the correct address and
 port for the server (oracle) you are going to use:
 
-```
+```ini
 [client]
 address = your.sphinx-server.tld
 port = 443
 timeout = 3
 ```
 
-Now you should be ready to initialize your sphinx client:
+Replace `your.sphinx-server.tld` with your chosen SPHINX server.
+If you don't have one, you can [use a public server](https://sphinx.pm/servers.html).
 
-```
-% sphinx init
+### Step 3: Initialize Your Client
+
+```bash
+sphinx init
 ```
 
-This will create a file `~/.sphinx/masterkey`, you should make a
-backup of this file, and if you intend to use sphinx on other devices
-sharing the same passwords on them, you must copy this file there as
-well. If you intend to use `androsphinx` our android sphinx client,
-you can also do:
+This creates a file `~/.sphinx/masterkey`. **Make a backup of this file!** If you
+intend to use SPHINX on other devices while sharing the same passwords on them,
+you must copy this file to these devices as well.
 
-```
+If using andropshinx, our Android SPHINX client, you can export your setup with:
+
+```bash
 sphinx qr key
 ```
 
-And have this qr-code read by the androsphinx client to use the same
-config as you have setup here.
+This creates a QR code that can be read by androsphinx, allowing the
+app to use the same configuration as you have set up above.
 
-You should be ready to go:
+Scan the second QR code with [androsphinx](https://github.com/dnet/androsphinx) Android app.
 
-```
+### Step 4: Test Your Setup
+
+Create a test password:
+
+```bash
 echo -n "password" | sphinx create testuser testhost
 ```
 
 This should give you a long very random password as output. You can
-now check if you get the same password back, but since echoing
+now check if you get the same password back. Since echoing
 passwords on the command line is not very smart, let's try with a tool
-that comes with pwdsphinx: `getpwd`:
+that comes with pwdsphinx, `getpwd`:
 
-```
+```bash
 getpwd | sphinx get testuser testhost
 ```
 
 This should pop up a password query window, where you should enter
-'password' as the password, the response should be the long random
+'password' as the password. The response should be the long random
 password that was returned when you used the create command.
 
-And you can now also try to delete this test password, as you surely
-don't want to litter around:
+Assuming you won't need this anymore, clean up the test:
 
-```
+```bash
 sphinx delete testuser testhost
 ```
 
-You might wonder, why you don't need a password for deletion - that
-actually depends on the `rwd_keys` setting, read about that in the man
-page. However deletion does require that the masterkey in `~/.sphinx/`
-is actually correct.
+You might wonder why you don't need a password for deletion. That
+actually depends on the `rwd_keys` setting. Read about this setting in
+[the sphinx(1) man page](./man/sphinx.md). However, deletion does
+require that the masterkey in `~/.sphinx/` is actually correct.
 
 Now if you do again (being lazy and not using `getpwd`):
 
 ```
 echo -n "password" | sphinx get testuser testhost
 ```
+
 You should get an error.
 
-Congrats, you just setup sphinx! Read up in the man pages
-(https://github.com/stef/pwdsphinx/tree/master/man) more about how to
-get the most out of sphinx.
+Congrats, you just setup sphinx! Read up in the [man pages](./man) more
+about how to get the most out of sphinx.
 
-## Setting up a Firefox addon
+## Setting Up Browser Extensions
 
-First install the sphinx CLI client - see the section above on more
-info on that.
+SPHINX provides browser extensions for Firefox and Chrome/Chromium
+that enable seamless password filling on websites.
 
-Then install the addon from the mozilla addons store:
-https://addons.mozilla.org/en-US/firefox/addon/websphinx/
+websphinx consists of two parts: the frontend (which is the add-on to install from
+the browser extension store) and the backend (which handles everything).
+The backend is actually a native messaging host that communicates with the browser extension.
 
-The WebSphinx addon also requires the installation of a native
-messaging host - which is terminology and it really means backend.
+### Prerequisites
 
-Websphinx consists of two parts, the frontend which is the addon. And the backend which handles everything.
+Both browser extensions require:
 
-You can install the addon  from the [firefox addon store](https://addons.mozilla.org/en-US/firefox/addon/websphinx/).
+1. **SPHINX CLI client** installed (see above)
+2. **Pinentry** for secure password input:
 
-The WebSphinx addon requires the installation of a native messaging host - which is terminology and it really means backend.
+   ```bash
+   # Install any one of these, using the equivalent of `apt-get` on your operating system:
+   sudo apt-get install pinentry-qt        # For KDE/Qt environments
+   sudo apt-get install pinentry-gtk2      # For older GNOME/GTK environments
+   sudo apt-get install pinentry-gnome3    # For modern GNOME environments
+   sudo apt-get install pinentry-fltk      # Lightweight option
+   ```
 
-You will need to install a graphical pinentry,
+### Firefox Extension
 
-   - either sudo apt-get install pinentry-qt
-   - or sudo apt-get install pinentry-gtk2
-   - or sudo apt-get install pinentry-gnome3
-   - or sudo apt-get install pinentry-fltk
+#### 1. **Install the extension:**
 
-(or anything equivalent to apt-get install on your OS)
+You can install the addon from the [Firefox add-on store](https://addons.mozilla.org/en-US/firefox/addon/websphinx/).
 
-And set the pinentry variant if it is not invoked with
-`/usr/bin/pinentry` in your sphinx config file in the `websphinx`
-section
+#### 2. **Configure pinentry path**
 
-Your sphinx config file can be in a couple of locations:
- - globally: `/etc/sphinx/config`
- - for your user: `~/.sphinxrc`
- - or also:`~/.config/sphinx/config`
- - and always in the current directory.
+Your SPHINX config file can be in a couple of locations:
 
-To set the pinentry path, add or modify to have a section like this:
+- globally: `/etc/sphinx/config`
+- for your user: `~/.sphinxrc`
+- or also: `~/.config/sphinx/config`
+- and always in the current directory.
 
-```
-[websphinx]
-pinentry=/usr/bin/pinentry-gtk-2
-```
+Set the pinentry variant if it is not invoked with `/usr/bin/pinentry` in your config file in the `[websphinx]` section.
 
-### Native Messaging Host Manifest
+   ```ini
+   [websphinx]
+   pinentry=/usr/bin/pinentry-gtk-2
+   ```
 
-Copy [*websphinx.json*](https://github.com/stef/websphinx-firefox/raw/master/websphinx.json), depending on your browser to finish the installation:
+#### 3. **Install native messaging host:**
 
-- Linux/BSD
-  - User only: `~/.mozilla/native-messaging-hosts/websphinx.json`
-  - System-wide: `/usr/{lib,lib64,share}/mozilla/native-messaging-hosts/websphinx.json`
-  - MacOS: `/Library/Application Support/Mozilla/NativeMessagingHosts/websphinx.json`
+1. **Create directory for native messaging host:**
 
-You need to change *%PATH%* in *websphinx.json* so it refers to *websphinx.py* which came with pwdsphinx.
+   ```bash
+   mkdir -p ~/.mozilla/native-messaging-hosts
+   ```
 
-1. `mkdir -p ~/.mozilla/native-messaging-hosts`
-2. `curl -Lo ~/.mozilla/native-messaging-hosts/websphinx.json https://github.com/stef/websphinx-firefox/raw/master/websphinx.json`
+2. **Download the configuration file:**
 
-if you followed this guide, `websphinx` should be installed in `/usr/bin` and you should replace the `%PATH%` in `~/.mozilla/native-messaging-hosts/websphinx.json` to `/usr/bin` so the file looks like this:
+   ```bash
+   curl -Lo ~/.mozilla/native-messaging-hosts/websphinx.json \
+     https://github.com/stef/websphinx-firefox/raw/master/websphinx.json
+   ```
 
-```
-{
-  "name": "websphinx",
-  "description": "Host for communicating with pwdphinx",
-  "path": "/usr/bin/websphinx",
-  "type": "stdio",
-  "allowed_extensions": [
-    "sphinx@ctrlc.hu"
-  ]
-}
+3. **Edit the configuration file** to point to the actual websphinx executable:
+   - Open `~/.mozilla/native-messaging-hosts/websphinx.json`
+   - Replace `%PATH%` with `/usr/bin`
+   - The file should look like this:
 
-```
+     ```json
+     {
+       "name": "websphinx",
+       "description": "Host for communicating with pwdsphinx",
+       "path": "/usr/bin/websphinx",
+       "type": "stdio",
+       "allowed_extensions": [
+         "sphinx@ctrlc.hu"
+       ]
+     }
+     ```
 
-### Final step
+**Alternative installation paths:**
 
-Restart your browser in which the addon is installed and enjoy.
+- System-wide installation: `/usr/{lib,lib64,share}/mozilla/native-messaging-hosts/websphinx.json`
+- MacOS: `/Library/Application Support/Mozilla/NativeMessagingHosts/websphinx.json`
 
-## Setting up a Chrome derivate addon (including ms edge, opera, brave, etc)
+#### 5. Final step
 
-Websphinx consists of two parts, the frontend which is the addon. And
-the backend which handles everything.
+Restart your browser in which the add-on is installed and enjoy.
 
-First install the sphinx CLI client, see the above for more information on that.
+### Chrome/Chromium Extension
 
-WebSphinx is not in the Chrome Web Store, if you want to install the addon
-follow these steps (this applies to all Operating Systems):
+Chromium browsers include Microsoft Edge, Opera, Brave and more.
 
- 1. Create a directory on your filesystem containing the files in the
-    websphinx directory. 
- 2. Start your browser if it is not running,
- 3. open [chrome://extension](chrome://extension) in your browser,
- 4. enable `Developer Mode`,
- 5. `Load Unpacked Extension` and provide the directory created in step 1.,
- 6. If all went well, you should get a yellowyish sphinx button.
+WebSphinx is not in the Chrome Web Store, so manual installation is required:
 
-The WebSphinx addon requires the installation of a native messaging
-host - which is terminology and it really means backend.
+#### 1. **Get the extension files**
 
-You will need to install a graphical pinentry,
-   - either sudo apt-get install pinentry-qt
-   - or sudo apt-get install pinentry-gtk2
-   - or sudo apt-get install pinentry-gnome3
-   - or sudo apt-get install pinentry-fltk
+Download or clone the extension from the [websphinx-chrom repository](https://github.com/stef/websphinx-chrom).
 
-(or anything equivalent to apt-get install on your OS)
+#### 2. **Install in Developer Mode**
 
-And set the pinentry variant if it is not invoked with
-`/usr/bin/pinentry` in your sphinx config file in the `websphinx`
-section
+1. Open `chrome://extensions` in your browser
+2. Enable **Developer Mode**
+3. Click **Load Unpacked Extension**
+4. Select the directory containing the extension files
+5. You should see a yellowish sphinx button appear
 
-Your sphinx config file can be in a couple of locations:
- - globally: `/etc/sphinx/config`
- - for your user: `~/.sphinxrc`
- - or also:`~/.config/sphinx/config`
- - and always in the current directory.
+#### 3. **Configure pinentry**
 
-To set the pinentry path, add or modify to have a section like this:
+This is the same as in the Firefox, [explained above](#firefox-extension).
 
-```
-[websphinx]
-pinentry=/usr/bin/pinentry-gtk-2
-```
+#### 4. **Install native messaging host:**
 
-### Native Messaging Host Manifest
+1. **Create directory for native messaging host** depending on your browser:
 
-Copy [*websphinx.json*](https://github.com/stef/websphinx-firefox/raw/master/websphinx.json), depending on your browser to finish the installation:
+   ```bash
+   # For Chromium:
+   mkdir -p ~/.config/chromium/NativeMessagingHosts
+   # For Google Chrome:
+   mkdir -p ~/.config/google-chrome/NativeMessagingHosts
+   ```
 
-- Linux/BSD
-  - Per-user: `~/.config/{google-chrome,chromium}/NativeMessagingHosts/websphinx.json`
-  - System: `/etc/{opt/chrome,chromium}/native-messaging-hosts/websphinx.json`
-- MacOS
-  - Per-user: `~/Library/Application Support/{Google/Chrome,Chromium}/NativeMessagingHosts/websphinx.json`
-  - System-wide: `/Library/{Google/Chrome,Chromium}/NativeMessagingHosts/websphinx.json`
+2. **Download the configuration file:**
 
-You need to change *%PATH%* in *websphinx.json* so it refers to *websphinx.py* which came with pwdsphinx.
+   ```bash
+   # For Chromium:
+   curl -Lo ~/.config/chromium/NativeMessagingHosts/websphinx.json \
+     https://github.com/stef/websphinx-chrom/raw/master/websphinx.json
+   # For Google Chrome:
+   curl -Lo ~/.config/google-chrome/NativeMessagingHosts/websphinx.json \
+     https://github.com/stef/websphinx-chrom/raw/master/websphinx.json
+   ```
 
-Assuming you have chromium follow these steps (otherwise replace chromium with google-chrome, or even possibly opera?)
+3. **Edit the configuration file** to point to the actual websphinx executable:
+   - Open the websphinx.json file you just downloaded
+   - Replace `%PATH%` with `/usr/bin`
+   - The file should look like this:
 
-1. `mkdir -p ~/.config/chromium/NativeMessagingHosts`
-2. `curl -Lo ~/.config/chromium/NativeMessagingHosts/websphinx.json https://github.com/stef/websphinx-chrom/raw/master/websphinx.json`
+     ```json
+     {
+       "name": "websphinx",
+       "description": "Host for communicating with Sphinx",
+       "path": "/usr/bin/websphinx",
+       "type": "stdio",
+       "allowed_origins": [
+         "chrome-extension://ojbhlhidchjkmjmpeonendekpoacahni/"
+       ]
+     }
+     ```
 
-if you followed this guide, `websphinx` should be installed in `/usr/bin` and you should replace the `%PATH%` in `~/.config/chromium/NativeMessagingHosts/websphinx.json` to `/usr/bin` so the file looks like this:
+**Alternative installation paths:**
 
-```
-{
-  "name": "websphinx",
-  "description": "Host for communicating with Sphinx",
-  "path": "/usr/bin/websphinx",
-  "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://ojbhlhidchjkmjmpeonendekpoacahni/"
-  ]
-}
+- System-wide installation: `/etc/{opt/chrome,chromium}/native-messaging-hosts/websphinx.json`
+- MacOS: `/Library/Application Support/{Google/Chrome,Chromium}/NativeMessagingHosts/websphinx.json`
 
-```
+### 5. Final step
 
-### Final step
-
-Restart your browser in which the addon is installed and enjoy.
+Restart your browser in which the add-on is installed and enjoy.
 
 ## Hosting your own oracle
 
-Great! You should host your own oracle, and make it available also to
-all your friends and family! The recommended way to do so is to
-dedicate cheap and small single-board-computer to this task, which
-does nothing else. An old Raspberry Pi 1 is enough, the oracle does
-not use much resources.
+You should host your own oracle, and make it available also to
+all your friends and family! The SPHINX protocol only makes
+sense if the oracle is located somewhere other than where you
+type your password. The recommended way to do so is to dedicate
+a cheap and small single-board computer to this task, which
+does nothing else. The oracle does not use much resources, so
+an old Raspberry Pi 1 is enough.
 
-## Installation
+### Installation
 
-You need to install sphinx, either by using `pip`:
+**From source:**
 
-```
+```bash
 pip install pwdsphinx
 ```
 
-or on Debian derivates:
+**Debian/Ubuntu and derivatives:**
 
+```bash
+sudo apt install pwdsphinx
 ```
-apt install pwdsphinx
-```
 
-### Getting a TLS certificate using nginx and letsencrypt
+## Getting a TLS Certificate Using Let's Encrypt
 
-First you need to generate an account and a domain key:
+A TLS certificate is required for the SPHINX oracle to operate securely.
+This section guides you through obtaining a certificate using Let's Encrypt and nginx.
 
-```
+### Step 1: Generate the Required Keys
+
+First, generate an account key and a domain key:
+
+```bash
 openssl genrsa 4096 > account.key
 openssl genrsa 4096 > domain.key
 ```
 
-Then you neeed to create a certificate signing request (CSR) for your
-domains. For a single domain you can use:
-```
+### Step 2: Create a Certificate Signing Request (CSR)
+
+Choose one of the following options based on your needs:
+
+**For a single domain:**
+
+```bash
 openssl req -new -sha256 -key domain.key -subj "/CN=yoursite.com" > domain.csr
 ```
 
-If you have multiple domains (like www.yoursite.com and yoursite.com) and a new openssl, then:
+**For multiple domains with OpenSSL ≥ 1.1.1:**
+If you have multiple domains (like `www.yoursite.com` and `yoursite.com`):
 
-```
+```bash
 openssl req -new -sha256 -key domain.key -subj "/" -addext "subjectAltName = DNS:yoursite.com, DNS:www.yoursite.com" > domain.csr
 ```
 
-Or if you have an old openssl < 1.1.1:
-```
+**For multiple domains with OpenSSL < 1.1.1:**
+
+```bash
 openssl req -new -sha256 -key domain.key -subj "/" -reqexts SAN -config <(cat /etc/ssl/openssl.cnf <(printf "[SAN]\nsubjectAltName=DNS:yoursite.com,DNS:www.yoursite.com")) > domain.csr
 ```
 
-Now you need nginx, and a challenges director it can serve:
+### Step 3: Set Up Nginx for Domain Verification
+
+Install nginx and create the `challenges` directory:
+
+```bash
+sudo apt install nginx
+sudo mkdir -p /var/www/challenges/
 ```
-apt install nginx
-mkdir -p /var/www/challenges/
-```
-The configuration of nginx is the following:
-```
-# Example for nginx
+
+Configure nginx by editing `/etc/nginx/sites-available/default` (or create a new config):
+
+```nginx
 server {
     listen 80;
-    server_name yoursite.com www.yoursite.com;
+    server_name yoursite.com www.yoursite.com;  # Replace with your domain(s)
 
     location /.well-known/acme-challenge/ {
         alias /var/www/challenges/;
         try_files $uri =404;
     }
 
-    ...the rest of your config
+    # The rest of your configurations can go here
 }
 ```
 
-And finally use acme-tiny to get our signed certificate
+Enable the configuration and restart nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+sudo systemctl restart nginx
 ```
-apt install acme-tiny
+
+### Step 4: Obtain the Certificate
+
+Install and use acme-tiny to get your signed certificate:
+
+```bash
+sudo apt install acme-tiny
 acme_tiny --account-key ./account.key --csr ./domain.csr --acme-dir /var/www/challenges/ > ./signed_chain.crt
 ```
+
+### Step 5: Verify Your Certificate
 
 Tada! you should have a file called `signed_chain.crt` which contains
 your cert, and the file `domain.key` which you generated at the
 beginning is your secret key for the oracle.
+These files will be used in the SPHINX oracle configuration in the next section.
 
 ## Configuration
 
 When you have a TLS cert and key, you can start configuring the
-oracle. A full configuration file for the oracle looks as follows:
+oracle. The oracle can be configured using any of the following files:
+
+- `/etc/sphinx/config`
+- `~/.sphinxrc`
+- `~/.config/sphinx/config`
+- `./sphinx.cfg`
+
+Files are parsed in the order listed above, so global settings can be overridden by per-user and per-directory settings.
+
+Configuration is done by editing variables in the `[server]` section of the configuration file. A full configuration file for the oracle looks as follows:
 
 ```
 [server]
-# the IP address the server is listening on
+# Determines on what address the server is listening. The default is localhost
+# -- you might want to change that to whatever IP address you want the
+# oracle to be listening on.
 #address="127.0.0.1"
 
-# the port on which the server is listening, use 443 if available, so that
-# the oracle can be accessed from behind tight firewalls
+# Sets the port the server is listening on. The default is 2355. Another
+# recommended port value is 443, which is allowed by most firewalls, while
+# 2355 is not. You should set this to 443 if possible, as it will enable
+# you to have always access to the oracle when you are on the go, since
+# other ports might very well be firewalled, but port 443 is very rarely blocked.
 #port=2355
 
-# ssl key - no default must be specified
-ssl_key="server.der"
+# Required. Have no defaults, and must be set to point at a traditional TLS
+# certificate and secret key file. Set ssl_key to the file domain.key and
+# ssl_cert to the file signed_chain.crt both from the previous section
+# "Getting a TLS Certificate Using Let's Encrypt". It is recommended to not
+# use self-signed certs, but CA-signed certs that are recognized widely by
+# browsers and other TLS clients when possible.
+ssl_key="domain.key"
+ssl_cert="signed_chain.crt"
 
-# ssl cert - no default must be specified
-ssl_cert="cert.pem"
-
-# tcp connection timeouts, increase in case you have bad networks, with the
-# caveat that this might lead to easier resource exhaustion - blocking all
-# workers.
+# Sets the TCP connection timeout. Increase for slow networks, with the caveat
+# that this might lead to easier resource exhaustion, by blocking all workers.
 #timeout=3
 
-# how many worker processes can run in parallel
-# max_kids=5
+# Sets the maximum number of requests handled in parallel. The timeout config
+# variable makes sure that all handlers are recycled in predictable time.
+#max_kids=5
 
-# the root directory where all data is stored
-#datadir= "/var/lib/sphinx"
+# The data directory where all the device "secrets" are stored. This defaults
+# to `data/` in the current directory. Backup this directory regularly and
+# securely, since the loss of this directory means users lose access to their
+# passwords.
+#datadir="/var/lib/sphinx"
 
-# whether to produce some output on the console
+# Enables logging to standard output.
 #verbose=false
 
-# decay ratelimit after rl_decay seconds
-#rl_decay= 1800
+# Specifies the number of seconds after which a rate-limit level decays to an
+# easier difficulty. Together with rl_threshold and rl_gracetime, these params
+# are used to configure rate limiting.
+#rl_decay=1800
 
-# increase hardness after rl_threshold attempts if not decaying
-#rl_threshold= 1
+# Configures the number of failed attempts before increasing the difficulty level
+#rl_threshold=1
 
-# when checking freshness of puzzle solution, allow this extra
-# gracetime in addition to the hardness max solution time
+# Sets the number of additional seconds allowed - beyond the max solution time
+# fixed for a certain difficulty - before a rate-limiting puzzle expires.
 #rl_gracetime=10
+
+# Sets the path to the long-term signature private key. You can generate one by
+# running 'oracle init'. This will also create a public key and its Base64
+# encoded variant, which should be published to all potential users so that they
+# can use your oracle in a threshold setup.
+#ltsigkey="oracle.key"
 ```
 
-You need to set the `address` to whatever IP address you want the
-oracle to be listening on. And you should set the `port` if possible
-to 443, that will enable you to have always access to the oracle when
-you are on the go, since other ports might very well be firewalled,
-but port 443 is very-very rarely. You also need to set the `ssl_key`
-to the file `domain.key` , and the `ssl_cert` to the file
-`signed_chain.crt` both from the previous section "getting a tls cert..."
+```
+[server]
+# Determines on what address the server is listening. The default is localhost
+# -- you might want to change that to whatever IP address you want the
+# oracle to be listening on.
+#address="127.0.0.1"
 
-The rest of the config settings you don't have to touch. When done,
-simply run `oracle`, this will start the server in the foreground.
+# Sets the port the server is listening on. The default is 2355. Another
+# recommended port value is 443, which is allowed by most firewalls, while
+# 2355 is not. You should set this to 443 if possible, as it will enable
+# you to have always access to the oracle when you are on the go, since
+# other ports might very well be firewalled, but port 443 is very rarely blocked.
+#port=2355
+
+# Required. Have no defaults, and must be set to point at a traditional TLS
+# certificate and secret key file. Set ssl_key to the file domain.key and
+# ssl_cert to the file signed_chain.crt both from the previous section
+# "Getting a TLS Certificate Using Let's Encrypt". It is not recommended to
+# use self-signed certs, but CA-signed certs that are recognized widely by
+# browsers and other TLS clients when possible.
+ssl_key="domain.key"
+ssl_cert="signed_chain.crt"
+
+# Sets the TCP connection timeout. Increase for slow networks, with the caveat
+# that this might lead to easier resource exhaustion, by blocking all workers.
+#timeout=3
+
+# Sets the maximum number of requests handled in parallel. The timeout config
+# variable makes sure that all handlers are recycled in predictable time.
+#max_kids=5
+
+# The data directory where all the device "secrets" are stored. This defaults
+# to `data/` in the current directory. Backup this directory regularly and
+# securely, since the loss of this directory means users lose access to their
+# passwords.
+#datadir="/var/lib/sphinx"
+
+# Enables logging to standard output.
+#verbose=false
+
+# Specifies the number of seconds after which a rate-limit level decays to an
+# easier difficulty. Together with rl_threshold and rl_gracetime, these params
+# are used to configure rate limiting.
+#rl_decay=1800
+
+# Configures the number of failed attempts before increasing the difficulty level
+#rl_threshold=1
+
+# Sets the number of additional seconds allowed - beyond the max solution time
+# fixed for a certain difficulty - before a rate-limiting puzzle expires.
+#rl_gracetime=10
+
+# Sets the path to the long-term signature private key. You can generate one by
+# running 'oracle init'. This will also create a public key and its Base64
+# encoded variant, which should be published to all potential users so that they
+# can use your oracle in a threshold setup.
+#ltsigkey="oracle.key"
+```
+
+Apart from the `address`, `port`, `ssl_key` and `ssl_cert`, you need
+not touch the rest of the config.
+
+## Initializing the Oracle
+
+Given a configuration, the oracle can generate its own long-term signature key by running:
+
+```
+oracle init
+```
+
+This stores the private key at the location specified by `ltsigkey` and
+outputs the corresponding public key at the same location, with a `.pub`
+extension. The public key is also displayed as a Base64-encoded string on
+standard output.
+
+## Running the Oracle
+
+When the configuration is complete, simply run `oracle` to start the server in the foreground. The oracle does not take any parameters.
+
+## Deployment and Security Considerations
 
 Use whatever your distro provides to daemonize and log the output of
-servers to have the server automatically started at reboot.
+servers to have the oracle automatically started at reboot.
+
+The `max_kids` and `timeout` settings can be used to control how many requests are served in parallel and how long each request can run. Without careful tuning, an attacker could launch a denial-of-service attack by keeping all `max_kids` connections busy.
+
+Since the oracle only knows about failed authorizations for management operations (not incorrect master passwords for `get` requests), brute-force attempts can only be mitigated via rate limiting. Adjusting `rl_*` parameters allows you to make puzzles more difficult. On devices with less than 1GB RAM, you can increase the difficulty enough that they cannot solve the puzzles.
+
+Rate limiting in general should not be noticeable, unless dozens of `get` requests are made to the same record. At the highest difficulty level, solving should take around 20–40 seconds, depending on CPU performance.
 
 Congratulations! Now invite your friends (and enemies!) to use your
-instance :) You might also want to setup the whole thing as a tor
+instance :)
+
+You could also set up the whole thing as a Tor
 hidden service, so you can protect the privacy of your users even
-better, but how to do so is left as an exercise to the dear reader.
-
-
-[1] The only thing they can learn is the frequency how often you
-interact with a certain password, and which passwords belong to the
-same user and host, for example if you have an admin and a
-non-privileged account at the same host the oracle user could find out
-that these two are related. Also whoever is hosting the oracle can
-mount a denial-of-service against you by not responding or corrupting
-their answers. But your passwords would be safe, nevertheless. Even if
-their "database" leaks to the internet, or criminals.
+better. How to do so is left as an exercise to the dear reader.

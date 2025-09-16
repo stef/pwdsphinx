@@ -12,19 +12,15 @@ getpwd ["prompt"] | sphinx get username hostname
 
 # DESCRIPTION
 
-This is a simple script which uses `pinentry` from the gnupg project
-to query a password and write it out to standard output. Which
-`pinentry` variant you use, is up to you, it can be a curses, gtk or
-qt interface. This should be safer than echoing a password into
-pwdsphinx, since your password will not show up in your process list
-nor your command line history.
+`getpwd` securely prompts for a password using `pinentry` from the GnuPG project and outputs it to standard output. This approach is safer than echoing passwords directly into commands, as it prevents passwords from appearing in process lists or command history.
 
-The only parameter this tool takes is a prompt to display when asking
-for the password.
+The tool supports various `pinentry` interfaces including curses, GTK, and Qt variants, allowing you to choose the interface that best fits your desktop environment.
+
+The parameter, `prompt`, specifies the prompt text displayed when asking for the password.
 
 # REPORTING BUGS
 
-https://github.com/stef/pwdsphinx/issues/
+<https://github.com/stef/pwdsphinx/issues/>
 
 # AUTHOR
 
