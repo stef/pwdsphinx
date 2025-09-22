@@ -1254,3 +1254,7 @@ in the following way.
 
 12. The server hands over the original request to the extended sphinx
     protocol handler.
+
+** Author
+
+Stefan Marsiske |sphinx|O|ctrlc.hu|
