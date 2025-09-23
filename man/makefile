@@ -4,11 +4,11 @@ all: sphinx.1 oracle.1 bin2pass.1 websphinx.1 getpwd.1 exec-on-click.1 type-pwd.
 html: sphinx.html oracle.html bin2pass.html websphinx.html getpwd.html exec-on-click.html type-pwd.html dmenu-sphinx.html \
 	sphinx-x11.html sphage.html pipe2tmpfile.html
  
-install: $(PREFIX)/share/man/man1/sphinx.1 $(PREFIX)/share/man/man1/oracle.1 $(PREFIX)/share/man/man1/bin2pass.1 \
-	$(PREFIX)/share/man/man1/getpwd.1 $(PREFIX)/share/man/man1/exec-on-click.1 $(PREFIX)/share/man/man1/type-pwd.1 \
-	$(PREFIX)/share/man/man1/dmenu-sphinx.1 $(PREFIX)/share/man/man1/sphinx-x11.1 $(PREFIX)/share/man/man1/sphage.1 \
-	$(PREFIX)/share/man/man1/websphinx.1 $(PREFIX)/share/man/man1/otp.sphinx.1 $(PREFIX)/share/man/man1/pass.sphinx.1 \
-	$(PREFIX)/share/man/man1/user-pass-otp.sphinx.1 $(PREFIX)/share/man/man1/user-pass.sphinx.1 $(PREFIX)/share/man/man1/pipe2tmpfile.1
+install: $(DESTDIR)$(PREFIX)/share/man/man1/sphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/oracle.1 $(DESTDIR)$(PREFIX)/share/man/man1/bin2pass.1 \
+	$(DESTDIR)$(PREFIX)/share/man/man1/getpwd.1 $(DESTDIR)$(PREFIX)/share/man/man1/exec-on-click.1 $(DESTDIR)$(PREFIX)/share/man/man1/type-pwd.1 \
+	$(DESTDIR)$(PREFIX)/share/man/man1/dmenu-sphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/sphinx-x11.1 $(DESTDIR)$(PREFIX)/share/man/man1/sphage.1 \
+	$(DESTDIR)$(PREFIX)/share/man/man1/websphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/otp.sphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/pass.sphinx.1 \
+	$(DESTDIR)$(PREFIX)/share/man/man1/user-pass-otp.sphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/user-pass.sphinx.1 $(DESTDIR)$(PREFIX)/share/man/man1/pipe2tmpfile.1
 
 clean:
 	rm -f *.1
