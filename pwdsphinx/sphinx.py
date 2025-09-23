@@ -79,6 +79,10 @@ delete_upgraded = False
 if v1sphinx.enabled:
     delete_upgraded = cfg.get('client',{}).get('delete_upgraded',False)
 
+if len(servers)==0:
+    print(f'you have no servers defined in your [servers] section\n'
+          f'please add {threshold + (0 if threshold==1 else 1)} more servers to your config')
+    exit(1)
 if len(servers)>1:
     if threshold < 2:
         print('if you have multiple servers in your config, you must specify a threshold >1 also')
