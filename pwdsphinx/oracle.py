@@ -829,13 +829,14 @@ def parse_params():
     missing_file(ssl_key)
   if not is_readable(ssl_cert):
     missing_file(ssl_cert)
-  if not is_readable(ltsigkey_path) and 'init' not in sys.argv:
-    print(f"Long-term signing key at {ltsigkey_path} is not readable.")
-    print(f"You can generate one by running: {sys.argv[0]} init")
-  if not getsize != pysodium.crypto_sign_SECRETKEYBYTES:
-    print(f"The long-term signing key of the oracle has an invalid size, maybe it's corrupt?")
-    print("abort.")
-    exit(1)
+  if 'init' not in sys.argv:
+    if not is_readable(ltsigkey_path):
+      print(f"Long-term signing key at {ltsigkey_path} is not readable.")
+      print(f"You can generate one by running: {sys.argv[0]} init")
+    if getsize(ltsigkey_path) != pysodium.crypto_sign_SECRETKEYBYTES:
+      print(f"The long-term signing key of the oracle has an invalid size, maybe it's corrupt?")
+      print("abort.")
+      exit(1)
 
   debug=False
   if 'debug' in sys.argv:
