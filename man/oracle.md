@@ -10,7 +10,7 @@ oracle - server for the SPHINX password manager
 
 # DESCRIPTION
 
-The SPHINX protocol only makes sense if the server (called *oracle*) is located somewhere other than where you type your password. `pwdsphinx` comes with a server implemented in Python 3, which you can host off-site from your usual desktop or smartphone.
+The SPHINX protocol only makes sense if the server (called *oracle*) is located somewhere other than where you type your password. pwdsphinx comes with a server implemented in Python 3, which you can host off-site from your usual desktop or smartphone. For production deployments, [**zphinx-zerver**](https://github.com/stef/zphinx-zerver) is recommended over pwdsphinx. zphinx-zerver is a production-grade server implementation written in Zig that offers better reliability for hosting SPHINX services.
 
 The server can be started simply by running `oracle`. It does not take any parameters.
 
@@ -59,7 +59,7 @@ Rate limiting in general should not be noticeable, unless dozens of `get` reques
 
 # REPORTING BUGS
 
-<https://github.com/stef/pwdsphinx/issues/>
+https://github.com/stef/pwdsphinx/issues/
 
 # AUTHOR
 
@@ -67,7 +67,7 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later https://gnu.org/licenses/gpl.html.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO

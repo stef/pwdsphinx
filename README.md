@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 # SPHINX: A Password **S**tore that **P**erfectly **H**ides from **I**tself (**N**o **X**aggeration)
 
 SPHINX is a cryptographic password storage protocol that provides information-theoretic security. pwdsphinx is a Python wrapper around libsphinx - a cryptographic password storage
-as described in <https://eprint.iacr.org/2015/1099>.
+as described in https://eprint.iacr.org/2015/1099.
 
 Unlike traditional password managers, SPHINX only stores random numbers unrelated to your actual passwords, ensuring the server learns nothing about them.
 
@@ -123,7 +123,7 @@ See [`sphinx(1)`](man/sphinx.md) for detailed command syntax and examples.
 
 If you have OPAQUE-Store installed and configured correctly, you get a number of
 additional operations, which allow you to store traditionally encrypted blobs
-of information. For a gentle introduction on how this works using the OPAQUE protocol, have a look at this post: <https://www.ctrlc.hu/~stef/blog/posts/How_to_recover_static_secrets_using_OPAQUE.html>
+of information. For a gentle introduction on how this works using the OPAQUE protocol, have a look at this post: https://www.ctrlc.hu/~stef/blog/posts/How_to_recover_static_secrets_using_OPAQUE.html
 
 The following operations will be available if OPAQUE-Store is setup correctly:
 

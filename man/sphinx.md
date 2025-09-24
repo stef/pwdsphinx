@@ -6,7 +6,6 @@ sphinx - command-line client for the SPHINX password manager
 
 # SYNOPSIS
 
-```bash
 `sphinx` init
 
 echo "password" | `sphinx` create \<user> \<site> [\<u\>\<l\>\<d\>\<s\>] [\<size>] [\<symbols>] [\<target password>]
@@ -26,15 +25,19 @@ echo -e "oldpassword\nnewpassword" | `sphinx` change \<user> \<site> [\<u\>\<l\>
 `sphinx` healthcheck
 
 `sphinx` qr [\<svg>] [\<key>]
-```
+
 
 In general, if any operation requires a master (input) password, it is expected on standard input, and any resulting account (output) password is printed to standard output. In the examples we use `echo` but it is recommended to use `getpwd(1)` or similar tools to query and pass the input password.
 
 # DESCRIPTION
 
-SPHINX – password Store that Perfectly Hides from Itself (No Xaggeration) – is an information-theoretically secure cryptographic password storage protocol with strong security guarantees. The protocol is described in the 2015 paper "Device-Enhanced Password Protocols with Optimal Online-Offline Protection" by Jarecki, Krawczyk, Shirvanian, and Saxena (<https://ia.cr/2015/1099>).
+SPHINX – password Store that Perfectly Hides from Itself (No Xaggeration) – is an information-theoretically secure cryptographic password storage protocol with strong security guarantees. The protocol is described in the 2015 paper "Device-Enhanced Password Protocols with Optimal Online-Offline Protection" by Jarecki, Krawczyk, Shirvanian, and Saxena (https://ia.cr/2015/1099).
 
-`sphinx` is the command-line client for the SPHINX protocol. It provides access to all operations over the lifecycle of a password: `init`, `create`, `get`, `change`, `undo`, `commit`, `delete`. Additionally, it provides operations that make these features more user-friendly: listing of users associated with a host and export of the configuration using a QR code.
+# OPERATIONS
+
+`sphinx` is the command-line client for the SPHINX protocol. It provides access to all operations over the lifecycle of a password: `init`, `create`, `get`, `change`, `undo`, `commit`, `delete`, and `list`. All operations require a username and a site that the password belongs to, even if they're just empty strings. Additionally, it provides operations that make these features more user-friendly: listing of users associated with a host and export of the configuration using a QR code.
+
+
 
 `sphinx` not only handles passwords, but also handles Time-based One-Time Password (TOTP) Two-Factor Authentication (2FA) and [age keys](https://age-encryption.org). Additionally, if installed, `sphinx` also provides access to [OPAQUE-Store](https://github.com/stef/opaque-store), a simple tool that allows one to store secrets that need encrypted storage (like keys, phrases, or other data).
 
@@ -62,7 +65,7 @@ echo -n 'my input password' | sphinx create username example.com ulsd 0 ' !"#$%&
 
 The parameters are:
 
-- **Master password on standard input**:  Unlike traditional password managers that use a single master password for the entire database, you can use different input passwords for different username/site combinations.
+- **Master password on standard input**: Unlike traditional password managers that use a single master password for the entire database, you can use different input passwords for different username/site combinations.
 - `create`: Specifies the operation type.
 - `username`: Your username for the site.
 - `example.com`: The target site.
@@ -335,8 +338,87 @@ echo -n 'password' | sphinx recovery-tokens <keyid>
 echo -n 'password' | sphinx unlock <keyid> <recovery-token>
 ```
 
-See the [OPAQUE-Store X11 integration documentation](https://sphinx.pm/opaque-store_integration.html) for more details on these operations and how the integration
-works with SPHINX
+### How does OPAQUE-Store SPHINX integration work
+
+In all OPAQUE-Store commands, a SPHINX `get` operation runs first. This generates the password used with OPAQUE, ensuring that the OPAQUE password is extremely strong and nearly impossible to brute-force without going through SPHINX. However, online brute-force attempts via SPHINX are still possible. OPAQUE can detect invalid passwords and lock records after a configured number of failed attempts. This lock does not apply to the operator of an OPAQUE server, who could bypass it.
+
+### A WARNING: Don't let one entity control enough of your SPHINX and OPAQUE-Store servers
+
+Every OPAQUE-Store operation requires a password via standard input. This password is run through SPHINX, and the output password is then used in the OPAQUE protocol as the input password. This means that if both SPHINX and OPAQUE-Store are hosted on the same server or controlled by the same third party, they could potentially perform an offline brute-force attack against your SPHINX master password. If you use a threshold setup where different entities control the servers, you remain secure as long as no single entity controls enough servers to meet the threshold.
+
+### OPAQUE-Store CLI Parameters
+
+#### KeyId
+
+Every OPAQUE-Store integration command needs a `keyid` parameter, which references your stored record. The client uses the `id_salt` configuration value together with the OPAQUE-Store server's name to hash the `keyid` into a record ID. If you lose or change either `id_salt` or the server name, your record IDs will change, and your data will become inaccessible. Back up your configuration file to avoid this. While `id_salt` does not need to be secret, keeping it private adds an extra layer of security.
+
+#### Forced operations
+
+In threshold setups, certain commands (`replace`, `edit`, `changepwd`, and `erase`) require that all servers participate successfully in the operation. This is to avoid situations where some servers become out of sync (corrupted) from the others. If you are certain it's safe, you can add the `force` flag to allow the operation to succeed with only the minimum number of servers specified by your `threshold` setting.
+
+### Store an encrypted blob
+
+```sh
+getpwd | sphinx store <keyid> file-to-store
+```
+
+Stores the specified `file-to-store` in encrypted form on the OPAQUE-Store server, using a password derived from SPHINX. **Note**: This command also outputs a recovery token, which you should keep safe in case the record is ever locked.
+
+### Retrieve an encrypted OPAQUE-Store blob
+
+```sh
+getpwd | sphinx read <keyid>
+```
+
+Retrieves the record stored at `keyid` and outputs it to standard output.
+
+### Overwrite an encrypted OPAQUE-Store blob
+
+```sh
+getpwd | sphinx replace [force] <keyid> file-to-store
+```
+
+Replaces the record stored at `keyid` with an encrypted version of `file-to-store`. This command only works if a record already exists at `keyid`. By default, all servers must participate successfully. If some are unavailable, you can use `force` to proceed as long as the threshold is met — but unavailable servers will become out of sync (corrupted) from this point on.
+
+### Edit an OPAQUE-Store blob
+
+```sh
+getpwd | sphinx edit [force] <keyid>
+```
+
+This operation fetches the file stored at `keyid`, opens it in your default editor (specified by the `EDITOR` environment variable), and stores the saved changes back at the same `keyid`, overwriting the original.
+
+### Change your password on an OPAQUE-Store blob
+
+```sh
+getpwd | sphinx changepwd [force] <keyid>
+```
+
+This operation rotates all passwords and keys for the record at `keyid`. Even if your own password (supplied to `getpwd`) stays the same, SPHINX will generate a new key, which in turn produces a new OPAQUE password. This results in a completely new encryption key for your file, and the file is re-encrypted with it.
+
+### Delete a stored OPAQUE-Store blob
+
+```sh
+getpwd | sphinx erase [force] <keyid>
+```
+
+Deletes the record stored at `keyid`.
+
+### Get a recovery token
+
+```sh
+getpwd | sphinx recovery-tokens <keyid>
+```
+
+This operation generates and returns an additional recovery token, provided the record is not currently locked.
+
+### Unlock a locked OPAQUE-Store blob
+
+```sh
+getpwd | sphinx unlock <keyid> <recovery-token>
+```
+
+This operation unlocks a record that has been locked by the servers (for example, after repeated failed login attempts or if you forgot your master password). It requires a valid recovery token. Once unlocked, the record is automatically retrieved — unless the wrong password is provided again.
 
 # SPHINX CONFIGURATION
 
@@ -411,7 +493,7 @@ Using `pinentry`, you can enable double password input, and password quality che
 
 # REPORTING BUGS
 
-<https://github.com/stef/pwdsphinx/issues/>
+https://github.com/stef/pwdsphinx/issues/
 
 # AUTHOR
 
@@ -419,15 +501,15 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later https://gnu.org/licenses/gpl.html.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO
 
-<https://www.ctrlc.hu/~stef/blog/posts/sphinx.html>
+https://www.ctrlc.hu/~stef/blog/posts/sphinx.html
 
-<https://www.ctrlc.hu/~stef/blog/posts/oprf.html>
+https://www.ctrlc.hu/~stef/blog/posts/oprf.html
 
-<https://github.com/stef/opaque-store/>
+https://github.com/stef/opaque-store/
 
 `oracle(1)`, `getpwd(1)`, `opaquestore(1)`
