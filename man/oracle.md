@@ -10,95 +10,52 @@ oracle - server for the SPHINX password manager
 
 # DESCRIPTION
 
-The SPHINX protocol only makes sense if the server (called oracle) is
-somewhere else than where you type your password, pwdsphinx comes with
-a server implemented in python3 which you can host off-site from your
-usual desktop/smartphone.
+The SPHINX protocol only makes sense if the server (called *oracle*) is located somewhere other than where you type your password. pwdsphinx comes with a server implemented in Python 3, which you can host off-site from your usual desktop or smartphone. For production deployments, [**zphinx-zerver**](https://github.com/stef/zphinx-zerver) is recommended over pwdsphinx. zphinx-zerver is a production-grade server implementation written in Zig that offers better reliability for hosting SPHINX services.
 
-The server can be started simply by running `oracle` it does not take
-any parameters.
+The server can be started simply by running `oracle`. It does not take any parameters.
 
 # CONFIGURATION
 
-The server can be configured by any of the following files:
+The server can be configured using any of the following files:
 
- - `/etc/sphinx/config`
- - `~/.sphinxrc`
- - `~/.config/sphinx/config`
- - `./sphinx.cfg`
+- `/etc/sphinx/config`
+- `~/.sphinxrc`
+- `~/.config/sphinx/config`
+- `./sphinx.cfg`
 
-Files are parsed in this order, this means global settings can be
-overridden by per-user and per-directory settings.
+Files are parsed in the order listed above, so global settings can be overridden by per-user and per-directory settings.
 
-The server can be configured by changing the variables in the
-`[server]` section of the config file.
+Configuration is done by editing variables in the `[server]` section of the configuration file.
 
-The `address` is the IP address on which the server is listening,
-default is `localhost` - you might want to change that.
+- `address`: Determines on what address the server is listening. The default is `localhost`: you might want to change that to a specific IP address.
+- `port`: Sets the port the server is listening on. The default is `2355`. Another recommended port value is `443`, which is allowed by most firewalls, while `2355` is not.
+- `ssl_key`, `ssl_cert`: Required. Have no defaults, and must be set to point at a traditional TLS certificate and secret key file. It is recommended to not use self-signed certs, but CA-signed certs that are recognized widely by browsers and other TLS clients when possible.
+- `datadir`: The data directory where all the device "secrets" are stored. This defaults to `data/` in the current directory. Backup this directory regularly and securely, since the loss of this directory means users lose access to their passwords.
+- `verbose`: Enables logging to standard output.
+- `timeout`: Sets the TCP connection timeout. Increase for slow networks, with the caveat that this might lead to easier resource exhaustion, by blocking all workers.
+- `max_kids`: Sets the maximum number of requests handled in parallel. The `timeout` config variable makes sure that all handlers are recycled in predictable time.
+- `rl_decay`: Specifies the number of seconds after which a rate-limit level decays to an easier difficulty. Together with `rl_threshold` and `rl_gracetime`, these params are used to configure rate limiting.
+- `rl_threshold`: Configures the number of failed attempts before increasing the difficulty level
+- `rl_gracetime`: Sets the number of additional seconds allowed - beyond the max solution time fixed for a certain difficulty - before a rate-limiting puzzle expires.
+- `ltsigkey`: Sets the path to the long-term signature private key. You can generate one by running `oracle init`. This will also create a public key and its Base64 encoded variant, which should be published to all potential users so that they can use your oracle in a threshold setup.
 
-The `port` where the server is listening is by default 2355. Another
-recommended values is to use port 433 which is allowed by most
-firewalls while 2355 is not.
+# INITIALIZING AN ORACLE
 
-`ssl_key` and `ssl_cert` must be specified, they point at a traditional TLS
-certificate and secret key file. It is recommended to not use self-signed
-certs, but to use certs that signed by CAs that are recognized widely by
-browsers and other TLS clients.
+Given a configuration, the oracle can generate its own long-term signature key by running:
 
-`datadir` specifies the data directory where all the device "secrets"
-are stored, this defaults to "data/" in the current directory. You
-might want to back up this directory from time to time to an encrypted
-medium.
+```
+oracle init
+```
 
-`verbose` enables logging to standard output.
-
-`timeout` sets the timeout for any connection the server keeps open.
-
-`max_kids` sets the number maximum requests handled in parallel. The
-`timeout` config variable makes sure that all handlers are recycled in
-predictable time.
-
-`rl_decay` specifies the number of seconds after which a ratelimit level
-decays to an easier difficulty.
-
-`rl_threshold` increase the difficulty of ratelimit puzzles if not
-decaying.
-
-`rl_gracetime` gracetime in seconds added to the expected time to solve
-a rate-limiting puzzle.
-
-`ltsigkey` a path pointing at a long-term signature private key. This can be
-generated by running `oracle init`.
-
-# Initializing an oracle
-
-Given a configuration, the oracle can generate its own long-term signature key.
-To do so, simply run `oracle init` and it will store the private key at the
-location pointed by the `ltsigkey` configuration value. This operation will
-also output the public key, at the same location as the private key, but with a
-`.pub` extension. Furthermore the public key is also displayed as a Base64
-encoded string on the standard output.
+This stores the private key at the location specified by `ltsigkey` and outputs the corresponding public key at the same location, with a `.pub` extension. The public key is also displayed as a Base64-encoded string on standard output.
 
 # SECURITY CONSIDERATIONS
 
-The configuration values `max_kids` and `timeout` can be used to tune
-how many requests are served in parallel and how long each request is
-allowed to take before it gets killed. An attacker might be able to
-run a denial-of-service attack against your server, by keeping all
-`max_kids` connections "occupied".
+The `max_kids` and `timeout` settings can be used to control how many requests are served in parallel and how long each request can run. Without careful tuning, an attacker could launch a denial-of-service attack by keeping all `max_kids` connections busy.
 
-Since the server does only know about failed authorizations for
-management operations, but not about correctness of master passwords
-for get requests, there is no way to mitigate master password
-bruteforce attempts aside from ratelimiting. By tuning the
-configuration variables starting with `rl_` it is possible to
-configure this. If you have clients that have less than 1G RAM, it
-might be possible to increase the difficulty to the maximum level
-where those devices will not be able to solve the ratelimting
-puzzles. Rate-limiting in general should not be noticeable, only if
-dozens of get requests are served to the same record. At the highest
-level the solution should take about 20-40 seconds (depending on your
-cpu).
+Since the server only knows about failed authorizations for management operations (not incorrect master passwords for `get` requests), brute-force attempts can only be mitigated via rate limiting. Adjusting `rl_*` parameters allows you to make puzzles more difficult. On devices with less than 1GB RAM, you can increase the difficulty enough that they cannot solve the puzzles.
+
+Rate limiting in general should not be noticeable, unless dozens of `get` requests are made to the same record. At the highest difficulty level, solving should take around 20–40 seconds, depending on CPU performance.
 
 # REPORTING BUGS
 
@@ -110,7 +67,7 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2024 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later https://gnu.org/licenses/gpl.html.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO

@@ -12,17 +12,11 @@ type-pwd username hostname
 
 # DESCRIPTION
 
-This script combines `getpwd(1)`, `exec-on-click(1)` and the
-`sphinx(1)` client in such a way, that it securely queries for your
-master password, and then waits until you click somewhere (hopefully
-into a password entry field) and then sends the password as
-keystrokes. Using this mechanism you make sure your password is never
-on your clipboard where malware might steal it. And also it allows you to
-enter your password on those sites that disable copy/pasting into
-password fields.
+`type-pwd` combines `getpwd(1)`, `exec-on-click(1)`, and `sphinx(1)` to create a secure password entry workflow. It first prompts for your master password, then waits for you to click on a password field before typing the password as keystrokes.
 
-When you click make sure you click in the password entry field where
-you want the password to be entered.
+This approach ensures that your password never appears in the clipboard where malware could steal it. It also works on websites that disable copy and paste functionality in password fields.
+
+When prompted to click, make sure you click directly in the password entry field where you want the password entered.
 
 # REPORTING BUGS
 
@@ -34,7 +28,7 @@ Written by Stefan Marsiske.
 
 # COPYRIGHT
 
-Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+Copyright © 2023 Stefan Marsiske.  License GPLv3+: GNU GPL version 3 or later https://gnu.org/licenses/gpl.html.
 This is free software: you are free to change and redistribute it.  There is NO WARRANTY, to the extent permitted by law.
 
 # SEE ALSO
