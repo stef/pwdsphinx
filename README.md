@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # SPHINX: A Password **S**tore that **P**erfectly **H**ides from **I**tself (**N**o **X**aggeration)
 
-SPHINX is a cryptographic password storage protocol that provides information-theoretic security. pwdsphinx is a Python wrapper around libsphinx - a cryptographic password storage
+SPHINX is a cryptographic password storage protocol that provides information-theoretic security. pwdsphinx is a Python wrapper around [liboprf](https://github.com/stef/liboprf) - a cryptographic password storage
 as described in https://eprint.iacr.org/2015/1099.
 
 Unlike traditional password managers, SPHINX only stores random numbers unrelated to your actual passwords, ensuring the server learns nothing about them.
@@ -58,7 +58,7 @@ apt-get install pinentry-fltk      # Lightweight option
 - **dmenu**: Interactive menus
 
 **For extended storage:**
-If you want to store other "secrets" that are longer than just 30-40 bytes, you
+If you want to store other "secrets" that are longer than just 77 chars, you
 can install OPAQUE-Store:
 
 - **[opaque-store](https://github.com/stef/opaque-store/)**:  Encrypted file storage: `pip3 install opaquestore`
@@ -113,7 +113,7 @@ SPHINX provides a complete lifecycle for password management:
 
 ### Management Operations  
 
-- **`init`**: Initialize client with new master key
+- **`init`**: Initialize client with new master key. It also sets up browser extensions if `~/.mozilla` or `~/.config/chromium` directories are found.
 - **`healthcheck`**: Test server connectivity
 - **`qr`**: Export configuration as QR code
 
