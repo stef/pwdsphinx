@@ -35,9 +35,10 @@ For Android devices, export your config using `sphinx qr key`. This creates a QR
 Edit `~/.sphinxrc`:
 
 ```ini
-[client]
-address = your.sphinx-server.tld
-port = 443
+[servers]
+[server.server-name]
+address=your.sphinx-server.tld
+port=443
 ```
 
 **Need a server?**
@@ -92,7 +93,7 @@ sudo apt-get install pinentry-fltk      # Lightweight option
 
 ### Firefox Extension
 
-1. **Install from [Firefox Add-ons Store](https://addons.mozilla.org/en-US/firefox/addon/websphinx/)**
+1. **Install from [Firefox Add-ons Store](https://github.com/stef/pwdsphinx/releases/tag/v2.0.0)**
 2. **Configure pinentry** (if not using default `/usr/bin/pinentry`):
    
    Add to `~/.sphinxrc`:
