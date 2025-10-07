@@ -601,9 +601,9 @@ def create(m, pwd, user, host, char_classes='uld', symbols=bin2pass.symbols, siz
             continue
         break
 
-  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask, with_schema='://' in user)
   # send over new signed(pubkey, rule)
   for i,(id,pk) in enumerate(zip(ids, sign_keys)):
+    rule = pack_rule(char_classes, symbols, size, checkdigit, xormask, with_schema='://' in user)
     msg = b''.join([pk, rule])
     msg = sign_blob(msg, id, rwd)
     m[i].send(msg)
@@ -671,7 +671,7 @@ def get(m, pwd, user, host):
     if len({x for x in resps if x is not None}) == 1 and {x for x in resps if x is not None} == {b'\x00\x04fail'}:
       raise ValueError("ERROR: The record does not exist, there's a chance you are being fished.")
     resps = [(x[:33], x[33:]) for x in resps if x is not None]
-    if len({resp[1] for resp in resps if resp}) != 1:
+    if len({str(unpack_rule(resp[1])) for resp in resps if resp}) != 1:
       m.close()
       raise ValueError("ERROR: servers disagree on rules")
     rules = resps[0][1]
@@ -832,9 +832,9 @@ def change(m, oldpwd, newpwd, user, host, char_classes='uld', symbols=bin2pass.s
             continue
         break
 
-  rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
 
   for i, id in enumerate(ids):
+    rule = pack_rule(char_classes, symbols, size, checkdigit, xormask)
     sk, pk = get_signkey(id, rwd)
     clearmem(sk)
     # send over new signed(pubkey)
