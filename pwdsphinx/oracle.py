@@ -745,7 +745,7 @@ def main(debug=False):
         import ctypes
         libc = ctypes.cdll.LoadLibrary('libc.so.6')
         fdopen = libc.fdopen
-        log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'log_file')
+        log_file = ctypes.c_void_p.in_dll(pyoprf.liboprf,'liboprf_log_file')
         fdopen.restype = ctypes.c_void_p
         log_file.value = fdopen(2, 'w')
 
