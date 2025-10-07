@@ -125,7 +125,7 @@ if verbose:
     print("userlist:", userlist, file=sys.stderr)
     print("threshold:", threshold, file=sys.stderr)
     for name, server in servers.items():
-      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)} {server['ltsigkey']} cert: {server.get('ssl_cert')}")
+      print(f"{name} {server.get('host','localhost')}:{server.get('port', 2355)} {server['ltsigkey'].hex()} cert: {server.get('ssl_cert')}")
 
 #### consts ####
 
