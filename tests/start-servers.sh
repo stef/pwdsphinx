@@ -1,30 +1,28 @@
 #!/bin/sh
 
+ORACLE=${ORACLE:-../../../pwdsphinx/oracle.py}
+PIDS=""
+
 cleanup() {
- echo killing oracles $server1 $server2 $server3 $server4 $server5
- kill $server1 $server2 $server3 $server4 $server5
+ echo killing oracles ${PIDS}
+ kill ${PIDS}
  exit
 }
 
-cd servers/0; ../../../pwdsphinx/oracle.py &
-server1=$!
-sleep 0.1
+start_server() {
+   printf "starting %s %s\n" "$ORACLE" "$1"
+   cd "servers/$1"
+   "$ORACLE" >log 2>&1 &
+   PIDS="$PIDS $!"
+   sleep 0.1
+   cd - >/dev/null
+}
 
-cd ../../servers/1; ../../../pwdsphinx/oracle.py &
-server2=$!
-sleep 0.1
-
-cd ../../servers/2; ../../../pwdsphinx/oracle.py &
-server3=$!
-sleep 0.1
-
-cd ../../servers/3; ../../../pwdsphinx/oracle.py &
-server4=$!
-sleep 0.1
-
-cd ../../servers/4; ../../../pwdsphinx/oracle.py &
-server5=$!
-sleep 0.1
+start_server 0
+start_server 1
+start_server 2
+start_server 3
+start_server 4
 
 trap "cleanup" INT
 while true; do sleep 1 ;done
