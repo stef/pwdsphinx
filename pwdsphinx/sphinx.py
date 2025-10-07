@@ -14,7 +14,7 @@ except ImportError:
     zxcvbn = None
 from equihash import solve
 from itertools import permutations
-from pyoprf.multiplexer import Peer, Multiplexer as origMultiplexer
+from pyoprf.multiplexer import Peer, Multiplexer
 
 try:
   from pwdsphinx import bin2pass, v1sphinx
@@ -31,18 +31,6 @@ except ImportError:
   from utils import split_by_n
   from ext import init_browser_ext
   from converter import convert, convertedBy
-
-# monkey patching multiplexer that did not set timeouts for peer network
-# connections - todo remove this when pyoprf with a fix is suitably deployed
-class Multiplexer(origMultiplexer):
-    def __init__(self, peers, alpn_proto=None):
-        self.peers = [Peer(name
-                           ,(p['host'],p['port'])
-                           ,type=p.get("type", "SSL")
-                           ,ssl_cert = p.get('ssl_cert')
-                           ,timeout = p.get('timeout', timeout)
-                           ,alpn_proto=alpn_proto or ['sphinx/1'])
-                      for name, p in peers.items()]
 
 win=False
 if platform.system() == 'Windows':
