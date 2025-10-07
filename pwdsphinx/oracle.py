@@ -257,7 +257,7 @@ def create_dkg(s, msg):
     if len(msg)!=65+pyoprf.tpdkg_msg0_SIZE:
       print(f"{len(msg)} != {pyoprf.tpdkg_msg0_SIZE}",file=sys.stderr)
       fail(s)
-    if verbose: print('Data received:',msg.hex())
+    if verbose: print('Create DKG Data received:',msg.hex())
     op,    msg = pop(msg,1)
     id,    msg = pop(msg,32)
     alpha, msg0 = pop(msg,32)
