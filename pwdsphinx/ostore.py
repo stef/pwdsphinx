@@ -36,51 +36,60 @@ def store(pwd, keyid, path):
   # create & recovery-tokens
   with open(path,'r') as fd:
     data = fd.read()
-  s = connect()
-  client.create(s, pwd, keyid.encode('utf8'), data.encode('utf8'))
-  s = connect()
-  token = client.get_recovery_tokens(s, pwd, keyid.encode('utf8'))
+  with connect() as s:
+    client.create(s, pwd, keyid.encode('utf8'), data.encode('utf8'))
+  with connect() as s:
+    token = client.get_recovery_tokens(s, pwd, keyid.encode('utf8'))
   print("successfully created opaque store record. Store the following recovery token, in case this record is locked")
   print(token)
 
 def read(pwd, keyid):
-  s = connect()
-  print(client.get(s, pwd, keyid.encode('utf8')))
+  with connect() as s:
+    print(client.get(s, pwd, keyid.encode('utf8')))
 
 def replace(pwd, keyid, path, force=False):
   with open(path,'r') as fd:
     data = fd.read()
-  s = connect()
-  client.update(s, pwd, keyid.encode('utf8'), data.encode('utf8'), force)
+  with connect() as s:
+    client.update(s, pwd, keyid.encode('utf8'), data.encode('utf8'), force)
 
 def erase(pwd, keyid, ctx, force=False):
-  s = connect()
-  client.delete(s, pwd, keyid.encode('utf8'), force)
+  with connect() as s:
+    client.delete(s, pwd, keyid.encode('utf8'), force)
   # also handle delete sphinx record in case ostore.erase
   m = ctx['m'](ctx['servers'])
   m.connect()
-  ctx['delete'](m, ctx['pwd'], ctx['user'], ctx['host'])
+  try:
+    ctx['delete'](m, ctx['pwd'], ctx['user'], ctx['host'])
+  finally:
+    m.close()
 
 def changepwd(pwd, keyid, ctx, force=False):
   m = ctx['m'](ctx['servers'])
   m.connect()
-  newpwd = ctx['change'](m, ctx['pwd'], ctx['newpwd'], ctx['user'], ctx['host'])
+  try:
+    newpwd = ctx['change'](m, ctx['pwd'], ctx['newpwd'], ctx['user'], ctx['host'])
+  finally:
+    m.close()
 
-  s = connect()
-  data = client.get(s, pwd, keyid.encode('utf8'))
+  with connect() as s:
+    data = client.get(s, pwd, keyid.encode('utf8'))
 
-  s = connect()
-  client.delete(s, pwd, keyid.encode('utf8'), force)
+  with connect() as s:
+    client.delete(s, pwd, keyid.encode('utf8'), force)
 
-  s = connect()
-  client.create(s, newpwd, keyid.encode('utf8'), data.encode('utf8'))
+  with connect() as s:
+    client.create(s, newpwd, keyid.encode('utf8'), data.encode('utf8'))
 
-  s = connect()
-  token = client.get_recovery_tokens(s, newpwd, keyid.encode('utf8'))
+  with connect() as s:
+    token = client.get_recovery_tokens(s, newpwd, keyid.encode('utf8'))
 
   m = ctx['m'](ctx['servers'])
   m.connect()
-  ctx['commit'](m, ctx['pwd'], ctx['user'], ctx['host'])
+  try:
+    ctx['commit'](m, ctx['pwd'], ctx['user'], ctx['host'])
+  finally:
+    m.close()
   print("Store the following recovery token, in case this record is locked")
   print(token)
 
@@ -88,8 +97,8 @@ def edit(pwd, keyid, force=False):
   if not os.path.exists('/dev/tty'):
       print("can only edit on systems that have /dev/tty, sorry")
       return False
-  s = connect()
-  data = client.get(s, pwd, keyid.encode('utf8'))
+  with connect() as s:
+    data = client.get(s, pwd, keyid.encode('utf8'))
   fd, fname = mkstemp()
   fd = os.fdopen(fd,'w')
   fd.write(data)
@@ -99,21 +108,21 @@ def edit(pwd, keyid, force=False):
   with open(fname,"r") as fd:
     data = fd.read()
   os.unlink(fname)
-  s = connect()
-  client.update(s, pwd, keyid.encode('utf8'), data.encode('utf8'), force)
+  with connect() as s:
+    client.update(s, pwd, keyid.encode('utf8'), data.encode('utf8'), force)
 
 def recoverytoken(pwd, keyid):
-  s = connect()
-  token = client.get_recovery_tokens(s, pwd, keyid.encode('utf8'))
+  with connect() as s:
+    token = client.get_recovery_tokens(s, pwd, keyid.encode('utf8'))
   print("Store the following recovery token, in case this record is locked")
   print(token)
 
 def unlock(pwd, keyid, token):
   # unlock + get
-  s = connect()
-  client.unlock(s, token, keyid.encode('utf8'))
-  s = connect()
-  print(client.get(s, pwd, keyid.encode('utf8')))
+  with connect() as s:
+    client.unlock(s, token, keyid.encode('utf8'))
+  with connect() as s:
+    print(client.get(s, pwd, keyid.encode('utf8')))
 
 cmds = {'store': store,
         'read': read,
