@@ -125,8 +125,8 @@ class TestEndToEnd(unittest.TestCase):
         cls._oracles.append(
           (subprocess.Popen(["python3", path.dirname(path.abspath(sphinx.__file__)) + "/oracle.py"], cwd = f"{root}/servers/{idx}/", stdout=log, stderr=log, pass_fds=[log.fileno()], env=env), log))
         log.close()
-      if corrupt_dkg_lib is not None:
-        del env["BYZANTINE_DKG"]
+        if "BYZANTINE_DKG" in env:
+          del env["BYZANTINE_DKG"]
 
       if ostore.available and ostore_server is not None and path.isfile(ostore_server):
         cls._ostore_root = mkdtemp(prefix='opaquestore-server-root.')
