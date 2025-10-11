@@ -72,7 +72,7 @@ if len(servers)==0:
           f'please add {threshold + (0 if threshold==1 else 1)} more servers to your config')
     exit(1)
 if len(servers)>1:
-    if len(servers) > 129:
+    if len(servers) >= 129:
         print("you have to many servers in your config, you can have at most 128, but if that works is questionable, 16 is a practical maximum")
         exit(1)
     if threshold < 2:
