@@ -530,7 +530,7 @@ def init():
   init_browser_ext()
   create_masterkey()
   # create health check record
-  m = Multiplexer(servers, ['sphinx/1'])
+  m = Multiplexer(servers)
   m.connect()
   create(m, b"all ok?", "healthcheck", "sphinx servers", target="everything works fine")
   return 0
