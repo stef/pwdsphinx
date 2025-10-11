@@ -72,6 +72,9 @@ if len(servers)==0:
           f'please add {threshold + (0 if threshold==1 else 1)} more servers to your config')
     exit(1)
 if len(servers)>1:
+    if len(servers) > 129:
+        print("you have to many servers in your config, you can have at most 128, but if that works is questionable, 16 is a practical maximum")
+        exit(1)
     if threshold < 2:
         print('if you have multiple servers in your config, you must specify a threshold >1 also')
         exit(1)
@@ -964,14 +967,19 @@ def healthcheck(m):
 def qrcode(output, key):
   mk=get_masterkey() if key else b''
   hosts = []
+  ltsigkeys = []
   for name, server in servers.items():
     if len(name)>255: raise ValueError(f"server name: {name} is too long, max 255 allowed in qr codes")
     hosts.append(bytes([len(name.encode('utf8'))]) + name.encode('utf8') +
                  bytes([len(server.get('host','localhost'))]) + server.get('host','localhost').encode('utf8') +
                  struct.pack("!H", server.get('port', 2355)))
+    ltsigkeys.append(server['ltsigkey'])
   hosts=zlib.compress(b''.join(hosts))
+  ltsigkeylen = struct.pack("B", len(ltsigkeys))
   data = (bytes([1*key+2*rwd_keys + 4*validate_password + 8*userlist + 16+delete_upgraded, threshold]) +
           mk +
+          ltsigkeylen +
+          b''.join(ltsigkeys) +
           hosts)
 
   qr = QrCode.encode_binary(data, QrCode.Ecc.LOW)
