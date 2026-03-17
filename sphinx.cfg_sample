@@ -113,10 +113,10 @@ ltsigkey="ltsig.key"
 # the websphinx section is only needed if you use the browser webextensions
 [websphinx]
 # the path of your pinentry program
-pinentry=/usr/bin/pinentry
+pinentry="/usr/bin/pinentry"
 
 # a file where websphinx logs, this is only for dev/debug purposes
-log=
+log=""
 
 # in case you use webauthn, we need to store mappings between webauthn user ids
 # and webauthn public keys. it's lame, but no way around it. back up this
